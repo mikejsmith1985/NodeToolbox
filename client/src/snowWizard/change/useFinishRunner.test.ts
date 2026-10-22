@@ -234,3 +234,36 @@ describe('useFinishRunner — modify', () => {
     expect(actions.updateExistingChg).not.toHaveBeenCalled();
   });
 });
+
+describe('useFinishRunner — putting the evidence on afterwards', () => {
+  beforeEach(() => {
+    vi.mocked(attachAllEvidenceToChanges).mockReset().mockImplementation(async (_evidence, changeNumbers) => ({ results: Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, 'attached'])), problems: [] }));
+    vi.mocked(resolveJiraEvidenceAtFinish).mockClear();
+  });
+
+  function buildSavedSession(): ChangeWizardSession {
+    return {
+      ...createChangeWizardSession('create'), hasSavedChanges: true,
+      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }],
+      evidenceResults: { CHG1: 'attached', CHG2: 'HTTP 413' },
+    };
+  }
+
+  it('lists the Jira files afresh and attaches them, with chosen files, only to the change without evidence', async () => {
+    vi.mocked(resolveJiraEvidenceAtFinish).mockResolvedValueOnce([JIRA_FILE]);
+    const { hookResult, onFinished } = renderRunner(buildDraft(), buildSavedSession(), vi.fn(), [], [], true);
+    act(() => hookResult.result.current.runner.retryEvidence([EVIDENCE_FILE]));
+    await waitFor(() => expect(hookResult.result.current.session.evidenceResults.CHG2).toBe('attached'));
+    expect(vi.mocked(resolveJiraEvidenceAtFinish).mock.calls[0][0].hasChoice).toBe(false);
+    expect(attachAllEvidenceToChanges).toHaveBeenCalledWith({ localFiles: [EVIDENCE_FILE], jiraAttachments: [JIRA_FILE] }, ['CHG2'], expect.anything());
+    expect(onFinished).not.toHaveBeenCalled();
+  });
+
+  it('says there is still nothing to attach when Jira has no files and none were chosen', async () => {
+    const { hookResult } = renderRunner(buildDraft(), buildSavedSession(), vi.fn(), [], [], true);
+    act(() => hookResult.result.current.runner.retryEvidence([]));
+    await waitFor(() => expect(hookResult.result.current.session.evidenceResults.CHG2).toMatch(/still nothing to attach/));
+    expect(attachAllEvidenceToChanges).not.toHaveBeenCalled();
+  });
+});
+

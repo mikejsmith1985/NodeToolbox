@@ -16,7 +16,7 @@ const CRG = {
 const TASK_NAMES = { REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] };
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
-  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), retryEvidence: vi.fn(), ...overrides };
 }
 
 /** The step with one template library, as the change job hands it over. */
@@ -71,5 +71,32 @@ describe('CreateResultStep', () => {
     renderStep(session, buildRunner({ phase: { kind: 'done' } }));
     expect(screen.getByText(/Save its picks as a template below/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
+  });
+
+  it('when everything saved but the evidence, offers to attach it from Jira or from this computer', () => {
+    const runner = buildRunner({ phase: { kind: 'done' } });
+    const session: ChangeWizardSession = {
+      ...createChangeWizardSession('create'), hasSavedChanges: true,
+      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }, { environmentLabel: 'PRD', changeNumber: 'CHG2' }],
+      evidenceResults: { CHG1: 'attached', CHG2: 'HTTP 413' },
+    };
+    renderStep(session, runner);
+    expect(screen.queryByText(/All done/)).toBeNull();
+    expect(screen.getByText(/only the test evidence is missing/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /Test evidence is not on CHG2 yet/ })).toBeTruthy();
+    const chosenFile = new File(['ok'], 'results.pdf');
+    fireEvent.change(screen.getByLabelText('Files from this computer (optional)'), { target: { files: [chosenFile] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Attach the test evidence' }));
+    expect(runner.retryEvidence).toHaveBeenCalledWith([chosenFile]);
+  });
+
+  it('offers no evidence card once every change has its evidence', () => {
+    const session: ChangeWizardSession = {
+      ...createChangeWizardSession('create'), hasSavedChanges: true,
+      createdChanges: [{ environmentLabel: 'REL', changeNumber: 'CHG1' }], evidenceResults: { CHG1: 'attached' },
+    };
+    renderStep(session, buildRunner({ phase: { kind: 'done' } }));
+    expect(screen.getByText(/All done/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Attach the test evidence' })).toBeNull();
   });
 });

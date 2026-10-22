@@ -17,7 +17,7 @@ import { buildChangeStorageKey, createChangeWizardSession, useChangeWizardSessio
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn() }));
 vi.mock('../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('../../views/SnowHub/problems/changeProblems.ts', () => ({ scanIssuesForProblems: vi.fn(async () => []) }));
-vi.mock('./evidenceUpload.ts', () => ({ EVIDENCE_ATTACHED: 'attached', attachAllEvidenceToChanges: vi.fn(async (_evidence: unknown, changeNumbers: string[]) => ({ results: Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, 'attached'])), problems: [] })) }));
+vi.mock('./evidenceUpload.ts', () => ({ EVIDENCE_ATTACHED: 'attached', checkEvidenceSize: () => null, attachAllEvidenceToChanges: vi.fn(async (_evidence: unknown, changeNumbers: string[]) => ({ results: Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, 'attached'])), problems: [] })) }));
 
 const JOB_ID = 'job-save-created';
 
@@ -206,7 +206,8 @@ async function writeCheckAndSave() {
   expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
   expect(readNextButton().textContent).toBe('Save to ServiceNow');
   fireEvent.click(readNextButton());
-  await screen.findByText('All done. Everything below is in ServiceNow.', {}, { timeout: 5000 });
+  // The issues carry no files, so the save finishes with only the test evidence left to add.
+  await screen.findByText('Saved — only the test evidence is missing. Add it below.', {}, { timeout: 5000 });
 }
 
 /** What every finished path must have written: each change to itself, each task to its own record, nothing created. */

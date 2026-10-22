@@ -17,7 +17,7 @@ const CRG = {
 } as CrgHook;
 
 function buildRunner(overrides: Partial<FinishRunner> = {}): FinishRunner {
-  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), ...overrides };
+  return { phase: { kind: 'idle' }, startCreate: vi.fn(), retryMissing: vi.fn(), startSaveCreated: vi.fn(), startSave: vi.fn(), confirmSave: vi.fn(), cancelSave: vi.fn(), retryEvidence: vi.fn(), ...overrides };
 }
 
 const JIRA_FILES = [{ issueKey: 'ENCUC-1', issueSummary: '', attachment: { attachmentId: 'a1', filename: 'results.xlsx', sizeBytes: 10, contentUrl: '' } }];

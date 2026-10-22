@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: test evidence can be added after the save.** When everything went through but the evidence zip, the
+  last screen no longer says "All done"; it says only the evidence is missing and offers a "Test evidence is not on …
+  yet" card. "Attach the test evidence" lists the Jira issues' files afresh (so results attached there since are
+  picked up), adds any files chosen from this computer, and attaches them to just the changes without evidence. A
+  retry with nothing to attach says so.
+
 ### Added
 - **SNow Wizard Review: the note you agree with Copilot becomes the coaching note.** The discussion prompt now tells
   Copilot to answer "write the note" with the agreed findings between `COACHING NOTE START` / `COACHING NOTE END`

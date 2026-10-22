@@ -59,6 +59,11 @@ export interface FinishRunner {
   startSave: () => void;
   confirmSave: () => void;
   cancelSave: () => void;
+  /**
+   * Puts the test evidence on every change still without it, after everything else went through: the files on the Jira
+   * issues as they are now, plus any files chosen from this computer. Touches nothing else, so it is safe to repeat.
+   */
+  retryEvidence: (localFiles: readonly File[]) => void;
 }
 
 /** A write that has been started and not yet settled. */
@@ -71,6 +76,14 @@ interface PendingWrite {
 
 const ERROR_PREFIX = 'Error';
 const JIRA_EVIDENCE_LIST_FAILED = 'The test evidence could not be collected from Jira, so only files from this computer were attached.';
+const NO_EVIDENCE_YET = 'There is still nothing to attach: the Jira issues have no files, and none were chosen from this computer.';
+
+/** Where the evidence comes from on one attach run. */
+interface EvidenceSource {
+  localFiles: readonly File[];
+  /** True to list the Jira issues' files afresh (a retry), ignoring the ticks recorded before the changes existed. */
+  shouldRelistJira: boolean;
+}
 
 /** The hook's result line once the pending write has finished, or null while it is still running. */
 function readSettledResult(pendingWrite: PendingWrite, crgState: CrgHook['state']): string | null {
@@ -87,11 +100,12 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
   const pendingRetryRef = useRef<PlanEnvironmentKey[] | null>(null);
 
   /** The Jira files for the zip; a failed listing is noted and the local files still go. */
-  async function gatherJiraEvidence(outcomeNotes: string[]): Promise<JiraEvidenceAttachment[]> {
+  async function gatherJiraEvidence(outcomeNotes: string[], source: EvidenceSource): Promise<JiraEvidenceAttachment[]> {
     try {
       setPhase({ kind: 'working', message: 'Collecting the test evidence from Jira…' });
-      const localBytes = input.evidenceFiles.reduce((runningTotal, file) => runningTotal + file.size, 0);
-      return await resolveJiraEvidenceAtFinish({ tickedEvidence: input.jiraEvidence, hasChoice: input.hasJiraEvidenceChoice, issueKeys: input.selectedIssueKeys, localBytes });
+      const localBytes = source.localFiles.reduce((runningTotal, file) => runningTotal + file.size, 0);
+      const hasChoice = source.shouldRelistJira ? false : input.hasJiraEvidenceChoice;
+      return await resolveJiraEvidenceAtFinish({ tickedEvidence: input.jiraEvidence, hasChoice, issueKeys: input.selectedIssueKeys, localBytes });
     } catch {
       outcomeNotes.push(JIRA_EVIDENCE_LIST_FAILED);
       return [];
@@ -102,17 +116,28 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
    * Attaches the evidence to the given changes, showing each step, records each result (and any Jira file that could
    * not be fetched, after `outcomeNotes`), and reports the job finished when it is.
    */
-  async function attachEvidenceAndFinish(changeNumbers: string[], isJobComplete: boolean, outcomeNotes: string[]) {
-    const jiraEvidence = changeNumbers.length > 0 ? await gatherJiraEvidence(outcomeNotes) : [];
-    const hasEvidence = input.evidenceFiles.length > 0 || jiraEvidence.length > 0;
+  async function attachEvidenceAndFinish(changeNumbers: string[], isJobComplete: boolean, outcomeNotes: string[], source: EvidenceSource = { localFiles: input.evidenceFiles, shouldRelistJira: false }) {
+    const jiraEvidence = changeNumbers.length > 0 ? await gatherJiraEvidence(outcomeNotes, source) : [];
+    const hasEvidence = source.localFiles.length > 0 || jiraEvidence.length > 0;
     if (hasEvidence && changeNumbers.length > 0) {
       setPhase({ kind: 'working', message: 'Zipping your test evidence…' });
       const onProgress = (message: string) => setPhase({ kind: 'working', message });
-      const evidenceOutcome = await attachAllEvidenceToChanges({ localFiles: input.evidenceFiles, jiraAttachments: jiraEvidence }, changeNumbers, { onProgress });
+      const evidenceOutcome = await attachAllEvidenceToChanges({ localFiles: source.localFiles, jiraAttachments: jiraEvidence }, changeNumbers, { onProgress });
       updateSession({ evidenceResults: { ...session.evidenceResults, ...evidenceOutcome.results }, outcomeNotes: [...outcomeNotes, ...evidenceOutcome.problems] });
+    } else if (source.shouldRelistJira && changeNumbers.length > 0) {
+      // A retry that found nothing says so, rather than leaving the screen as it was.
+      const nothingResults = Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, NO_EVIDENCE_YET]));
+      updateSession({ evidenceResults: { ...session.evidenceResults, ...nothingResults }, outcomeNotes });
     }
     setPhase({ kind: 'done' });
     if (isJobComplete) input.onFinished();
+  }
+
+  /** The changes whose evidence has not gone on, in the order they were made. */
+  function listChangesWithoutEvidence(): string[] {
+    return session.createdChanges
+      .map((createdChange) => createdChange.changeNumber)
+      .filter((changeNumber) => session.evidenceResults[changeNumber] !== EVIDENCE_ATTACHED);
   }
 
   /** Starts one write and remembers how to tell when it has finished. */
@@ -194,10 +219,7 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     const outcomeNotes = [...session.outcomeNotes, ...savedNotes];
     updateSession({ hasSavedChanges: true, saveFailureText: null, outcomeNotes });
     // The evidence went on at create; only a change whose zip did not get there is tried again.
-    const changesWithoutEvidence = session.createdChanges
-      .map((createdChange) => createdChange.changeNumber)
-      .filter((changeNumber) => session.evidenceResults[changeNumber] !== EVIDENCE_ATTACHED);
-    void attachEvidenceAndFinish(changesWithoutEvidence, true, outcomeNotes);
+    void attachEvidenceAndFinish(listChangesWithoutEvidence(), true, outcomeNotes);
   }
 
   /** Records a modify's outcome, attaching evidence to the change when the change itself was saved. */
@@ -304,5 +326,9 @@ export function useFinishRunner(input: FinishRunnerInput): FinishRunner {
     startSave: () => { void checkConflictsThenSave(); },
     confirmSave,
     cancelSave: () => setPhase({ kind: 'idle' }),
+    retryEvidence: (localFiles) => {
+      const changeNumbers = listChangesWithoutEvidence();
+      if (changeNumbers.length > 0) void attachEvidenceAndFinish(changeNumbers, false, [...session.outcomeNotes], { localFiles, shouldRelistJira: true });
+    },
   };
 }

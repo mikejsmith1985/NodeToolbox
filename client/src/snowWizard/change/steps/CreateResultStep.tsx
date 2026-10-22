@@ -5,9 +5,9 @@
 // The writes themselves run in useFinishRunner; this screen only shows them. Each change links to ServiceNow, lists
 // the tasks it carries exactly as the user built them, its evidence result and the notes the create path reported
 // (outages, PRB links), and a partial create offers "Retry what's missing", which never makes a second change for an
-// environment.
+// environment. When everything went through but the test evidence, its own card puts the evidence on afterwards.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState, type ChangeEvent } from 'react';
 
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -17,7 +17,7 @@ import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
 import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
-import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
+import { checkEvidenceSize, EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import { planModifyTaskWrites } from '../modifyTasks.ts';
 import { readSavePreview, type SavePreviewRow } from '../savePreview.ts';
 import TemplateSaveCard from '../TemplateSaveCard.tsx';
@@ -142,13 +142,51 @@ function CreatedChangeCard({ createdChange, session }: { createdChange: CreatedC
   );
 }
 
+/** The changes that do not have their test evidence yet. */
+function listChangesWithoutEvidence(session: CreateResultStepProps['session']): string[] {
+  return session.createdChanges
+    .map((createdChange) => createdChange.changeNumber)
+    .filter((changeNumber) => session.evidenceResults[changeNumber] !== EVIDENCE_ATTACHED);
+}
+
+/**
+ * Everything else went through but the evidence did not: put it on now, from the Jira issues as they are now (so test
+ * results added there since are picked up) and any files chosen from this computer.
+ */
+function EvidenceRetryCard({ session, runner }: Pick<CreateResultStepProps, 'session' | 'runner'>) {
+  const fileFieldId = useId();
+  const [localFiles, setLocalFiles] = useState<File[]>([]);
+  const missingChangeNumbers = listChangesWithoutEvidence(session);
+  if (missingChangeNumbers.length === 0) return null;
+  const sizeProblem = checkEvidenceSize(localFiles);
+  const isWorking = runner.phase.kind === 'working';
+  const chooseFiles = (event: ChangeEvent<HTMLInputElement>) => setLocalFiles([...(event.target.files ?? [])]);
+  return (
+    <div className={styles.card} role="region" aria-label="Add the test evidence">
+      <h3 className={styles.cardTitle}>{`📎 Test evidence is not on ${missingChangeNumbers.join(', ')} yet`}</h3>
+      <p className={styles.hint}>Release Management checks for it. Attach the test results to the Jira issues and press the button — or choose the files from this computer.</p>
+      <label className={styles.hint} htmlFor={fileFieldId}>Files from this computer (optional)</label>
+      <input id={fileFieldId} type="file" multiple onChange={chooseFiles} />
+      {localFiles.length > 0 ? <p className={styles.hint}>{`Chosen: ${localFiles.map((file) => file.name).join(', ')}`}</p> : null}
+      {sizeProblem ? <p className={styles.errorText}>{sizeProblem}</p> : null}
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.actionButton} disabled={isWorking || sizeProblem !== null} onClick={() => runner.retryEvidence(localFiles)}>
+          Attach the test evidence
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** What happened: every record made, the notes, and any failure with its retry. */
 function OutcomeReport(props: CreateResultStepProps) {
   const { session, runner } = props;
   const failureText = session.mode === 'create' ? session.saveFailureText ?? null : session.failureText;
+  const isEvidenceMissing = listChangesWithoutEvidence(session).length > 0;
   return (
     <div>
-      {failureText === null ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
+      {failureText === null && !isEvidenceMissing ? <p className={styles.successText}>All done. Everything below is in ServiceNow.</p> : null}
+      {failureText === null && isEvidenceMissing ? <p className={styles.noticeText}>Saved — only the test evidence is missing. Add it below.</p> : null}
       {failureText === null ? <p className={styles.hint}>{TEMPLATE_TIP}</p> : null}
       <ul className={styles.itemList} aria-label="What was made">
         {session.createdChanges.map((createdChange) => <CreatedChangeCard key={createdChange.changeNumber} createdChange={createdChange} session={session} />)}
@@ -162,6 +200,7 @@ function OutcomeReport(props: CreateResultStepProps) {
           </div>
         </div>
       ) : null}
+      <EvidenceRetryCard session={session} runner={runner} />
     </div>
   );
 }
