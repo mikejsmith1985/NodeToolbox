@@ -1,4 +1,4 @@
-// ScopeStep.test.tsx — Proves Scope lists a release's issues, lets one be dropped or added by key, and says when a release is empty.
+// ScopeStep.test.tsx — Proves Scope finds a project by key, lists a release's issues, lets one be dropped or added by key, and says when a release is empty.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
@@ -35,8 +35,10 @@ function Harness() {
 
 /** Picks the project and release, then searches. */
 async function findReleaseIssues() {
-  await waitFor(() => expect(screen.getByRole('option', { name: 'Payments (ABC)' })).toBeTruthy());
-  fireEvent.change(screen.getByLabelText('Jira project'), { target: { value: 'ABC' } });
+  await waitFor(() => expect(screen.getByRole('option', { name: 'ABC — Payments' })).toBeTruthy());
+  // Found by typing its key, the way people know a project.
+  fireEvent.change(screen.getByLabelText('Find a project by key or name'), { target: { value: 'abc' } });
+  expect((screen.getByLabelText('Jira project') as HTMLSelectElement).value).toBe('ABC');
   await waitFor(() => expect(screen.getByRole('option', { name: 'Release 12' })).toBeTruthy());
   fireEvent.change(screen.getByLabelText('Release'), { target: { value: 'Release 12' } });
   fireEvent.click(screen.getByRole('button', { name: 'Find the issues' }));

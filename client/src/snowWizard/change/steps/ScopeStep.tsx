@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { normaliseIssueKey } from '../../../views/SnowHub/chgFormula/changeIssueList.ts';
+import ProjectKeyPicker from '../../shell/ProjectKeyPicker.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import StartFromCard from './StartFromCard.tsx';
@@ -82,11 +83,7 @@ function FindIssuesPanel({ crg, onSearched }: Pick<ChangeStepProps, 'crg'> & { o
       {state.fetchMode === 'project' ? (
         <div className={styles.fieldRow}>
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor={projectId}>Jira project</label>
-            <select id={projectId} className={styles.selectField} value={state.projectKey} onChange={(changeEvent) => actions.setProjectKey(changeEvent.target.value)}>
-              <option value="">{projectOptions.length > 0 ? 'Choose…' : 'Loading Jira projects…'}</option>
-              {projectOptions.map((project) => <option key={project.key} value={project.key}>{`${project.name} (${project.key})`}</option>)}
-            </select>
+            <ProjectKeyPicker id={projectId} projects={projectOptions} value={state.projectKey} isLoading={projectOptions.length === 0} onChoose={actions.setProjectKey} />
           </div>
           <div className={styles.fieldGroup}>
             <label className={styles.fieldLabel} htmlFor={versionId}>Release</label>

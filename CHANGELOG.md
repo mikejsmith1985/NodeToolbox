@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: Jira projects can be found by key.** Both project pickers ("What's in this change?" and the PRB's
+  "Where do they go?") now have a **Find a project by key or name** box. It narrows Jira's own list with exact keys
+  first, then keys that start with the typed text, then name matches. Typing a whole key (e.g. `ENCUC`) picks that
+  project, and Enter picks the best match. Projects are listed key-first (`ENCUC — Enrollment …`) and sorted by key.
+  The project is still picked from Jira's list, never typed.
+
 ### Added
 - **SNow Wizard: one-button test evidence and short cuts for a loaded change (GH #475).**
   - **"Sweep Jira and attach the test evidence"** replaces choosing files by hand. It searches the change's Jira

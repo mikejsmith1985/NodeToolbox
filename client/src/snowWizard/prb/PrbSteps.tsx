@@ -4,6 +4,7 @@
 import type { FormEvent, ReactNode } from 'react';
 
 import type { JiraProject } from '../../types/jira.ts';
+import ProjectKeyPicker from '../shell/ProjectKeyPicker.tsx';
 import shellStyles from '../shell/WizardShell.module.css';
 import type { PrbCreateFailure, PrbCreateResult } from './prbJiraCreate.ts';
 import {
@@ -276,7 +277,7 @@ export interface PrbPlaceStepProps {
   onChooseEpic: (epic: EpicSearchResult) => void;
 }
 
-// Listed by key, as "ENCUC — Enrollment …": typing in the list jumps by key, which is how people know a project.
+// Found and listed by key, as "ENCUC — Enrollment …", which is how people know a project.
 function ProjectPicker(props: PrbPlaceStepProps) {
   if (props.projectList.status === 'failed') {
     return (
@@ -286,15 +287,8 @@ function ProjectPicker(props: PrbPlaceStepProps) {
       </div>
     );
   }
-  const isLoading = props.projectList.status !== 'ready';
   return (
-    <>
-      <label className={shellStyles.fieldLabel} htmlFor="prb-project">Jira project</label>
-      <select id="prb-project" className={shellStyles.inputField} value={props.projectKey} disabled={isLoading} onChange={(changeEvent) => props.onChooseProject(changeEvent.target.value)}>
-        <option value="" disabled>{isLoading ? 'Loading projects…' : '— Choose a project —'}</option>
-        {props.projectList.items.map((project) => <option key={project.key} value={project.key}>{`${project.key} — ${project.name}`}</option>)}
-      </select>
-    </>
+    <ProjectKeyPicker id="prb-project" projects={props.projectList.items} value={props.projectKey} isLoading={props.projectList.status !== 'ready'} onChoose={props.onChooseProject} />
   );
 }
 
