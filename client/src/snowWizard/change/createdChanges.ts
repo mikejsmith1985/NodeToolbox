@@ -201,7 +201,7 @@ export async function saveCreatedChange(input: SaveCreatedChangeInput, writers: 
   if (matches.length > 0) {
     const changeDefaults = await writers.readChangeDefaults(changeSysId);
     // Each task keeps its own slot on the timeline; a card with no dates would otherwise take the whole change window.
-    const datedCards = dateTaskCards(matches.map(({ card }) => card), changeDefaults.plannedStartDate);
+    const datedCards = dateTaskCards(matches.map(({ card }) => card), changeDefaults.plannedStartDate, changeDefaults.plannedEndDate);
     for (const [matchIndex, { card, taskRecord }] of matches.entries()) {
       await writers.updateTask(taskRecord.sysId, changeSysId, datedCards[matchIndex], changeDefaults);
       const assignmentNote = await enforceTaskAssignment(card, taskRecord, writers);

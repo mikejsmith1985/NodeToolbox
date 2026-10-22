@@ -5,6 +5,7 @@
 
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { PLAN_ENVIRONMENT_KEYS, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
+import { readTaskPlacement } from './taskPlacement.ts';
 
 /** Thrown inside this module only; decodeTemplateShare turns it into a plain-English answer for the user. */
 export class TemplateShareFormatError extends Error {}
@@ -40,6 +41,7 @@ const TASK_SPEC: FieldSpec = {
 };
 const OPTIONAL_TASK_TEXTS = ['changeTaskType', 'startOffsetMinutes', 'durationMinutes'] as const;
 const ESTIMATES_SPEC: FieldSpec = { implementationMinutes: 'text', validationMinutes: 'text', backoutMinutes: 'text' };
+const PLACEMENT_SPEC: FieldSpec = { runMode: 'text', alongsideTaskTitle: 'text', notBeforeTime: 'text' };
 const ENVIRONMENT_KEYS = ['relEnvironment', 'prdEnvironment', 'pfixEnvironment'] as const;
 
 /** Whether a value is a plain `{ … }` object (not a list, not empty). */
@@ -123,6 +125,11 @@ function readSharedTask(value: unknown): CtaskTemplate {
   for (const optionalKey of OPTIONAL_TASK_TEXTS) if (value[optionalKey] !== undefined) sharedTask[optionalKey] = readField(value[optionalKey], 'text');
   if (value.durationEstimates !== undefined) sharedTask.durationEstimates = readSpecObject(value.durationEstimates, ESTIMATES_SPEC);
   if (value.environmentKeys !== undefined) sharedTask.environmentKeys = readEnvironmentKeys(value.environmentKeys);
+  // How the task runs in its window: only known fields are read, and anything odd falls back to "after the task before it".
+  if (value.timelinePlacement !== undefined) {
+    const storedPlacement = readSpecObject(value.timelinePlacement, PLACEMENT_SPEC) as unknown as CtaskTemplate['timelinePlacement'];
+    sharedTask.timelinePlacement = readTaskPlacement({ timelinePlacement: storedPlacement } as CtaskTemplate);
+  }
   return sharedTask as unknown as CtaskTemplate;
 }
 

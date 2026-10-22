@@ -108,7 +108,7 @@ export async function saveModifyTasks(input: SaveModifyTasksInput, writers: Modi
   const changeSysId = input.changeSysId || await writers.resolveChangeSysId(input.changeNumber);
   const changeDefaults = await writers.readChangeDefaults(changeSysId);
   // Every written task carries its own slot on the change's timeline, worked out over all of the change's cards.
-  const datedTasks = dateTaskCards(input.draftTasks, changeDefaults.plannedStartDate);
+  const datedTasks = dateTaskCards(input.draftTasks, changeDefaults.plannedStartDate, changeDefaults.plannedEndDate);
   const readDatedTask = (task: CtaskTemplate) => datedTasks[input.draftTasks.indexOf(task)] ?? task;
   for (const { link, task } of taskWrites.updates) await writers.updateTask(link.sysId, changeSysId, readDatedTask(task), changeDefaults);
   if (taskWrites.creates.length > 0) await writers.createTasks(changeSysId, taskWrites.creates.map(readDatedTask), changeDefaults);

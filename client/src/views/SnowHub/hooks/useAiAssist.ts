@@ -138,11 +138,13 @@ function buildFieldRulesText(): string {
 /**
  * Builds the complete prompt text to paste into AI Assist: the record facts and delivery path, the Jira
  * issues, any fields already written, the Formula Card rules for each field, then the exact reply format.
+ * `issueDetailText` replaces the issue details when a caller has cut them to fit an assistant's length limit.
  */
 export function buildAiAssistPromptText(
   selectedIssues: JiraIssue[],
   currentFields: AiAssistGeneratedFields,
   changeContext?: ChgPromptContext,
+  issueDetailText?: string,
 ): string {
   const existingContent = buildExistingContentText(currentFields);
 
@@ -155,7 +157,7 @@ export function buildAiAssistPromptText(
     buildIssueListText(selectedIssues),
     '',
     'Jira issue details for better CHG drafting:',
-    buildIssueDetailText(selectedIssues),
+    issueDetailText ?? buildIssueDetailText(selectedIssues),
     '',
     existingContent ? `Existing content to refine:\n${existingContent}\n` : '',
     'Formula Card rules for each field:',

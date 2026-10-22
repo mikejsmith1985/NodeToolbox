@@ -7,6 +7,7 @@ import { useId, useState, type ClipboardEvent } from 'react';
 
 import CopyButton from '../shell/CopyButton.tsx';
 import styles from './ChangeWizard.module.css';
+import { describePromptOverLimit } from './promptBudget.ts';
 
 interface PromptRoundProps {
   promptText: string;
@@ -44,6 +45,7 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
   const replyFieldId = useId();
   const [replyText, setReplyText] = useState('');
   const [statusText, setStatusText] = useState('');
+  const overLimitText = describePromptOverLimit(promptText);
 
   /** One click instead of select-all and paste: takes the clipboard's text and reads it straight away. */
   async function pasteAndRead() {
@@ -74,6 +76,7 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
       <label className={styles.fieldLabel} htmlFor={promptFieldId}>1. Copy this and paste it into your AI assistant</label>
       <textarea id={promptFieldId} className={styles.textArea} readOnly value={promptText} />
       <div className={styles.buttonRow}><CopyButton text={promptText} label={copyLabel} fallbackTargetId={promptFieldId} /></div>
+      {overLimitText ? <p className={styles.errorText} role="alert">{overLimitText}</p> : null}
       <label className={styles.fieldLabel} htmlFor={replyFieldId}>2. Paste the assistant&apos;s whole reply here</label>
       <textarea id={replyFieldId} className={styles.textArea} value={replyText} onPaste={handleReplyPaste}
         onChange={(changeEvent) => setReplyText(changeEvent.target.value)} />

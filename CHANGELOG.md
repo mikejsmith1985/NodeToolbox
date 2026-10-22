@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard tasks no longer all run one after another (GH #475).** The timing prompt now also asks how each task
+  runs, and the timeline places it that way:
+  - **Stand-by for the whole window:** an awareness task (for example Prod Support kept informed) spans the window, and
+    no task waits for it or counts it as running over the window.
+  - **At the same time as another task:** it starts with that task, and the next task waits for both.
+  - **Not before a time:** "after 5:00 CST" is read in 24-hour time and moved onto the window's clock. The task, and
+    every task after it, waits until then.
+  - A new "Runs" column on each timeline lets you change any of this. Saved and shared templates keep it, and the
+    CTASK dates written to ServiceNow follow it.
+- **The timing prompt now includes what the earlier steps say about the change:** the short description, what is
+  changing and why, risk, any plans, and the planning answers.
+
 ### Fixed
+- **The SNow Wizard's AI Assist prompt carried the Jira details twice (GH #475).** It reached 134,856 characters, and
+  Copilot refuses anything over 128,000. The details now appear once.
+- **Every Wizard prompt now fits under 120,000 characters.** When there is too much Jira detail, the long issues are cut
+  evenly and each cut names the issue where the rest is. The rules and the reply format are never cut, and a prompt
+  still over the limit says so.
 - **SNow Wizard final checks no longer offer buttons that fix nothing (GH #475).**
   - **Test evidence:** "Attach test evidence" only jumped back to step 1. It is replaced by a note saying the evidence
     is handled on save: the last step sweeps Jira (the change's issues, their sub-tasks and linked issues), zips every

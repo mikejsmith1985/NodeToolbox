@@ -369,6 +369,18 @@ export interface CrgTemplate {
   reconcileAutoCtasks?: boolean;
 }
 
+/** How a task runs against the others: after the one before it, on stand-by for the whole window, or at the same time as another. */
+export type TaskRunMode = 'inOrder' | 'wholeWindow' | 'alongside';
+
+/** Where a task sits in its change's window (GH #475: some tasks run in parallel, some are only for awareness, some wait for a time). */
+export interface TaskTimelinePlacement {
+  runMode: TaskRunMode;
+  /** For 'alongside': the short description of the task it runs with (a title survives copying a template; an id does not). */
+  alongsideTaskTitle?: string;
+  /** The earliest the task may start, "HH:mm" on the window's own clock; absent or blank for none. */
+  notBeforeTime?: string;
+}
+
 /**
  * Reusable ServiceNow Change Task template.
  * These templates become CTASK records linked to a CHG during creation or append flows.
@@ -401,6 +413,11 @@ export interface CtaskTemplate {
    * templates saved before the CAB asked for these carry none; every read goes through normalizeEstimates.
    */
   durationEstimates?: DurationEstimates;
+  /**
+   * Where the SNow Wizard places the task in its change's window: one after another (the default), on stand-by across
+   * the whole window, or alongside another task, and never before a stated time. Optional: absent means one after another.
+   */
+  timelinePlacement?: TaskTimelinePlacement;
   /**
    * When a queued CTASK was auto-staged from a CHG template's link, this records
    * the source CTASK-template id so re-applying the same template does not stack

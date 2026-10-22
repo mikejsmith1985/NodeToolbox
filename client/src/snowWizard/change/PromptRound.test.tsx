@@ -6,6 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 import PromptRound from './PromptRound.tsx';
 
 describe('PromptRound', () => {
+  it('warns when a prompt is still over an AI chat box\'s limit, and not otherwise', () => {
+    const { rerender } = render(<PromptRound promptText="Prompt" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
+    expect(screen.queryByRole('alert')).toBeNull();
+    rerender(<PromptRound promptText={'p'.repeat(130_000)} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
+    expect(screen.getByRole('alert').textContent).toContain('130,000 characters');
+  });
+
   it('shows the prompt, waits for a reply, then reports what the reader said', () => {
     const onReadReply = vi.fn(() => 'Read 2 suggestions.');
     render(<PromptRound promptText="Review this change" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={onReadReply} />);

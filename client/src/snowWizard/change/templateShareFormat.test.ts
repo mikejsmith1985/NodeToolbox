@@ -29,6 +29,13 @@ describe('readSharedTemplate', () => {
 });
 
 describe('readSharedTasks', () => {
+  it('keeps how a shared task runs in its window, falling back to the default when it is odd', () => {
+    const [placed] = readSharedTasks([{ id: 't1', name: 'Support', timelinePlacement: { runMode: 'wholeWindow', notBeforeTime: '18:00', extra: 'x' } }]);
+    expect(placed.timelinePlacement).toEqual({ runMode: 'wholeWindow', notBeforeTime: '18:00' });
+    expect(readSharedTasks([{ id: 't1', name: 'Support', timelinePlacement: { runMode: 'sideways' } }])[0].timelinePlacement).toEqual({ runMode: 'inOrder' });
+    expect(() => readSharedTasks([{ id: 't1', name: 'Support', timelinePlacement: { runMode: 7 } }])).toThrow(TemplateShareFormatError);
+  });
+
   it('keeps the optional timings when present and refuses a task without an id', () => {
     const [sharedTask] = readSharedTasks([{ id: 't1', name: 'Checkout', durationEstimates: { implementationMinutes: '30' }, startOffsetMinutes: '15' }]);
     expect(sharedTask.durationEstimates).toEqual({ implementationMinutes: '30', validationMinutes: '', backoutMinutes: '' });

@@ -10,6 +10,7 @@ import { buildAiAssistPromptText, parseAiAssistChgResponse } from '../../views/S
 import { buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
 import { applyChangeTextField, readChangeTextFields, readSelectedIssues, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
+import { fitPromptToBudget } from './promptBudget.ts';
 
 /** The draft setters an accepted suggestion writes through — the same ones the screens use. */
 export type AiDraftWriters = Pick<CrgHook['actions'], 'updateGeneratedField' | 'setChgPlanningContent'>;
@@ -61,10 +62,14 @@ function describeEvidenceByIssue(draft: CrgDraftState, jiraEvidence: readonly Ji
  * anything already written.
  */
 export function buildAiDraftPrompt(draft: CrgDraftState, jiraEvidence: readonly JiraEvidenceAttachment[] = []): string {
-  const basePrompt = buildAiAssistPromptText(readSelectedIssues(draft), readChangeTextFields(draft), buildWizardPromptContext(draft));
-  return [
-    basePrompt, ...buildMultiChangeNote(draft), ...describeEvidenceByIssue(draft, jiraEvidence), '', TIMELINE_INSTRUCTION, '', BEST_GUESS_INSTRUCTION,
-  ].join('\n');
+  const selectedIssues = readSelectedIssues(draft);
+  // The Jira details are already in the base prompt, so the record facts do not repeat them: carrying them twice is
+  // what took this prompt past Copilot's 128,000-character limit (GH #475). Toolbox's own Enhance prompt does the same.
+  const promptContext = { ...buildWizardPromptContext(draft), jiraSourceText: undefined };
+  return fitPromptToBudget(selectedIssues, (issueDetailText) => [
+    buildAiAssistPromptText(selectedIssues, readChangeTextFields(draft), promptContext, issueDetailText),
+    ...buildMultiChangeNote(draft), ...describeEvidenceByIssue(draft, jiraEvidence), '', TIMELINE_INSTRUCTION, '', BEST_GUESS_INSTRUCTION,
+  ].join('\n')).promptText;
 }
 
 /** Reads a pasted reply into one suggestion per text, skipping any that already say the same thing. */

@@ -40,6 +40,12 @@ function pasteReply(replyText: string) {
   fireEvent.paste(screen.getByLabelText(/Paste the assistant/), { clipboardData: { getData: () => replyText } });
 }
 
+/** Each timeline row's task, start, end and timing — the "Runs" controls left out. */
+function readTimelineRows(): string[] {
+  const rows = within(screen.getByRole('table', { name: 'PRD task timeline' })).getAllByRole('row').slice(1);
+  return rows.map((row) => within(row).getAllByRole('cell').filter((_cell, cellIndex) => cellIndex !== 1).map((cell) => cell.textContent).join('|'));
+}
+
 describe('TaskTimelineSection', () => {
   beforeEach(() => localStorage.clear());
 
@@ -55,11 +61,23 @@ describe('TaskTimelineSection', () => {
     pasteReply('TIMELINE:\nT1 | 20 | 10 | 5 | checkout\nT2 | 30 | 15 | 20 | deploy');
     expect(screen.getByText(/Every task is timed \(2\)/)).toBeTruthy();
     expect(observed.tasks.map((task) => task.durationEstimates?.implementationMinutes)).toEqual(['20', '30']);
-    const rows = within(screen.getByRole('table', { name: 'PRD task timeline' })).getAllByRole('row').slice(1);
-    expect(rows.map((row) => row.textContent)).toEqual([
-      'Deploy payments22:0022:45implementation 30 minutes, validation 15 minutes, backout 20 minutes',
-      'Business Checkout22:4523:15implementation 20 minutes, validation 10 minutes, backout 5 minutes',
+    expect(readTimelineRows()).toEqual([
+      'Deploy payments|22:00|22:45|implementation 30 minutes, validation 15 minutes, backout 20 minutes',
+      'Business Checkout|22:45|23:15|implementation 20 minutes, validation 10 minutes, backout 5 minutes',
     ]);
+  });
+
+  it('lets the user run a task at the same time as another, or hold it until a time (GH #475)', () => {
+    render(<Harness windowEnd="2026-10-25T01:00" />);
+    pasteReply('TIMELINE:\nT1 | 20 | 10 | 5 | in order | checkout\nT2 | 30 | 15 | 20 | in order | deploy');
+    fireEvent.change(screen.getByLabelText('How “Business Checkout” runs'), { target: { value: 'alongside:Deploy payments' } });
+    expect(readTimelineRows()[1]).toMatch(/^Business Checkout\|22:00\|22:30/);
+    fireEvent.change(screen.getByLabelText('“Deploy payments” starts no earlier than'), { target: { value: '23:00' } });
+    expect(readTimelineRows()).toEqual([
+      'Deploy payments|23:00|23:45|implementation 30 minutes, validation 15 minutes, backout 20 minutes',
+      'Business Checkout|23:00|23:30|implementation 20 minutes, validation 10 minutes, backout 5 minutes',
+    ]);
+    expect(observed.tasks.find((task) => task.shortDescription === 'Deploy payments')?.timelinePlacement).toEqual({ runMode: 'inOrder', notBeforeTime: '23:00' });
   });
 
   it('says when the tasks run past the change window', () => {

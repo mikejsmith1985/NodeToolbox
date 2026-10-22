@@ -31,6 +31,18 @@ const FULL_REPLY = [
 ].join('\n');
 
 describe('buildAiDraftPrompt', () => {
+  it('gives the Jira details once, and fits a large change inside the chat box limit (GH #475)', () => {
+    const longIssues = Array.from({ length: 6 }, (_unused, issueIndex) => ({
+      key: `BIG-${issueIndex + 1}`, fields: { summary: `Big ${issueIndex + 1}`, description: 'd'.repeat(30_000), status: { name: 'Done' }, issuetype: { name: 'Story' } },
+    }));
+    const promptText = buildAiDraftPrompt(buildDraft({ fetchedIssues: longIssues, selectedIssueKeys: new Set(longIssues.map((issue) => issue.key)) } as Partial<CrgDraftState>));
+    expect(promptText.length).toBeLessThanOrEqual(120_000);
+    expect(promptText.split('[BIG-1] Big 1').length - 1).toBe(2);
+    expect(promptText).not.toContain('Jira work this change delivers');
+    expect(promptText).toContain('the rest is on BIG-6 in Jira]');
+    expect(promptText).toContain('BACKOUT_PLAN:');
+  });
+
   it('asks for the seven texts from the chosen Jira work, giving the picks only as facts', () => {
     const promptText = buildAiDraftPrompt(buildDraft());
     expect(promptText).toContain('SHORT_DESCRIPTION:');
