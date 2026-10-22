@@ -11,6 +11,7 @@ import CopyButton from '../shell/CopyButton.tsx';
 import shellStyles from '../shell/WizardShell.module.css';
 import styles from './ChangeWizard.module.css';
 import TaskTemplatesSection from './TaskTemplatesSection.tsx';
+import { decodeTemplateLibraryShare, isTemplateLibraryShareText, type LibraryImportOutcome } from './templateLibraryShare.ts';
 import { buildTemplateShareFile, decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
 import type { TemplateLibrary } from './useTemplateLibrary.ts';
 
@@ -36,8 +37,27 @@ function describeAddedTasks(taskNames: readonly string[]): string {
   return `Added ${namesText} to your saved tasks ✓`;
 }
 
-/** Reads a pasted code or file's text — a change template, or saved tasks — and saves it; returns what happened. */
+const countOf = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+const listNames = (names: readonly string[]) => names.map((name) => `“${name}”`).join(', ');
+
+/** What a whole-library import did, one sentence per kind of result, only for the kinds that happened. */
+function describeLibraryImport(outcome: LibraryImportOutcome): string {
+  const sentences = [`Added ${countOf(outcome.addedTemplateNames.length, 'change template')} and ${countOf(outcome.addedTaskNames.length, 'task template')} ✓`];
+  const alreadyThere = [...outcome.alreadyThereTemplateNames, ...outcome.alreadyThereTaskNames];
+  if (alreadyThere.length > 0) sentences.push(`Already in the Wizard, so left as they are: ${listNames(alreadyThere)}. Delete one here first to bring Toolbox's copy in.`);
+  const noRoom = [...outcome.noRoomTemplateNames, ...outcome.noRoomTaskNames];
+  if (noRoom.length > 0) sentences.push(`No room for ${listNames(noRoom)} — the Wizard keeps 20 change templates and 100 tasks. Delete some, then add the file again.`);
+  return sentences.join(' ');
+}
+
+/** Reads a pasted code or file's text — all of Toolbox's templates, one change template, or saved tasks — and saves it; returns what happened. */
 function importSharedText(sharedText: string, library: TemplateLibrary): ImportOutcome {
+  if (isTemplateLibraryShareText(sharedText)) {
+    const decodedLibrary = decodeTemplateLibraryShare(sharedText);
+    return decodedLibrary.isValid
+      ? { kind: 'added', message: describeLibraryImport(library.importSharedLibrary(decodedLibrary.payload)) }
+      : { kind: 'failed', message: decodedLibrary.errorMessage };
+  }
   if (isCtaskTemplatesShareText(sharedText)) {
     const decodedTasks = decodeCtaskTemplatesShare(sharedText);
     return decodedTasks.isValid
@@ -116,7 +136,7 @@ function useTemplateImport(library: TemplateLibrary) {
   return { outcome, importText, importFile };
 }
 
-/** "Add something someone shared": paste a change template code or a task code, or choose either kind of file. */
+/** "Add something someone shared": paste a change template code, a task code or Toolbox's "export all", or choose any of those files. */
 function ImportPanel({ library }: { library: TemplateLibrary }) {
   const codeFieldId = useId();
   const fileFieldId = useId();
@@ -125,9 +145,9 @@ function ImportPanel({ library }: { library: TemplateLibrary }) {
   return (
     <div className={styles.card}>
       <h3 className={styles.cardTitle}>Add something someone shared</h3>
-      <p className={styles.hint}>A change template code, or a task code — including the one Toolbox copies with “Share all”.</p>
+      <p className={styles.hint}>A change template code, a task code, or all your Toolbox templates at once — Toolbox’s “Export all templates for the SNow Wizard”.</p>
       <label className={styles.fieldLabel} htmlFor={codeFieldId}>Paste a template code</label>
-      <textarea id={codeFieldId} className={styles.textArea} value={pastedText} placeholder="SNOWWIZ-TEMPLATE-1:… or SNOWWIZ-CTASKS-1:…" onChange={(changeEvent) => setPastedText(changeEvent.target.value)} />
+      <textarea id={codeFieldId} className={styles.textArea} value={pastedText} placeholder="SNOWWIZ-TEMPLATE-1:…, SNOWWIZ-CTASKS-1:… or SNOWWIZ-LIBRARY-1:…" onChange={(changeEvent) => setPastedText(changeEvent.target.value)} />
       <div className={styles.buttonRow}>
         <button type="button" className={styles.actionButton} onClick={() => { if (importText(pastedText)) setPastedText(''); }}>Add this template</button>
       </div>

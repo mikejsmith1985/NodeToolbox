@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeCtaskTemplatesShareCode } from '../../views/SnowHub/ctaskTemplateShare.ts';
 import type { CrgTemplate, CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import TemplatesScreen from './TemplatesScreen.tsx';
+import { prepareTemplateLibraryExport } from './templateLibraryShare.ts';
 import { TEMPLATE_SHARE_PREFIX, encodeTemplateShareCode } from './templateShare.ts';
 import { useTemplateLibrary } from './useTemplateLibrary.ts';
 
@@ -95,6 +96,22 @@ describe('TemplatesScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add this template' }));
     expect(screen.getByRole('status').textContent).toBe('Added “Checkout (shared)” and “Deploy” to your saved tasks ✓');
     expect(screen.getByRole('heading', { name: 'Deploy' })).toBeTruthy();
+  });
+
+  it('adds every template from the Toolbox "export all" file, leaving alone the ones it already has', async () => {
+    render(<Harness />);
+    const toolboxTask = { ...TASK, id: 'toolbox-task-9', name: 'Deploy', shortDescription: 'Deploy' };
+    const exported = prepareTemplateLibraryExport(
+      [{ ...TEMPLATE, id: 'toolbox-1', name: 'Hotfix', ctaskTemplateIds: ['toolbox-task-9'] }, { ...TEMPLATE, id: 'toolbox-2' }],
+      [toolboxTask, { ...TASK, id: 'toolbox-task-8' }],
+    );
+    const exportFile = new File([await exported.file.blob.text()], exported.file.fileName, { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('Or choose a template file'), { target: { files: [exportFile] } });
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Hotfix' })).toBeTruthy());
+    expect(screen.getByRole('status').textContent).toBe(
+      'Added 1 change template and 1 task template ✓ Already in the Wizard, so left as they are: “Monthly”, “Checkout”. '
+      + "Delete one here first to bring Toolbox's copy in.",
+    );
   });
 
   it('explains a damaged task code in plain words', () => {

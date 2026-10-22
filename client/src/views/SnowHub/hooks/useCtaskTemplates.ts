@@ -6,7 +6,7 @@ import type { CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 
 const CTASK_TEMPLATES_STORAGE_KEY = 'ntbx-ctask-templates';
 // Generous enough that saving a template never quietly evicts one a team still uses; the old cap of 20 did.
-const MAX_CTASK_TEMPLATES = 100;
+export const MAX_CTASK_TEMPLATES = 100;
 const DUPLICATE_NAME_SUFFIX = ' (copy)';
 
 function loadCtaskTemplatesFromStorage(): CtaskTemplate[] {

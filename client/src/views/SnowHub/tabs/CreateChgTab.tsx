@@ -56,6 +56,7 @@ import {
 } from '../ctaskDurations.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { CtaskTemplateManager } from '../components/CtaskTemplateManager.tsx';
+import { TemplateLibraryExport } from '../components/TemplateLibraryExport.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import {
   AiAssistIcon,
@@ -1002,6 +1003,7 @@ function CrgWorkspacePanel({
               + Save current CRG defaults as template
             </button>
           )}
+          <TemplateLibraryExport templates={templates} ctaskTemplates={linkableCtaskTemplates} />
         </div>
 
         <div className={styles.clonePanel}>

@@ -11,7 +11,7 @@ const TEMPLATES_STORAGE_KEY = 'ntbx-crg-templates';
 const DEFAULT_TEMPLATE_ID_STORAGE_KEY = 'ntbx-crg-default-template-id';
 
 // Maximum templates allowed to prevent unbounded localStorage growth.
-const MAX_TEMPLATES = 20;
+export const MAX_TEMPLATES = 20;
 
 type CrgTemplateData = Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>;
 

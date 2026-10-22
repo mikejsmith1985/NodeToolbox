@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Export every template from Toolbox to the SNow Wizard in one go.** SNow Hub → Configuration → *Templates &
+  Defaults* → CHG Templates has a new **Export all templates for the SNow Wizard** section. **Download all templates**
+  saves one file (`all-templates.snow-library.json`), and **Copy all as a code** copies the same thing as one code.
+  Both hold every CHG template and every CTASK template, with each template's linked CTASKs kept.
+  - In the Wizard, open **Your templates** and choose the file (or paste the code). It says how many change and task
+    templates were added.
+  - A template or task the Wizard already has by name is left alone and named in the result, so importing twice
+    adds nothing twice. Imported templates link to the Wizard's task of the same name.
+  - Nothing is saved past the stores' limits (20 change templates, 100 tasks). A save beyond them would quietly drop
+    the oldest template; anything that didn't fit is named instead.
+  - A template too damaged to carry is left out of the export and named, rather than failing the whole export.
+
 ### Fixed
 - **SNow Wizard: Jira projects can be found by key.** Both project pickers ("What's in this change?" and the PRB's
   "Where do they go?") now have a **Find a project by key or name** box. It narrows Jira's own list with exact keys

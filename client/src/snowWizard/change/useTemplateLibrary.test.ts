@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
+import { decodeTemplateLibraryShare, prepareTemplateLibraryExport } from './templateLibraryShare.ts';
 import { decodeTemplateShare, encodeTemplateShareCode } from './templateShare.ts';
 import { buildTaskTemplateData } from './templateSave.ts';
 import { useTemplateLibrary, type TemplateDraft } from './useTemplateLibrary.ts';
@@ -79,5 +80,26 @@ describe('useTemplateLibrary', () => {
     const deployId = result.current.ctaskTemplates.find((task) => task.name === 'Deploy')?.id ?? '';
     act(() => result.current.deleteCtaskTemplate(deployId));
     expect(result.current.ctaskTemplates.map((task) => task.name)).not.toContain('Deploy');
+  });
+
+  it('imports a whole Toolbox library linked up, and never pushes out a saved template when the store is full', () => {
+    const { result } = renderHook(() => useTemplateLibrary());
+    act(() => result.current.saveDraftAsTemplate('Existing', buildDraft([])));
+    const toolboxTemplate = { ...result.current.templates[0], id: 'toolbox-1', name: 'Hotfix', ctaskTemplateIds: ['toolbox-task-1'] };
+    const exported = prepareTemplateLibraryExport([toolboxTemplate], [buildTask({ id: 'toolbox-task-1', name: 'Deploy' })]);
+    const decoded = decodeTemplateLibraryShare(exported.code);
+    if (!decoded.isValid) throw new Error(decoded.errorMessage);
+    act(() => { result.current.importSharedLibrary(decoded.payload); });
+    const hotfix = result.current.templates.find((template) => template.name === 'Hotfix');
+    expect(result.current.listLinkedTasks(hotfix!).map((task) => task.name)).toEqual(['Deploy']);
+
+    // Fill the store to its limit, then import again under a new name: nothing is saved and nothing is dropped.
+    for (let i = result.current.templates.length; i < 20; i += 1) act(() => result.current.saveDraftAsTemplate(`Filler ${i}`, buildDraft([])));
+    const fullNames = result.current.templates.map((template) => template.name);
+    const renamed = { ...decoded.payload, templates: [{ ...decoded.payload.templates[0], name: 'Hotfix 2' }] };
+    let outcome: ReturnType<typeof result.current.importSharedLibrary> | undefined;
+    act(() => { outcome = result.current.importSharedLibrary(renamed); });
+    expect(outcome?.noRoomTemplateNames).toEqual(['Hotfix 2']);
+    expect(result.current.templates.map((template) => template.name)).toEqual(fullNames);
   });
 });

@@ -1,4 +1,4 @@
-// useTemplateLibrary.ts — The Wizard's one handle on saved templates: change templates and task templates — save, delete, share, import.
+// useTemplateLibrary.ts — The Wizard's one handle on saved templates: change templates and task templates — save, delete, share, import (one, or Toolbox's whole library).
 //
 // Built entirely on Toolbox's own template stores (useCrgTemplates + useCtaskTemplates), so a template saved here is
 // the same template Toolbox's Create CHG tab lists. Each screen keeps ONE of these and hands it to every part that
@@ -8,8 +8,9 @@ import { useCallback, useMemo } from 'react';
 
 import { buildCurrentTemplateData, type CrgTemplateSourceState } from '../../views/SnowHub/hooks/crgTemplateData.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from '../../views/SnowHub/hooks/useCrgState.ts';
-import { useCrgTemplates } from '../../views/SnowHub/hooks/useCrgTemplates.ts';
-import { useCtaskTemplates } from '../../views/SnowHub/hooks/useCtaskTemplates.ts';
+import { MAX_TEMPLATES, useCrgTemplates } from '../../views/SnowHub/hooks/useCrgTemplates.ts';
+import { MAX_CTASK_TEMPLATES, useCtaskTemplates } from '../../views/SnowHub/hooks/useCtaskTemplates.ts';
+import { importSharedLibrary as importLibraryInto, type LibraryImportOutcome, type SharedTemplateLibraryPayload } from './templateLibraryShare.ts';
 import { importSharedCtaskTemplates, importSharedTemplate, type SharedTemplatePayload } from './templateShare.ts';
 import { findTemplateByName, planStagedTaskLinks } from './templateSave.ts';
 
@@ -31,6 +32,8 @@ export interface TemplateLibrary {
   deleteCtaskTemplate: (templateId: string) => void;
   /** Saves shared task templates as the user's own; returns the names they were saved under. */
   importSharedTasks: (ctaskTemplates: readonly CtaskTemplate[]) => string[];
+  /** Saves every template from a Toolbox "export all", leaving alone names already here and never overfilling the stores. */
+  importSharedLibrary: (payload: SharedTemplateLibraryPayload) => LibraryImportOutcome;
 }
 
 /** Saved change templates and their task templates, with the Wizard's save / share / import actions. */
@@ -59,6 +62,15 @@ export function useTemplateLibrary(): TemplateLibrary {
     existingTaskNames: ctaskTemplates.map((ctaskTemplate) => ctaskTemplate.name), saveCtaskTemplate,
   }), [ctaskTemplates, saveCtaskTemplate]);
 
+  const importSharedLibrary = useCallback((payload: SharedTemplateLibraryPayload) => importLibraryInto(payload, {
+    existingTemplateNames: templates.map((template) => template.name),
+    existingTasks: ctaskTemplates,
+    templateRoom: Math.max(MAX_TEMPLATES - templates.length, 0),
+    taskRoom: Math.max(MAX_CTASK_TEMPLATES - ctaskTemplates.length, 0),
+    saveCrgTemplate: saveTemplate,
+    saveCtaskTemplate,
+  }), [templates, ctaskTemplates, saveTemplate, saveCtaskTemplate]);
+
   return useMemo(() => ({
     templates,
     ctaskTemplates,
@@ -70,5 +82,6 @@ export function useTemplateLibrary(): TemplateLibrary {
     saveCtaskTemplate,
     deleteCtaskTemplate,
     importSharedTasks,
-  }), [templates, ctaskTemplates, listLinkedTasks, saveDraftAsTemplate, deleteTemplate, importShared, saveCtaskTemplate, deleteCtaskTemplate, importSharedTasks]);
+    importSharedLibrary,
+  }), [templates, ctaskTemplates, listLinkedTasks, saveDraftAsTemplate, deleteTemplate, importShared, saveCtaskTemplate, deleteCtaskTemplate, importSharedTasks, importSharedLibrary]);
 }
