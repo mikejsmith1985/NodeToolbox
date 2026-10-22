@@ -97,10 +97,32 @@ describe('ReviewWizard', () => {
     mockedRunChangeReview.mockResolvedValue(buildReview());
     render(<ReviewWizard onExit={vi.fn()} />);
     await findChange('CHG0012345');
-    const promptText = (screen.getByLabelText('Prompt for your AI assistant') as HTMLTextAreaElement).value;
+    const promptText = (screen.getByLabelText(/Copy this and paste it into your AI assistant/) as HTMLTextAreaElement).value;
     expect(promptText).toContain('Change: CHG0012345');
     expect(promptText).toContain('- Outage record: NEEDS ACTION — No outage is recorded.');
     expect(screen.getByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
+  });
+
+  it('turns the note agreed with Copilot into the coaching note, and can put the Wizard\'s own back', async () => {
+    mockedRunChangeReview.mockResolvedValue(buildReview());
+    render(<ReviewWizard onExit={vi.fn()} />);
+    await findChange('CHG0012345');
+    const replyField = screen.getByLabelText(/Paste the assistant/);
+
+    fireEvent.change(replyField, { target: { value: 'Which environment is this?' } });
+    fireEvent.click(screen.getByRole('button', { name: "Use Copilot's note" }));
+    expect(screen.getByText(/has no note between "COACHING NOTE START"/)).toBeTruthy();
+
+    fireEvent.change(replyField, { target: { value: 'COACHING NOTE START\nHi Jane,\n1. Link the outage.\nCOACHING NOTE END' } });
+    fireEvent.click(screen.getByRole('button', { name: "Use Copilot's note" }));
+    expect(screen.getByText(/now holds what you agreed with Copilot/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Write the note' }));
+    const noteField = screen.getByLabelText('Note for Smith, Jane') as HTMLTextAreaElement;
+    expect(noteField.value).toBe('Hi Jane,\n1. Link the outage.');
+    fireEvent.click(screen.getByRole('button', { name: "Use the Wizard's own note instead" }));
+    expect(noteField.value).toMatch(/^Hi Smith, Jane,/);
+    expect(screen.queryByRole('button', { name: "Use the Wizard's own note instead" })).toBeNull();
   });
 
   it('says plainly when the change cannot be found, and stays on the first step', async () => {

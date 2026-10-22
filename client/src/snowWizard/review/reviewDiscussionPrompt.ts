@@ -2,7 +2,8 @@
 // through: the change as ServiceNow holds it, every check's verdict, and the rules behind them, with instructions to
 // test the Wizard's findings and look further — in a conversation with the reviewer, never by guessing facts.
 //
-// Copy-out only: the conversation happens in the assistant's own chat, and nothing comes back into the Wizard.
+// The conversation happens in the assistant's own chat. When the reviewer says "write the note", the assistant answers
+// with the agreed findings between two marker lines, and that reply is pasted back to become the coaching note.
 
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard.ts';
 import type { ReadinessItem, ReadinessItemState } from '../../views/SnowHub/guided/changeReadiness.ts';
@@ -15,6 +16,12 @@ const VERDICT_WORDS: Record<ReadinessItemState, string> = {
   notApplicable: 'DOES NOT APPLY',
   couldNotCheck: 'COULD NOT CHECK',
 };
+
+/** The lines the assistant puts around the coaching note, so the Wizard can lift it out of a chatty reply. */
+export const NOTE_START_MARKER = 'COACHING NOTE START';
+export const NOTE_END_MARKER = 'COACHING NOTE END';
+/** What the reviewer types in the assistant's chat to get the note. */
+export const WRITE_NOTE_COMMAND = 'write the note';
 
 const NOT_READ_TEXT = '(could not be read)';
 const EMPTY_TEXT = '(empty)';
@@ -33,6 +40,16 @@ const INSTRUCTIONS = [
   '5. Use only the facts below. When something is missing, say what you would need and give your best guess, clearly marked as a guess.',
   '6. Then ask me one question at a time to settle what you could not decide. Keep answers short.',
 ];
+
+/** The closing instruction: how to hand the agreed findings back as a coaching note. */
+function buildNoteInstruction(review: ChangeReviewResult): string {
+  const creatorName = review.coachingChange.creatorName.trim() || 'the change\'s creator';
+  return [
+    `7. When I say "${WRITE_NOTE_COMMAND}", write a coaching note to ${creatorName}, who raised ${review.changeNumber}, covering only the findings we agreed on.`,
+    '   Plain English, friendly and specific: greet them by name, then a numbered list — for each point, what is missing, why it matters, and what good looks like. No blame, no jargon, no sign-off.',
+    `   Put the note, and nothing else, between a line "${NOTE_START_MARKER}" and a line "${NOTE_END_MARKER}".`,
+  ].join('\n');
+}
 
 function describeTextField(fieldKey: ChgTextFieldKey, textFields: ChangeReviewResult['facts']['textFields']): string {
   if (textFields === null) return `${CHG_TEXT_FIELD_LABELS[fieldKey]}: ${NOT_READ_TEXT}`;
@@ -76,6 +93,28 @@ export function buildReviewDiscussionPrompt(review: ChangeReviewResult, ruleGuid
     ['THE CHANGE TEXT', ...textFieldKeys.map((fieldKey) => describeTextField(fieldKey, review.facts.textFields))].join('\n\n'),
     ['WHAT THE WIZARD FOUND', ...review.items.map(describeCheck)].join('\n'),
     ['THE RULES THOSE CHECKS APPLY', ...ruleGuide.flatMap(describeRule)].join('\n'),
-    INSTRUCTIONS.join('\n'),
+    [...INSTRUCTIONS, buildNoteInstruction(review)].join('\n'),
   ].join('\n\n');
+}
+
+// A line holding only the marker, allowing the bold, heading, quote and code marks chat assistants add around it.
+function buildMarkerLinePattern(marker: string): RegExp {
+  return new RegExp(`^[\\s*#>_\`]*${marker}[\\s*_\`:]*$`, 'im');
+}
+
+// A code-fence line the assistant wrapped around the note; it is not part of the note.
+const CODE_FENCE_LINE_PATTERN = /^\s*```[a-z]*\s*$/gim;
+
+/**
+ * The coaching note out of the assistant's reply: the text between the marker lines, trimmed. Null when the reply has
+ * no complete note (the assistant asked a question, or the note was not requested yet).
+ */
+export function readCopilotCoachingNote(replyText: string): string | null {
+  const startMatch = buildMarkerLinePattern(NOTE_START_MARKER).exec(replyText);
+  if (!startMatch) return null;
+  const afterStart = replyText.slice(startMatch.index + startMatch[0].length);
+  const endMatch = buildMarkerLinePattern(NOTE_END_MARKER).exec(afterStart);
+  if (!endMatch) return null;
+  const noteText = afterStart.slice(0, endMatch.index).replace(CODE_FENCE_LINE_PATTERN, '').trim();
+  return noteText === '' ? null : noteText;
 }

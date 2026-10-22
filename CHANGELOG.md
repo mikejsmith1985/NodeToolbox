@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Wizard Review: the note you agree with Copilot becomes the coaching note.** The discussion prompt now tells
+  Copilot to answer "write the note" with the agreed findings between `COACHING NOTE START` / `COACHING NOTE END`
+  lines. The Review card is an on-page copy/paste round: paste the reply and the note is lifted out (bold marks and
+  code fences ignored) and becomes the note for the creator. A reply without a complete note is refused with what to
+  type, and "Use the Wizard's own note instead" puts the generated note back.
+
+### Added
 - **SNow Wizard Review: "What the Wizard checks, and why".** Both Review steps carry a folded explanation of every
   check the review runs — when it applies, what passes it, why Release Management cares — with the five restricted
   change period rules and what each verdict means. It is built from the readiness engine's own names, Formula Card

@@ -91,7 +91,7 @@
   }
 }
 
-/* "What the Wizard checks, and why" — the folded explanation of every check, and the AI discussion card. */
+/* "What the Wizard checks, and why" — the folded explanation of every check. */
 .rulesGuide {
   margin-top: var(--spacing-md, 16px);
 }
@@ -134,10 +134,4 @@
   margin: var(--spacing-xs, 4px) 0 0;
   padding-left: var(--spacing-lg, 24px);
   color: var(--color-text-secondary);
-}
-
-.discussionPrompt {
-  min-height: 160px;
-  font-family: var(--font-mono, monospace);
-  font-size: 0.85rem;
 }

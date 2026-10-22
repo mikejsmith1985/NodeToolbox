@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { listReadinessRuleGuide } from '../../views/SnowHub/guided/changeReadinessGuide.ts';
 import type { ChangeReviewResult } from './changeReview.ts';
-import { buildReviewDiscussionPrompt } from './reviewDiscussionPrompt.ts';
+import { buildReviewDiscussionPrompt, readCopilotCoachingNote } from './reviewDiscussionPrompt.ts';
 
 const TEXT_FIELDS = {
   shortDescription: 'Login fix', description: 'Fixes login.', justification: '', riskImpact: 'Low.',
@@ -52,5 +52,33 @@ describe('buildReviewDiscussionPrompt', () => {
     expect(promptText).toContain('Description: (could not be read)');
     expect(promptText).toContain('Planned window: (could not be read)');
     expect(promptText).toContain('Environment: (could not be read)');
+  });
+});
+
+describe('the coaching note round trip', () => {
+  it('tells the assistant how to hand back the agreed note, addressed to the creator', () => {
+    const promptText = buildReviewDiscussionPrompt(buildReview(), []);
+    expect(promptText).toContain('When I say "write the note", write a coaching note to Smith, Jane, who raised CHG0012345');
+    expect(promptText).toContain('between a line "COACHING NOTE START" and a line "COACHING NOTE END"');
+  });
+
+  it('lifts the note out of a chatty reply, ignoring bold markers and code fences', () => {
+    const replyText = [
+      'Here is the note we agreed:',
+      '**COACHING NOTE START**',
+      '```',
+      'Hi Jane,',
+      '1. Attach the test evidence.',
+      '```',
+      '**COACHING NOTE END**',
+      'Anything else?',
+    ].join('\n');
+    expect(readCopilotCoachingNote(replyText)).toBe('Hi Jane,\n1. Attach the test evidence.');
+  });
+
+  it('finds no note in a reply without both markers, or with nothing between them', () => {
+    expect(readCopilotCoachingNote('Which environment is this for?')).toBeNull();
+    expect(readCopilotCoachingNote('COACHING NOTE START\nHi Jane,')).toBeNull();
+    expect(readCopilotCoachingNote('COACHING NOTE START\n\nCOACHING NOTE END')).toBeNull();
   });
 });
