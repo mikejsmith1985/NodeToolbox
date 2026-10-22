@@ -9,6 +9,7 @@ import { snowFetch } from '../../../services/snowApi.ts';
 import { useCrgState } from '../../../views/SnowHub/hooks/useCrgState.ts';
 import { createChangeWizardSession } from '../changeWizardSession.ts';
 import { fetchChangeForModify, fetchExistingTasks } from '../modifyLoad.ts';
+import { useTemplateLibrary } from '../useTemplateLibrary.ts';
 import WhichChangeStep from './WhichChangeStep.tsx';
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -31,7 +32,7 @@ function Harness({ onExit }: { onExit: () => void }) {
   const crg = useCrgState({ storageKey: 'snowWizard:change:which-test' });
   useEffect(() => { observed.latestTaskCount = crg.state.changeTasks.length; observed.latestPrdStart = crg.state.prdEnvironment.plannedStartDate; });
   const [session, setSession] = useState(createChangeWizardSession('modify'));
-  return <WhichChangeStep crg={crg} session={session} updateSession={(update) => setSession((previous) => ({ ...previous, ...update }))} goToStep={vi.fn()} onExit={onExit} />;
+  return <WhichChangeStep crg={crg} session={session} updateSession={(update) => setSession((previous) => ({ ...previous, ...update }))} goToStep={vi.fn()} onExit={onExit} library={useTemplateLibrary()} />;
 }
 
 /** The ServiceNow reads Toolbox's own load path makes: the change, then its tasks to copy. */

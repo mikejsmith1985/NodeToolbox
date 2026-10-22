@@ -84,7 +84,7 @@ describe('attachAllEvidenceToChanges', () => {
     expect(zipEntries[1].bytes).toEqual(new Uint8Array([9]));
     expect(new TextDecoder().decode(zipEntries[2].bytes)).toContain('ENCUC-9 — Story ENCUC-9');
     expect(attachFileToChange).toHaveBeenCalledWith('sys-1', 'Test-Evidence_CHG1_2026-10-20.zip', new Uint8Array([1, 2, 3]));
-    expect(outcome).toEqual({ results: { CHG1: 'attached' }, problems: [] });
+    expect(outcome).toMatchObject({ results: { CHG1: 'attached' }, problems: [], zippedFileCount: 2, attachedFileNames: { CHG1: 'x.zip' } });
   });
 
   it('still attaches the other files when one Jira download fails, and says which one was left out', async () => {
@@ -95,7 +95,7 @@ describe('attachAllEvidenceToChanges', () => {
 
     const outcome = await attachAllEvidenceToChanges({ localFiles: [], jiraAttachments: [good, buildEvidence('A-1', '2', 'bad.pdf')] }, ['CHG1'], { now: NOW });
 
-    expect(outcome).toEqual({ results: { CHG1: 'attached' }, problems: ['Could not get bad.pdf'] });
+    expect(outcome).toMatchObject({ results: { CHG1: 'attached' }, problems: ['Could not get bad.pdf'] });
   });
 
   it('attaches nothing, saying why, when no Jira file could be fetched and no local file was chosen', async () => {

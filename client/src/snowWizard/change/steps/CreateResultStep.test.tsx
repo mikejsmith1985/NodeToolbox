@@ -1,17 +1,23 @@
 // CreateResultStep.test.tsx — Proves the last step previews saving to each created change, reports each with a link, offers
 // "Try saving again" after a failed save, and shows both values on a modify's save conflict.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CrgDraftState, CrgHook } from '../changeDraft.ts';
 import { createChangeWizardSession, type ChangeWizardSession } from '../changeWizardSession.ts';
 import type { FinishRunner } from '../useFinishRunner.ts';
 import { useTemplateLibrary } from '../useTemplateLibrary.ts';
+import { runEvidenceSweep } from '../evidenceSweep.ts';
 import CreateResultStep, { type CreateResultStepProps } from './CreateResultStep.tsx';
 
+vi.mock('../evidenceSweep.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../evidenceSweep.ts')>()),
+  runEvidenceSweep: vi.fn(),
+}));
+
 const CRG = {
-  state: { relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [] } as unknown as CrgDraftState,
+  state: { relEnvironment: { isEnabled: true }, prdEnvironment: { isEnabled: true }, pfixEnvironment: { isEnabled: false }, changeTasks: [], selectedIssueKeys: new Set(['ABC-1']) } as unknown as CrgDraftState,
 } as CrgHook;
 const TASK_NAMES = { REL: ['Deploy'], PRD: ['Deploy', 'Business Checkout'] };
 
@@ -73,7 +79,7 @@ describe('CreateResultStep', () => {
     expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
   });
 
-  it('when everything saved but the evidence, offers to attach it from Jira or from this computer', () => {
+  it('when everything saved but the evidence, offers one button that sweeps Jira and attaches it', async () => {
     const runner = buildRunner({ phase: { kind: 'done' } });
     const session: ChangeWizardSession = {
       ...createChangeWizardSession('create'), hasSavedChanges: true,
@@ -83,11 +89,15 @@ describe('CreateResultStep', () => {
     renderStep(session, runner);
     expect(screen.queryByText(/All done/)).toBeNull();
     expect(screen.getByText(/only the test evidence is missing/)).toBeTruthy();
-    expect(screen.getByRole('heading', { name: /Test evidence is not on CHG2 yet/ })).toBeTruthy();
-    const chosenFile = new File(['ok'], 'results.pdf');
-    fireEvent.change(screen.getByLabelText('Files from this computer (optional)'), { target: { files: [chosenFile] } });
-    fireEvent.click(screen.getByRole('button', { name: 'Attach the test evidence' }));
-    expect(runner.retryEvidence).toHaveBeenCalledWith([chosenFile]);
+    expect(screen.getByText('Test evidence is not on CHG2 yet.')).toBeTruthy();
+    expect(screen.queryByLabelText(/Files from this computer/)).toBeNull();
+    vi.mocked(runEvidenceSweep).mockResolvedValue({
+      startingIssueKeys: ['ABC-1'], sweptIssueKeys: ['ABC-1'], foundFiles: [], leftOutForSize: [], wereLinksSkipped: false,
+      zippedFileCount: 1, archiveByteSize: 10, results: { CHG2: 'attached' }, attachedFileNames: { CHG2: 'Test-Evidence_CHG2.zip' }, problems: [],
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sweep Jira and attach the test evidence' })); });
+    expect(runEvidenceSweep).toHaveBeenCalledWith(['ABC-1'], ['CHG2'], expect.any(Function));
+    expect(screen.getByText('✅ Attached Test-Evidence_CHG2.zip to CHG2 — ServiceNow confirmed it.')).toBeTruthy();
   });
 
   it('offers no evidence card once every change has its evidence', () => {

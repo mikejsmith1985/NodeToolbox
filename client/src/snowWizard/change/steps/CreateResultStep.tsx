@@ -7,7 +7,7 @@
 // (outages, PRB links), and a partial create offers "Retry what's missing", which never makes a second change for an
 // environment. When everything went through but the test evidence, its own card puts the evidence on afterwards.
 
-import { useEffect, useId, useState, type ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
 
 import { buildEvidenceArchiveName } from '../../../views/SnowHub/testEvidence/evidenceBundle.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -17,12 +17,14 @@ import styles from '../ChangeWizard.module.css';
 import { buildChangeLink, type CreatedChangeSummary } from '../createOutcome.ts';
 import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
-import { checkEvidenceSize, EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
+import type { EvidenceSweepReport } from '../evidenceSweep.ts';
+import { EVIDENCE_ATTACHED } from '../evidenceUpload.ts';
 import { planModifyTaskWrites } from '../modifyTasks.ts';
 import { readSavePreview, type SavePreviewRow } from '../savePreview.ts';
 import TemplateSaveCard from '../TemplateSaveCard.tsx';
 import type { FinishRunner } from '../useFinishRunner.ts';
 import type { TemplateLibrary } from '../useTemplateLibrary.ts';
+import EvidenceSweepCard from './EvidenceSweepCard.tsx';
 
 /** Each environment's tasks, as the user built them, in their order. */
 export type TaskNamesByEnvironment = Partial<Record<PlanEnvironmentKey, string[]>>;
@@ -153,27 +155,20 @@ function listChangesWithoutEvidence(session: CreateResultStepProps['session']): 
  * Everything else went through but the evidence did not: put it on now, from the Jira issues as they are now (so test
  * results added there since are picked up) and any files chosen from this computer.
  */
-function EvidenceRetryCard({ session, runner }: Pick<CreateResultStepProps, 'session' | 'runner'>) {
-  const fileFieldId = useId();
-  const [localFiles, setLocalFiles] = useState<File[]>([]);
+function EvidenceRetryCard({ crg, session, updateSession }: Pick<CreateResultStepProps, 'crg' | 'session' | 'updateSession'>) {
+  // Once swept, the card stays on screen with its confirmation, even though the evidence is no longer missing.
+  const [sweptChangeNumbers, setSweptChangeNumbers] = useState<string[]>([]);
   const missingChangeNumbers = listChangesWithoutEvidence(session);
-  if (missingChangeNumbers.length === 0) return null;
-  const sizeProblem = checkEvidenceSize(localFiles);
-  const isWorking = runner.phase.kind === 'working';
-  const chooseFiles = (event: ChangeEvent<HTMLInputElement>) => setLocalFiles([...(event.target.files ?? [])]);
+  const changeNumbers = sweptChangeNumbers.length > 0 ? sweptChangeNumbers : missingChangeNumbers;
+  if (changeNumbers.length === 0) return null;
+  function recordSweep(report: EvidenceSweepReport) {
+    setSweptChangeNumbers(changeNumbers);
+    updateSession({ evidenceResults: { ...session.evidenceResults, ...report.results } });
+  }
   return (
-    <div className={styles.card} role="region" aria-label="Add the test evidence">
-      <h3 className={styles.cardTitle}>{`📎 Test evidence is not on ${missingChangeNumbers.join(', ')} yet`}</h3>
-      <p className={styles.hint}>Release Management checks for it. Attach the test results to the Jira issues and press the button — or choose the files from this computer.</p>
-      <label className={styles.hint} htmlFor={fileFieldId}>Files from this computer (optional)</label>
-      <input id={fileFieldId} type="file" multiple onChange={chooseFiles} />
-      {localFiles.length > 0 ? <p className={styles.hint}>{`Chosen: ${localFiles.map((file) => file.name).join(', ')}`}</p> : null}
-      {sizeProblem ? <p className={styles.errorText}>{sizeProblem}</p> : null}
-      <div className={styles.buttonRow}>
-        <button type="button" className={styles.actionButton} disabled={isWorking || sizeProblem !== null} onClick={() => runner.retryEvidence(localFiles)}>
-          Attach the test evidence
-        </button>
-      </div>
+    <div role="region" aria-label="Add the test evidence">
+      {missingChangeNumbers.length > 0 ? <p className={styles.noticeText}>{`Test evidence is not on ${missingChangeNumbers.join(', ')} yet.`}</p> : null}
+      <EvidenceSweepCard changeNumbers={changeNumbers} issueKeys={[...crg.state.selectedIssueKeys]} onSwept={recordSweep} />
     </div>
   );
 }
@@ -200,7 +195,7 @@ function OutcomeReport(props: CreateResultStepProps) {
           </div>
         </div>
       ) : null}
-      <EvidenceRetryCard session={session} runner={runner} />
+      <EvidenceRetryCard crg={props.crg} session={session} updateSession={props.updateSession} />
     </div>
   );
 }

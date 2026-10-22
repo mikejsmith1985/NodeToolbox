@@ -8,10 +8,14 @@ import MyOpenChangesPicker from '../MyOpenChangesPicker.tsx';
 import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import styles from '../ChangeWizard.module.css';
 import { useModifyLoader } from '../useModifyLoader.ts';
+import type { TemplateLibrary } from '../useTemplateLibrary.ts';
+import QuickJobsCard from './QuickJobsCard.tsx';
 
 /** Which Change also needs the way home, for a change that can only be reviewed. */
 export interface WhichChangeStepProps extends ChangeStepProps {
   onExit: () => void;
+  /** For the schedule short cut, which shows the tasks step's saved tasks. */
+  library: TemplateLibrary;
 }
 
 /** The message for a change that can no longer be edited, pointing to Review. */
@@ -26,7 +30,8 @@ function RefusedNotice({ stateLabel, onExit }: { stateLabel: string; onExit: () 
 }
 
 /** Modify step 1: the change to edit. */
-export default function WhichChangeStep({ crg, session, updateSession, onExit }: WhichChangeStepProps) {
+export default function WhichChangeStep(props: WhichChangeStepProps) {
+  const { crg, session, updateSession, onExit } = props;
   const numberFieldId = useId();
   const loader = useModifyLoader(crg, (modifySession) => updateSession({ modify: modifySession }));
   const loadedChange = session.modify;
@@ -51,6 +56,7 @@ export default function WhichChangeStep({ crg, session, updateSession, onExit }:
           {` (${loadedChange.stateLabel}) is loaded. Press Next to walk through it — every step is filled in.`}
         </p>
       ) : null}
+      {loadedChange && loader.status.kind === 'idle' ? <QuickJobsCard {...props} /> : null}
     </div>
   );
 }

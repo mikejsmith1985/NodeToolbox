@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: one-button test evidence and short cuts for a loaded change (GH #475).**
+  - **"Sweep Jira and attach the test evidence"** replaces choosing files by hand. It searches the change's Jira
+    issues, their sub-tasks and their linked issues, zips every file, and attaches the zip. It then confirms:
+    - how many issues were swept;
+    - how many files were found, listed per issue;
+    - how many files were zipped, and the zip's size;
+    - the zip's name on each change once ServiceNow has confirmed the stored size.
+    If Jira cannot search linked issues, the sweep falls back to the issues and their sub-tasks. It says so, and also
+    says plainly when nothing was found.
+  - **⚡ Short cuts on "Which change?"** once a change is loaded:
+    - **⏱️ Just the task schedule:** the tasks, the AI timing round and one save. It re-dates every task back to
+      back and writes the estimated-duration block on the implementation plan. It stays blocked until every task is
+      timed and fits the window.
+    - **📎 Just the test evidence:** the same sweep card.
+
 ### Fixed
 - **SNow Wizard: the task timings are read whatever form Copilot answers in.**
   - The reader used to accept only the exact `T1 | 30 | 15 | 20` form. It now also reads:

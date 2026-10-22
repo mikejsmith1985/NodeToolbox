@@ -25,6 +25,12 @@ export interface EvidenceSet {
 export interface EvidenceAttachOutcome {
   results: Record<string, string>;
   problems: string[];
+  /** How many files went into the zip (absent when nothing was zipped). */
+  zippedFileCount?: number;
+  /** The zip's size in bytes. */
+  archiveByteSize?: number;
+  /** The file name ServiceNow recorded on each change the zip went on. */
+  attachedFileNames?: Record<string, string>;
 }
 
 /** Optional extras for an attach run. */
@@ -83,19 +89,24 @@ function giveEveryChange(changeNumbers: readonly string[], reason: string): Reco
   return Object.fromEntries(changeNumbers.map((changeNumber) => [changeNumber, reason]));
 }
 
-/** Uploads one zip to each change. Never throws: each change gets "attached" or why it failed. */
-async function uploadToEachChange(archiveBytes: Uint8Array, changeNumbers: readonly string[], options: EvidenceAttachOptions & { now: Date }): Promise<Record<string, string>> {
+/**
+ * Uploads one zip to each change. Never throws: each change gets "attached" (with the file name ServiceNow recorded,
+ * once it confirmed the stored size) or why it failed.
+ */
+async function uploadToEachChange(archiveBytes: Uint8Array, changeNumbers: readonly string[], options: EvidenceAttachOptions & { now: Date }) {
   const results: Record<string, string> = {};
+  const attachedFileNames: Record<string, string> = {};
   for (const changeNumber of changeNumbers) {
     options.onProgress?.(`Putting the evidence on ${changeNumber}…`);
     try {
-      await attachFileToChange(await fetchChangeSysId(changeNumber), buildEvidenceArchiveName(changeNumber, options.now), archiveBytes);
+      const attachedFile = await attachFileToChange(await fetchChangeSysId(changeNumber), buildEvidenceArchiveName(changeNumber, options.now), archiveBytes);
       results[changeNumber] = EVIDENCE_ATTACHED;
+      attachedFileNames[changeNumber] = attachedFile.fileName;
     } catch (attachError) {
       results[changeNumber] = attachError instanceof Error ? attachError.message : String(attachError);
     }
   }
-  return results;
+  return { results, attachedFileNames };
 }
 
 /**
@@ -112,8 +123,12 @@ export async function attachAllEvidenceToChanges(evidence: EvidenceSet, changeNu
   const download = evidence.jiraAttachments.length === 0 ? NO_DOWNLOAD : await downloadJiraEvidence(evidence.jiraAttachments, options.onProgress);
   const zipEntries = [...await readLocalEntries(evidence.localFiles), ...buildJiraEntries(download.downloaded, changeNumbers, now)];
   if (zipEntries.length === 0) return { results: giveEveryChange(changeNumbers, NOTHING_FETCHED_REASON), problems: download.problems };
-  const results = await uploadToEachChange(createZipArchive(zipEntries), changeNumbers, { ...options, now });
-  return { results, problems: download.problems };
+  const archiveBytes = createZipArchive(zipEntries);
+  const { results, attachedFileNames } = await uploadToEachChange(archiveBytes, changeNumbers, { ...options, now });
+  return {
+    results, problems: download.problems, attachedFileNames,
+    zippedFileCount: evidence.localFiles.length + download.downloaded.length, archiveByteSize: archiveBytes.length,
+  };
 }
 
 /** Attaches local files only (the original entry point), returning each change's result. */

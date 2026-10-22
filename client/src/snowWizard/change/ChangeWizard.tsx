@@ -92,7 +92,7 @@ interface StepExtras {
 function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extras: StepExtras): ReactElement {
   const withChoices = { ...stepProps, choiceOptions: extras.choiceOptions };
   const stepScreens: Record<ChangeWizardStepId, () => ReactElement> = {
-    whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
+    whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} library={extras.library} />,
     scope: () => <ScopeStep {...stepProps} />,
     // The AI's text can always be edited by hand right here, before it goes into ServiceNow.
     aiDraft: () => <><AiDraftStep {...withChoices} jiraEvidence={extras.jiraEvidence} /><WritingEditor crg={stepProps.crg} /></>,

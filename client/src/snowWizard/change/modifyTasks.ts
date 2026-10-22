@@ -67,12 +67,12 @@ export function isExistingTaskEdited(task: CtaskTemplate, link: ExistingTaskLink
 }
 
 /** The writes a save needs: every edited existing task, then every new card, in the user's order. */
-export function planModifyTaskWrites(draftTasks: readonly CtaskTemplate[], links: readonly ExistingTaskLink[]): ModifyTaskWrites {
+export function planModifyTaskWrites(draftTasks: readonly CtaskTemplate[], links: readonly ExistingTaskLink[], shouldWriteEveryTask = false): ModifyTaskWrites {
   const taskWrites: ModifyTaskWrites = { updates: [], creates: [] };
   for (const task of draftTasks) {
     const link = links.find((existingLink) => existingLink.taskId === task.id);
     if (!link) taskWrites.creates.push(task);
-    else if (isExistingTaskEdited(task, link)) taskWrites.updates.push({ link, task });
+    else if (shouldWriteEveryTask || isExistingTaskEdited(task, link)) taskWrites.updates.push({ link, task });
   }
   return taskWrites;
 }
@@ -94,6 +94,8 @@ export interface SaveModifyTasksInput {
   changeSysId?: string;
   draftTasks: readonly CtaskTemplate[];
   links: readonly ExistingTaskLink[];
+  /** Rewrite every existing task, edited or not — a schedule save re-dates them all. */
+  shouldWriteEveryTask?: boolean;
 }
 
 /**
@@ -101,7 +103,7 @@ export interface SaveModifyTasksInput {
  * Returns a plain summary, or null when there was nothing to write. A failed write throws with ServiceNow's reason.
  */
 export async function saveModifyTasks(input: SaveModifyTasksInput, writers: ModifyTaskWriters = DEFAULT_WRITERS): Promise<string | null> {
-  const taskWrites = planModifyTaskWrites(input.draftTasks, input.links);
+  const taskWrites = planModifyTaskWrites(input.draftTasks, input.links, input.shouldWriteEveryTask);
   if (taskWrites.updates.length === 0 && taskWrites.creates.length === 0) return null;
   const changeSysId = input.changeSysId || await writers.resolveChangeSysId(input.changeNumber);
   const changeDefaults = await writers.readChangeDefaults(changeSysId);
