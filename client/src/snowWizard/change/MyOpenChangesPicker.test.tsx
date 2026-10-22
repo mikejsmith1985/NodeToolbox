@@ -17,6 +17,8 @@ describe('MyOpenChangesPicker', () => {
     fireEvent.change(await screen.findByLabelText('Or pick one of my open changes'), { target: { value: 'CHG0052017' } });
     expect(screen.getByRole('option', { name: 'CHG0052017 — REL release' })).toBeTruthy();
     expect(onPick).toHaveBeenCalledWith('CHG0052017');
+    // The pick stays shown instead of snapping back to "Choose…".
+    expect((screen.getByLabelText('Or pick one of my open changes') as HTMLSelectElement).value).toBe('CHG0052017');
   });
 
   it('says so when the user has no open changes, or the read failed', async () => {

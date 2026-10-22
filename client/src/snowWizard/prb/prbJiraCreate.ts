@@ -30,6 +30,7 @@ import {
   type PrbRoleChoices,
 } from './prbJiraPlan.ts';
 import { EXISTING_ISSUE_FIELDS, readExistingIssue, type JiraSearchIssue } from './prbLookups.ts';
+import { stampDefectKeyOnProblem, statementHasDefectKey } from './prbProblemStatement.ts';
 
 // ── Types ──
 
@@ -41,12 +42,14 @@ export interface PrbCreateProgress {
   createdKeys: Partial<Record<PrbJiraRole, string>>;
   linkedRoles: PrbJiraRole[];
   labelledRoles: PrbJiraRole[];
+  /** True once the problem's Problem statement ends with the Defect's key (GH #475). */
+  isProblemStamped: boolean;
 }
 
 /** One thing that did not happen, in words the user can act on. */
 export interface PrbCreateFailure {
   role: PrbJiraRole;
-  stage: 'prepare' | 'create' | 'label' | 'link';
+  stage: 'prepare' | 'create' | 'label' | 'link' | 'problem';
   message: string;
 }
 
@@ -60,6 +63,10 @@ export interface PrbCreateResult {
 /** Everything one Create press needs. */
 export interface PrbCreateRequest {
   prbNumber: string;
+  /** The problem's ServiceNow record, whose Problem statement gets the Defect's key. */
+  problemSysId: string;
+  /** The Problem statement as last read, so a key already on it is not written again. */
+  problemStatement: string;
   projectKey: string;
   epicKey: string;
   drafts: readonly PrbJiraDraft[];
@@ -70,7 +77,7 @@ export interface PrbCreateRequest {
 }
 
 /** Nothing done yet. */
-export const EMPTY_PRB_PROGRESS: PrbCreateProgress = { createdKeys: {}, linkedRoles: [], labelledRoles: [] };
+export const EMPTY_PRB_PROGRESS: PrbCreateProgress = { createdKeys: {}, linkedRoles: [], labelledRoles: [], isProblemStamped: false };
 
 /** The Jira link type joining each story to the Defect. */
 export const RELATES_LINK_TYPE_NAME = 'Relates';
@@ -131,13 +138,20 @@ function arePickedIssuesLinked(defectIssue: PrbExistingIssue | null, storyIssue:
 
 /**
  * Where a press starts: what earlier presses did, plus every issue the user picked from Jira — with the labels and
- * links those picked issues already carry, so nothing is labelled or linked twice.
+ * links those picked issues already carry, and a Problem statement that already names the Defect, so nothing is done
+ * twice.
  */
-export function buildStartingProgress(prbNumber: string, choices: PrbRoleChoices, earlierProgress: PrbCreateProgress): PrbCreateProgress {
+export function buildStartingProgress(
+  prbNumber: string,
+  choices: PrbRoleChoices,
+  earlierProgress: PrbCreateProgress,
+  problemStatement = '',
+): PrbCreateProgress {
   const progress: PrbCreateProgress = {
     createdKeys: { ...earlierProgress.createdKeys },
     linkedRoles: [...earlierProgress.linkedRoles],
     labelledRoles: [...earlierProgress.labelledRoles],
+    isProblemStamped: earlierProgress.isProblemStamped,
   };
   for (const role of PRB_JIRA_ROLES) {
     const pickedIssue = readPickedIssue(choices, role);
@@ -149,21 +163,27 @@ export function buildStartingProgress(prbNumber: string, choices: PrbRoleChoices
   for (const role of STORY_ROLES) {
     if (!progress.linkedRoles.includes(role) && arePickedIssuesLinked(defectIssue, readPickedIssue(choices, role))) progress.linkedRoles.push(role);
   }
+  const defectKey = progress.createdKeys.defect;
+  if (defectKey && statementHasDefectKey(problemStatement, defectKey)) progress.isProblemStamped = true;
   return progress;
 }
 
-/** True when every chosen item is in Jira, every picked one is labelled, and every story is linked to the Defect. */
+/**
+ * True when every chosen item is in Jira, every picked one is labelled, every story is linked to the Defect, and the
+ * problem's Problem statement names the Defect.
+ */
 export function isPrbWorkComplete(progress: PrbCreateProgress, choices: PrbRoleChoices): boolean {
   const isEveryItemThere = PRB_JIRA_ROLES.every((role) => choices[role].mode === 'skip' || Boolean(progress.createdKeys[role]));
   const isEveryPickLabelled = PRB_JIRA_ROLES.every((role) => choices[role].mode !== 'existing' || progress.labelledRoles.includes(role));
   const isEveryStoryLinked = !progress.createdKeys.defect
     || STORY_ROLES.every((role) => !progress.createdKeys[role] || progress.linkedRoles.includes(role));
-  return isEveryItemThere && isEveryPickLabelled && isEveryStoryLinked;
+  const isProblemStamped = !progress.createdKeys.defect || progress.isProblemStamped;
+  return isEveryItemThere && isEveryPickLabelled && isEveryStoryLinked && isProblemStamped;
 }
 
 /** True when pressing Create would change anything in Jira — false when everything chosen is already done. */
-export function hasPrbWorkToDo(prbNumber: string, choices: PrbRoleChoices): boolean {
-  return !isPrbWorkComplete(buildStartingProgress(prbNumber, choices, EMPTY_PRB_PROGRESS), choices);
+export function hasPrbWorkToDo(prbNumber: string, choices: PrbRoleChoices, problemStatement = ''): boolean {
+  return !isPrbWorkComplete(buildStartingProgress(prbNumber, choices, EMPTY_PRB_PROGRESS, problemStatement), choices);
 }
 
 // ── Create screens ──
@@ -339,17 +359,32 @@ async function linkStoriesToDefect(progress: PrbCreateProgress): Promise<PrbCrea
   return failures;
 }
 
+/** Ends the problem's Problem statement with " - <Defect key>" once the Defect exists (GH #475). */
+async function stampProblemStatement(request: PrbCreateRequest, progress: PrbCreateProgress): Promise<PrbCreateFailure[]> {
+  const defectKey = progress.createdKeys.defect;
+  if (!defectKey || progress.isProblemStamped) return [];
+  try {
+    await stampDefectKeyOnProblem(request.problemSysId, defectKey);
+    progress.isProblemStamped = true;
+    return [];
+  } catch (caught) {
+    const message = caught instanceof Error && caught.message.trim() !== '' ? caught.message : 'ServiceNow refused the change';
+    return [{ role: 'defect', stage: 'problem', message }];
+  }
+}
+
 function prepareFailures(roles: readonly PrbJiraRole[], message: string): PrbCreateFailure[] {
   return roles.map((role) => ({ role, stage: 'prepare', message }));
 }
 
 /**
  * Does what the user chose for this problem, in order: labels any issue picked from Jira, makes each item wanted new
- * (Defect, SL Story, QE Story) on the Epic, then links each story to the Defect. Anything that fails is reported per
+ * (Defect, SL Story, QE Story) on the Epic, links each story to the Defect, then puts the Defect's key on the end of
+ * the problem's Problem statement. Anything that fails is reported per
  * item and left for "Retry the rest"; what is already done is never done twice.
  */
 export async function createPrbJiraWork(request: PrbCreateRequest): Promise<PrbCreateResult> {
-  const progress = buildStartingProgress(request.prbNumber, request.roleChoices, request.startingProgress);
+  const progress = buildStartingProgress(request.prbNumber, request.roleChoices, request.startingProgress, request.problemStatement);
   const missingRoles = readNewRoles(request.roleChoices).filter((role) => !progress.createdKeys[role]);
   let placements = new Map<PrbJiraRole, EpicPlacement>();
   try {
@@ -360,6 +395,7 @@ export async function createPrbJiraWork(request: PrbCreateRequest): Promise<PrbC
   const labelFailures = await labelPickedIssues(request, progress);
   const createFailures = await createMissingIssues(request, progress, placements);
   const linkFailures = await linkStoriesToDefect(progress);
-  const failures = [...labelFailures, ...createFailures, ...linkFailures];
+  const problemFailures = await stampProblemStatement(request, progress);
+  const failures = [...labelFailures, ...createFailures, ...linkFailures, ...problemFailures];
   return { progress, failures, isComplete: isPrbWorkComplete(progress, request.roleChoices) };
 }

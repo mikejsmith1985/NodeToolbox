@@ -107,7 +107,7 @@ describe('TemplatesScreen', () => {
   it('says what to do when there are no templates yet', () => {
     localStorage.clear();
     render(<Harness />);
-    expect(screen.getByText(/no templates yet/)).toBeTruthy();
+    expect(screen.getByText(/no templates in this Wizard yet/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/u_[a-z]|cmdb_ci|customfield_|sys_id/);
   });
 });

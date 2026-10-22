@@ -107,11 +107,31 @@ export function runRelayAgent(
     return typeof requestData.body === 'string' ? requestData.body : JSON.stringify(requestData.body);
   };
 
+  // Brings the Wizard back to the front. A tab may switch to a window it can name while the user's bookmark click still
+  // counts, so the Wizard sends its name right after hello. Should the name reach nothing, the browser opens an empty
+  // tab instead — that one is closed at once.
+  let hasReturnedToWizard = false;
+  const returnToWizard = (appWindowName: unknown) => {
+    if (hasReturnedToWizard || typeof appWindowName !== 'string' || appWindowName.indexOf('snowWizardApp-') !== 0) return;
+    hasReturnedToWizard = true;
+    try {
+      const reachedWindow = window.open('', appWindowName);
+      if (reachedWindow && reachedWindow !== openerWindow) reachedWindow.close();
+    } catch {
+      // The badge still says where to go.
+    }
+  };
+
   const handleWizardRequest = async (messageEvent: MessageEvent) => {
     const requestData = messageEvent.data;
-    if (!requestData || requestData.channel !== config.channelName || requestData.kind !== 'request') return;
+    if (!requestData || requestData.channel !== config.channelName) return;
     // Only the Wizard that opened this tab is ever answered — any other page gets nothing at all.
     if (messageEvent.source !== openerWindow) return;
+    if (requestData.kind === 'welcome') {
+      returnToWizard(requestData.appWindowName);
+      return;
+    }
+    if (requestData.kind !== 'request') return;
     // A file:// Wizard has the origin "null", which postMessage cannot target by name.
     const replyOrigin = messageEvent.origin && messageEvent.origin !== 'null' ? messageEvent.origin : '*';
     const reply = (status: number, body: string, bodyEncoding?: 'base64') => openerWindow.postMessage(

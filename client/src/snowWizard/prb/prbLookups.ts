@@ -82,10 +82,10 @@ export async function searchProblems(searchText: string): Promise<PrbSearchResul
 
 // ── Jira ──
 
-/** Every Jira project the user can see, sorted by name, for the project list. */
+/** Every Jira project the user can see, sorted by key (how people know a project), for the project list. */
 export async function loadJiraProjects(): Promise<JiraProject[]> {
   const projects = await jiraGet<JiraProject[]>('/rest/api/2/project');
-  return [...(projects ?? [])].sort((first, second) => first.name.localeCompare(second.name));
+  return [...(projects ?? [])].sort((first, second) => first.key.localeCompare(second.key));
 }
 
 function buildEpicJql(searchText: string): string | null {

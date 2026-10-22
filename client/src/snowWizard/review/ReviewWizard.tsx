@@ -5,8 +5,10 @@ import { useEffect, useState } from 'react';
 
 import GuidedFlowShell, { type GuidedFlowStep, type GuidedFlowStepState } from '../../components/GuidedFlow/GuidedFlowShell.tsx';
 import type { ReadinessItem, ReadinessItemState } from '../../views/SnowHub/guided/changeReadiness.ts';
+import { buildChangeLink } from '../change/createOutcome.ts';
 import CopyButton from '../shell/CopyButton.tsx';
 import type { WizardJobProps } from '../shell/wizardJobProps.ts';
+import { loadSnowUrl } from '../shell/wizardSettings.ts';
 import shellStyles from '../shell/WizardShell.module.css';
 import { runChangeReview, type ChangeReviewResult } from './changeReview.ts';
 import { buildCoachingMailto, buildCoachingNote, renderCoachingNoteText } from './coachingNote.ts';
@@ -139,7 +141,7 @@ function ChecksStep({ review }: { review: ChangeReviewResult }) {
   const summaryText = review.coachingChange.shortDescription.trim();
   return (
     <div className={shellStyles.card}>
-      <h3 className={shellStyles.cardTitle}>{review.changeNumber}{summaryText ? ` — ${summaryText}` : ''}</h3>
+      <h3 className={shellStyles.cardTitle}><a href={buildChangeLink(loadSnowUrl(), review.changeNumber)} target="_blank" rel="noreferrer">{review.changeNumber}</a>{summaryText ? ` — ${summaryText}` : ''}</h3>
       <p className={styles.summaryLine}>{describeVerdicts(review.items)}</p>
       <p className={shellStyles.hint}>{READ_ONLY_NOTICE}</p>
       <ul className={styles.checkList} aria-label="Checks">

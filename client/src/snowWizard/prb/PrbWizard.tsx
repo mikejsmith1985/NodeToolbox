@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 
 import GuidedFlowShell, { type GuidedFlowStep } from '../../components/GuidedFlow/GuidedFlowShell.tsx';
 import type { WizardJobProps } from '../shell/wizardJobProps.ts';
-import { loadJiraUrl } from '../shell/wizardSettings.ts';
+import { loadJiraUrl, loadSnowUrl } from '../shell/wizardSettings.ts';
 import shellStyles from '../shell/WizardShell.module.css';
 import { readKeptRoles, readNewRoles } from './prbJiraPlan.ts';
 import { PrbChooseStep, PrbConfirmStep, PrbDraftsStep, PrbFindStep, PrbPlaceStep, PrbResultStep } from './PrbSteps.tsx';
@@ -43,7 +43,7 @@ function readNextLabel(state: PrbWizardState): string | undefined {
 type PrbWizardModel = ReturnType<typeof usePrbWizardState>;
 
 /** Draws the screen for the current step. */
-function PrbStepBody({ model, jiraUrl }: { model: PrbWizardModel; jiraUrl: string }) {
+function PrbStepBody({ model, jiraUrl, snowUrl }: { model: PrbWizardModel; jiraUrl: string; snowUrl: string }) {
   const { state, actions } = model;
   switch (state.stepId) {
     case 'find':
@@ -53,7 +53,7 @@ function PrbStepBody({ model, jiraUrl }: { model: PrbWizardModel; jiraUrl: strin
       );
     case 'confirm':
       return state.chosenProblem ? (
-        <PrbConfirmStep problem={state.chosenProblem} existingWork={state.existingWork} jiraUrl={jiraUrl}
+        <PrbConfirmStep problem={state.chosenProblem} existingWork={state.existingWork} jiraUrl={jiraUrl} snowUrl={snowUrl}
           onRetryCheck={() => actions.checkExistingWork(state.chosenProblem?.number ?? '')} />
       ) : null;
     case 'choose':
@@ -72,7 +72,8 @@ function PrbStepBody({ model, jiraUrl }: { model: PrbWizardModel; jiraUrl: strin
       return <PrbDraftsStep drafts={state.drafts.filter((draft) => readNewRoles(state.roleChoices).includes(draft.role))} onEdit={actions.updateDraft} />;
     default:
       return (
-        <PrbResultStep isCreating={state.isCreating} createResult={state.createResult} jiraUrl={jiraUrl}
+        <PrbResultStep isCreating={state.isCreating} createResult={state.createResult} jiraUrl={jiraUrl} snowUrl={snowUrl}
+          problem={state.chosenProblem}
           keptRoles={readKeptRoles(state.roleChoices)} onRetry={actions.retryRest} />
       );
   }
@@ -82,6 +83,7 @@ function PrbStepBody({ model, jiraUrl }: { model: PrbWizardModel; jiraUrl: strin
 export default function PrbWizard({ onExit }: WizardJobProps) {
   const model = usePrbWizardState();
   const jiraUrl = useMemo(() => loadJiraUrl(), []);
+  const snowUrl = useMemo(() => loadSnowUrl(), []);
   const { state, actions } = model;
   const gate = readPrbStepGate(state);
   const isResultStep = state.stepId === 'result';
@@ -97,7 +99,7 @@ export default function PrbWizard({ onExit }: WizardJobProps) {
         onBack={actions.goBack}
         advancedAction={isResultStep ? undefined : <button type="button" className={shellStyles.secondaryButton} onClick={onExit}>{HOME_LABEL}</button>}
       >
-        <PrbStepBody model={model} jiraUrl={jiraUrl} />
+        <PrbStepBody model={model} jiraUrl={jiraUrl} snowUrl={snowUrl} />
       </GuidedFlowShell>
     </section>
   );

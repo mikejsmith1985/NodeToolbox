@@ -251,6 +251,8 @@ function useCreateAction(setState: Dispatch<SetStateAction<PrbWizardState>>) {
     setState((previous) => ({ ...previous, stepId: 'result', isCreating: true }));
     const createResult = await createPrbJiraWork({
       prbNumber: state.chosenProblem.number,
+      problemSysId: state.chosenProblem.sysId,
+      problemStatement: state.chosenProblem.shortDescription,
       projectKey: state.projectKey,
       epicKey: state.chosenEpic?.key ?? '',
       drafts: state.drafts,
@@ -352,7 +354,7 @@ function readChooseGate(state: PrbWizardState): PrbStepGate {
   if (unpickedRole) return { canGoNext: false, blockedReason: `Pick the ${PRB_ROLE_NAMES[unpickedRole]} from the search results` };
   const pickedKeys = readPickedKeys(state);
   if (new Set(pickedKeys).size !== pickedKeys.length) return { canGoNext: false, blockedReason: 'One Jira issue cannot be two of the items — pick a different one' };
-  if (!hasPrbWorkToDo(state.chosenProblem?.number ?? '', state.roleChoices)) {
+  if (!hasPrbWorkToDo(state.chosenProblem?.number ?? '', state.roleChoices, state.chosenProblem?.shortDescription ?? '')) {
     return { canGoNext: false, blockedReason: 'Everything chosen is already in Jira and linked — choose "Make a new one" for an item, or go back to home' };
   }
   return { canGoNext: true };

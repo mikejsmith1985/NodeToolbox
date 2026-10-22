@@ -13,13 +13,13 @@ function buildHandlers() {
 }
 
 describe('ChooseModeStep', () => {
-  it('offers exactly two choices, plus templates and the way home', () => {
+  it('offers three choices — create, start from a template, modify — plus the way home', () => {
     const handlers = buildHandlers();
     render(<ChooseModeStep resumableJobs={[]} {...handlers} />);
     expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Modify a change in ServiceNow/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Start from a template/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Back to home' }));
     expect(handlers.onCreate).toHaveBeenCalled();
     expect(handlers.onModify).toHaveBeenCalled();

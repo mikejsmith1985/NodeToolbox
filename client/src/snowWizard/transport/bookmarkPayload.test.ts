@@ -92,6 +92,39 @@ describe('runRelayAgent', () => {
     expect(showBadge.mock.calls[0][0]).toContain('connected to this ServiceNow tab');
   });
 
+  describe('switching back to the Wizard', () => {
+    function sendWelcome(appWindowName: string, source: unknown = fakeOpener): void {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { channel: CHANNEL_NAME, kind: 'welcome', appWindowName }, origin: WIZARD_ORIGIN, source: source as MessageEventSource,
+      }));
+    }
+
+    it('brings the Wizard to the front by its window name, once', () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeOpener as unknown as Window);
+      startAgent('jira');
+      sendWelcome('snowWizardApp-abc');
+      sendWelcome('snowWizardApp-abc');
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openSpy).toHaveBeenCalledWith('', 'snowWizardApp-abc');
+    });
+
+    it('closes the empty tab a browser opens when the name reaches nothing', () => {
+      const strayTab = { close: vi.fn() };
+      vi.spyOn(window, 'open').mockReturnValue(strayTab as unknown as Window);
+      startAgent('snow', () => 'token');
+      sendWelcome('snowWizardApp-abc');
+      expect(strayTab.close).toHaveBeenCalled();
+    });
+
+    it('ignores a welcome from any other window, or naming any other window', () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      startAgent('jira');
+      sendWelcome('snowWizardApp-abc', { postMessage: vi.fn() });
+      sendWelcome('someoneElse');
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+  });
+
   it('says a Jira hello for a Jira tab', () => {
     startAgent('jira');
     expect(fakeOpener.postMessage).toHaveBeenCalledWith({ channel: CHANNEL_NAME, kind: 'hello', system: 'jira' }, '*');

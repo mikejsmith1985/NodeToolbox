@@ -14,6 +14,12 @@ const jiraApiMock = vi.hoisted(() => ({
 }));
 vi.mock('../../services/jiraApi.ts', () => jiraApiMock);
 
+const { stampMock } = vi.hoisted(() => ({ stampMock: vi.fn() }));
+vi.mock('./prbProblemStatement.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./prbProblemStatement.ts')>()),
+  stampDefectKeyOnProblem: stampMock,
+}));
+
 import {
   buildDefectEnvironmentField,
   createPrbJiraWork,
@@ -62,6 +68,8 @@ const ALL_NEW: PrbRoleChoices = buildDefaultRoleChoices({});
 
 const BASE_REQUEST = {
   prbNumber: 'PRB001',
+  problemSysId: 'prb-sys-1',
+  problemStatement: 'Broken login',
   projectKey: 'ENCUC',
   epicKey: 'EPIC-7',
   drafts: DRAFTS,
@@ -80,6 +88,46 @@ beforeEach(() => {
   arrangeNoExistingWork();
   jiraApiMock.createIssueLink.mockResolvedValue(undefined);
   jiraApiMock.jiraPut.mockResolvedValue(undefined);
+  stampMock.mockResolvedValue('Broken login - ENCUC-1');
+});
+
+describe('the Problem statement (GH #475)', () => {
+  it("ends the problem's Problem statement with the new Defect's key", async () => {
+    arrangeCreatesInOrder('ENCUC-1', 'ENCUC-2', 'ENCUC-3');
+    const result = await createPrbJiraWork(BASE_REQUEST);
+
+    expect(stampMock).toHaveBeenCalledWith('prb-sys-1', 'ENCUC-1');
+    expect(result.progress.isProblemStamped).toBe(true);
+    expect(result.isComplete).toBe(true);
+  });
+
+  it('reports a refused write against the Defect, and a retry only writes the statement again', async () => {
+    arrangeCreatesInOrder('ENCUC-1', 'ENCUC-2', 'ENCUC-3');
+    stampMock.mockRejectedValueOnce(new Error('ACL denied'));
+    const firstResult = await createPrbJiraWork(BASE_REQUEST);
+    expect(firstResult.failures).toEqual([{ role: 'defect', stage: 'problem', message: 'ACL denied' }]);
+    expect(firstResult.isComplete).toBe(false);
+
+    vi.clearAllMocks();
+    stampMock.mockResolvedValue('Broken login - ENCUC-1');
+    const retryResult = await createPrbJiraWork({ ...BASE_REQUEST, startingProgress: firstResult.progress });
+    expect(jiraApiMock.createIssue).not.toHaveBeenCalled();
+    expect(stampMock).toHaveBeenCalledTimes(1);
+    expect(retryResult.isComplete).toBe(true);
+  });
+
+  it('does not touch a statement when no Defect is made or used', async () => {
+    arrangeCreatesInOrder('ENCUC-2', 'ENCUC-3');
+    await createPrbJiraWork({ ...BASE_REQUEST, roleChoices: { ...ALL_NEW, defect: { mode: 'skip' } } });
+    expect(stampMock).not.toHaveBeenCalled();
+  });
+
+  it('counts a picked Defect already named in the statement as done, and one missing from it as work to do', () => {
+    const defect = buildPickedIssue('ENCUC-9', { issueTypeName: 'Defect', labels: ['prb-prb001-defect'] });
+    const choices: PrbRoleChoices = { defect: { mode: 'existing', issue: defect }, sl: { mode: 'skip' }, qe: { mode: 'skip' } };
+    expect(hasPrbWorkToDo('PRB001', choices, 'Broken login - ENCUC-9')).toBe(false);
+    expect(hasPrbWorkToDo('PRB001', choices, 'Broken login')).toBe(true);
+  });
 });
 
 describe('createPrbJiraWork', () => {
@@ -242,7 +290,7 @@ describe('hasPrbWorkToDo', () => {
   it('is false once every chosen item is in Jira, labelled and linked — and true while anything is left', () => {
     const defect = buildPickedIssue('D-1', { labels: ['prb-prb001-defect'] });
     const story = buildPickedIssue('S-1', { labels: ['prb-prb001-sl'], linkedKeys: ['D-1'] });
-    expect(hasPrbWorkToDo('PRB001', { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: story }, qe: { mode: 'skip' } })).toBe(false);
+    expect(hasPrbWorkToDo('PRB001', { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: story }, qe: { mode: 'skip' } }, 'Broken login - D-1')).toBe(false);
     expect(hasPrbWorkToDo('PRB001', { defect: { mode: 'existing', issue: defect }, sl: { mode: 'existing', issue: buildPickedIssue('S-2') }, qe: { mode: 'skip' } })).toBe(true);
     expect(hasPrbWorkToDo('PRB001', ALL_NEW)).toBe(true);
   });

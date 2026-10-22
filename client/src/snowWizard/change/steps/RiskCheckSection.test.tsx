@@ -12,12 +12,22 @@ import RiskCheckSection from './RiskCheckSection.tsx';
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
 vi.mock('../modifyLoad.ts', () => ({ fetchChangeForModify: vi.fn(async (changeNumber: string) => ({ changeSysId: `sys-${changeNumber}` })) }));
+const { roundClosed } = vi.hoisted(() => ({ roundClosed: vi.fn() }));
+/** A round as Toolbox's Risk Check hands it over: a reply saying USE is used, any other is refused. */
+const FAKE_SESSION = {
+  instructions: 'Fix the gaps.', promptText: 'PROMPT', applyButtonLabel: 'Apply the fixes',
+  applyReply: (replyText: string) => (replyText === 'USE' ? { statusMessage: 'Applied 2 fixes.', wasApplied: true } : { statusMessage: 'Nothing usable.', wasApplied: false }),
+};
 // Toolbox's own component is proven by Toolbox's tests; here only what the Wizard hands it is checked.
 vi.mock('../../../views/SnowHub/tabs/ExistingChgRiskCheck.tsx', () => ({
-  ExistingChgRiskCheck: (props: { changeSysId: string; changeConfigItem: { sysId: string }; isProduction: boolean; onApplyChangeFields: (fields: Record<string, string>) => number }) => (
+  ExistingChgRiskCheck: (props: {
+    changeSysId: string; changeConfigItem: { sysId: string }; isProduction: boolean; onApplyChangeFields: (fields: Record<string, string>) => number;
+    renderPromptSession?: (session: typeof FAKE_SESSION, onClose: () => void) => unknown;
+  }) => (
     <div>
       <p>{`Risk check on ${props.changeSysId} with ${props.changeConfigItem.sysId}${props.isProduction ? ' (production)' : ''}`}</p>
       <button type="button" onClick={() => props.onApplyChangeFields({ backoutPlan: '1. Redeploy v1' })}>Apply fix</button>
+      {props.renderPromptSession ? (props.renderPromptSession(FAKE_SESSION, roundClosed) as never) : null}
     </div>
   ),
 }));
@@ -57,5 +67,33 @@ describe('RiskCheckSection', () => {
     const session: ChangeWizardSession = { ...createChangeWizardSession('modify'), modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: {}, loadedStepValues: {}, existingTaskNames: [], changeSysId: 'sys-9' } };
     render(<RiskCheckSection crg={buildCrg()} session={session} />);
     expect(screen.getByText('Risk check on sys-9 with ci-rel')).toBeTruthy();
+  });
+
+  describe('an AI round, drawn on the page', () => {
+    function openOnModify() {
+      const session: ChangeWizardSession = { ...createChangeWizardSession('modify'), modify: { changeNumber: 'CHG9', changeSysId: 'sys-9' } as ChangeWizardSession['modify'] };
+      render(<RiskCheckSection crg={buildCrg()} session={session} />);
+    }
+
+    it('closes itself once a reply is used, keeping what it did on the page', () => {
+      roundClosed.mockClear();
+      openOnModify();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'USE' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply the fixes' }));
+      expect(roundClosed).toHaveBeenCalledTimes(1);
+      expect(screen.getAllByText('Applied 2 fixes.').length).toBeGreaterThan(0);
+    });
+
+    it('stays open with the reason when the reply cannot be used, and closes on request', () => {
+      roundClosed.mockClear();
+      openOnModify();
+      fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'nonsense' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply the fixes' }));
+      expect(roundClosed).not.toHaveBeenCalled();
+      expect(screen.getByText('Nothing usable.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Close this round' }));
+      expect(roundClosed).toHaveBeenCalledTimes(1);
+    });
   });
 });

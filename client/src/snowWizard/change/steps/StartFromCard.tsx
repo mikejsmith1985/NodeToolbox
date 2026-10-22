@@ -25,7 +25,7 @@ function TemplateOpener({ crg, updateSession, onResult }: Pick<ChangeStepProps, 
   const { templates } = useCrgTemplates();
   const { templates: ctaskTemplates } = useCtaskTemplates();
   const pickerId = useId();
-  if (templates.length === 0) return <p className={styles.hint}>No saved templates yet — save one on the last step of a change.</p>;
+  if (templates.length === 0) return <p className={styles.hint}>No templates in this Wizard yet. Add one from a code or file with “Start from a template” on the change screen, or save one on the last step of a change.</p>;
   return (
     <div className={styles.fieldGroup}>
       <label className={styles.fieldLabel} htmlFor={pickerId}>Open a saved template</label>
@@ -91,7 +91,8 @@ function ChangeCopier({ crg, onResult }: Pick<ChangeStepProps, 'crg'> & { onResu
         <input id={numberFieldId} className={styles.inputField} value={typedNumber} placeholder="CHG0012345" onChange={(changeEvent) => setTypedNumber(changeEvent.target.value)} />
         <button type="button" className={styles.secondaryButton} disabled={!CHANGE_NUMBER_PATTERN.test(changeNumber)} onClick={() => copyPicks(changeNumber)}>Copy its picks</button>
       </div>
-      <MyOpenChangesPicker label="Or pick one of my open changes" onPick={setTypedNumber} />
+      {/* Picking a change is the decision itself, so its picks are copied at once — no second button to find. */}
+      <MyOpenChangesPicker label="Or pick one of my open changes" onPick={(pickedNumber) => { setTypedNumber(pickedNumber); copyPicks(pickedNumber); }} />
     </div>
   );
 }

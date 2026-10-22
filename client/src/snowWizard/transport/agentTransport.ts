@@ -24,8 +24,24 @@ export interface AgentTransportOptions {
   channelName: string;
   helloTimeoutMs: number;
   requestTimeoutMs: number;
+  /**
+   * This Wizard page's own window name. Sent to the tab once it says hello, so the bookmark can bring this page back to
+   * the front (a browser lets a tab switch to a window it can name, during the user's click).
+   */
+  appWindowName?: string;
   /** Called when the tab stops answering (with why, when known), so the Wizard can offer "connect again". */
   onDisconnected: (reasonText?: string) => void;
+}
+
+/** Tells the tab which window this Wizard page is, so the bookmark can switch back to it. A courtesy: never fails Connect. */
+function sendWelcome(agentLink: AgentLink, options: AgentTransportOptions): void {
+  if (!options.appWindowName) return;
+  try {
+    (agentLink.agentSource as Window).postMessage(
+      { channel: options.channelName, kind: 'welcome', appWindowName: options.appWindowName }, agentLink.agentOrigin);
+  } catch {
+    // Without it the user switches back by hand, as before.
+  }
 }
 
 /** One live connection: `connect` opens the tab and confirms the user; `execute` runs one request there. */
@@ -117,6 +133,7 @@ export function createAgentTransport(options: AgentTransportOptions): AgentTrans
     } finally {
       tabWatch.stopWatching();
     }
+    sendWelcome(agentLink, options);
     const identityResponse = await execute({ method: 'GET', path: options.identityPath });
     if (identityResponse.status !== HTTP_OK) {
       agentLink = null;

@@ -85,6 +85,16 @@ describe('createAgentTransport', () => {
     expect(agentTransport.isConnected()).toBe(true);
   });
 
+  it('tells the tab this page’s window name after hello, so the bookmark can switch back to it', async () => {
+    const fakeAgentTab = createFakeAgentTab(answerIdentity);
+    const postMessageSpy = vi.spyOn(fakeAgentTab.fakeTab, 'postMessage');
+    const { agentTransport } = createJiraTransport(fakeAgentTab, { appWindowName: 'snowWizardApp-abc' });
+
+    await agentTransport.connect(JIRA_URL);
+
+    expect(postMessageSpy).toHaveBeenCalledWith({ channel: CHANNEL_NAME, kind: 'welcome', appWindowName: 'snowWizardApp-abc' }, JIRA_ORIGIN);
+  });
+
   it('runs requests in the connected tab once connected', async () => {
     const fakeAgentTab = createFakeAgentTab(answerIdentity);
     const { agentTransport } = createJiraTransport(fakeAgentTab);

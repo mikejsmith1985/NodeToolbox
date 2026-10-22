@@ -7,6 +7,7 @@ import type { JiraProject } from '../../types/jira.ts';
 import shellStyles from '../shell/WizardShell.module.css';
 import type { PrbCreateFailure, PrbCreateResult } from './prbJiraCreate.ts';
 import {
+  buildPrbRecordLink,
   MISSING_DESCRIPTION_TEXT,
   PRB_JIRA_ROLES,
   PRB_ROLE_NAMES,
@@ -25,6 +26,11 @@ import { hasExistingWork, type ExistingWorkCheck, type LoadedList, type PrbDraft
 /** A link that opens one Jira issue in a new tab. */
 function JiraKeyLink({ jiraUrl, issueKey }: { jiraUrl: string; issueKey: string }) {
   return <a href={`${jiraUrl}/browse/${encodeURIComponent(issueKey)}`} target="_blank" rel="noreferrer">{issueKey}</a>;
+}
+
+/** A link that opens the ServiceNow problem in a new tab, so it can be worked on further. */
+function ProblemLink({ snowUrl, prbNumber }: { snowUrl: string; prbNumber: string }) {
+  return <a href={buildPrbRecordLink(snowUrl, prbNumber)} target="_blank" rel="noreferrer">{prbNumber}</a>;
 }
 
 /** The one line under a list that says what the read is doing, or why it is empty. */
@@ -122,6 +128,7 @@ export interface PrbConfirmStepProps {
   problem: PrbSearchResult;
   existingWork: ExistingWorkCheck;
   jiraUrl: string;
+  snowUrl: string;
   onRetryCheck: () => void;
 }
 
@@ -163,7 +170,7 @@ export function PrbConfirmStep(props: PrbConfirmStepProps) {
   return (
     <div className={shellStyles.card}>
       <dl className={styles.detailList}>
-        <dt>Number</dt><dd>{problem.number}</dd>
+        <dt>Number</dt><dd><ProblemLink snowUrl={props.snowUrl} prbNumber={problem.number} /></dd>
         <dt>Short description</dt><dd>{problem.shortDescription}</dd>
         <dt>State</dt><dd>{problem.stateLabel}</dd>
         <dt>Description</dt><dd>{problem.description.trim() || 'No description'}</dd>
@@ -269,6 +276,7 @@ export interface PrbPlaceStepProps {
   onChooseEpic: (epic: EpicSearchResult) => void;
 }
 
+// Listed by key, as "ENCUC — Enrollment …": typing in the list jumps by key, which is how people know a project.
 function ProjectPicker(props: PrbPlaceStepProps) {
   if (props.projectList.status === 'failed') {
     return (
@@ -284,7 +292,7 @@ function ProjectPicker(props: PrbPlaceStepProps) {
       <label className={shellStyles.fieldLabel} htmlFor="prb-project">Jira project</label>
       <select id="prb-project" className={shellStyles.inputField} value={props.projectKey} disabled={isLoading} onChange={(changeEvent) => props.onChooseProject(changeEvent.target.value)}>
         <option value="" disabled>{isLoading ? 'Loading projects…' : '— Choose a project —'}</option>
-        {props.projectList.items.map((project) => <option key={project.key} value={project.key}>{`${project.name} (${project.key})`}</option>)}
+        {props.projectList.items.map((project) => <option key={project.key} value={project.key}>{`${project.key} — ${project.name}`}</option>)}
       </select>
     </>
   );
@@ -350,6 +358,9 @@ export interface PrbResultStepProps {
   isCreating: boolean;
   createResult: PrbCreateResult | null;
   jiraUrl: string;
+  snowUrl: string;
+  /** The problem the work is for, linked so it can be opened and worked on further. */
+  problem: PrbSearchResult | null;
   /** The items this run handles (made new or used from Jira), so a left-out item is not listed. */
   keptRoles: readonly PrbJiraRole[];
   onRetry: () => void;
@@ -358,6 +369,7 @@ export interface PrbResultStepProps {
 function describeFailure(failure: PrbCreateFailure): string {
   const roleName = PRB_ROLE_NAMES[failure.role];
   if (failure.stage === 'link') return `${roleName} is in Jira but not linked to the Defect — ${failure.message}`;
+  if (failure.stage === 'problem') return `${roleName} is in Jira, but its key could not be added to the problem's Problem statement — ${failure.message}`;
   if (failure.stage === 'label') return `${roleName} is used, but the problem's label could not be added — ${failure.message}`;
   return `${roleName} was not created — ${failure.message}`;
 }
@@ -380,14 +392,26 @@ function describeCompletion(createResult: PrbCreateResult): string {
   return hasLinkedStory ? 'Everything you chose is in Jira, and the stories are linked to the Defect.' : 'Everything you chose is in Jira.';
 }
 
+/** The problem, linked, and whether its Problem statement now names the Defect. */
+function ProblemLine({ snowUrl, problem, createResult }: { snowUrl: string; problem: PrbSearchResult; createResult: PrbCreateResult }) {
+  const defectKey = createResult.progress.createdKeys.defect;
+  return (
+    <p className={shellStyles.hint}>
+      {'Problem: '}<ProblemLink snowUrl={snowUrl} prbNumber={problem.number} />
+      {defectKey && createResult.progress.isProblemStamped ? ` — its Problem statement ends with "- ${defectKey}".` : null}
+    </p>
+  );
+}
+
 /** Step 6: each item's key as a link, or exactly what failed with "Retry the rest". */
-export function PrbResultStep({ isCreating, createResult, jiraUrl, keptRoles, onRetry }: PrbResultStepProps) {
+export function PrbResultStep({ isCreating, createResult, jiraUrl, snowUrl, problem, keptRoles, onRetry }: PrbResultStepProps) {
   if (isCreating || !createResult) return <p className={shellStyles.hint} role="status">Creating the items in Jira…</p>;
   return (
     <div className={shellStyles.card}>
       <p className={shellStyles.connectionLine}>
         {describeCompletion(createResult)}
       </p>
+      {problem ? <ProblemLine snowUrl={snowUrl} problem={problem} createResult={createResult} /> : null}
       <ul className={styles.resultList} aria-label="What was made">
         {keptRoles.map((role) => <ResultItem key={role} role={role} result={createResult} jiraUrl={jiraUrl} />)}
       </ul>

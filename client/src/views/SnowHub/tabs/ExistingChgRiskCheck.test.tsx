@@ -182,6 +182,21 @@ describe('ExistingChgRiskCheck', () => {
     expect(await screen.findByText(/NOT READY — 2 gap/)).toBeInTheDocument();
   });
 
+  it('draws a round wherever the host asks instead of the pop-up, when given a renderer (SNow Wizard)', async () => {
+    render(
+      <ExistingChgRiskCheck changeConfigItem={CHANGE_CI} changeSysId="chg-1" fieldValues={FIELD_VALUES} onApplyChangeFields={vi.fn(() => 1)}
+        promptContext={{
+          categoryLabel: 'Software', changeTypeLabel: 'Normal', isExpedited: false, configItemLabel: 'Recon Service',
+          assignmentGroupLabel: 'Cleanup Crew', changeOwnerLabel: 'Smith, Mike', environmentLines: [], assessmentLines: [], changeTaskLines: [],
+        }}
+        renderPromptSession={(session) => <p>{`Inline round: ${session.applyButtonLabel}`}</p>} />,
+    );
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    expect(screen.getByText(/^Inline round:/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('applies a fix round to the change fields and stages the task\'s new backout plan to write', async () => {
     const onApplyChangeFields = renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);

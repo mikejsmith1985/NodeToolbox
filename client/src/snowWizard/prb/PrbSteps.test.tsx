@@ -89,13 +89,27 @@ describe('PrbResultStep', () => {
   it('names a story that was made but not linked, and offers Retry the rest', () => {
     const onRetry = vi.fn();
     const createResult = {
-      progress: { createdKeys: { defect: 'A-1', sl: 'A-2', qe: 'A-3' }, linkedRoles: ['sl' as const], labelledRoles: [] },
+      progress: { createdKeys: { defect: 'A-1', sl: 'A-2', qe: 'A-3' }, linkedRoles: ['sl' as const], labelledRoles: [], isProblemStamped: false },
       failures: [{ role: 'qe' as const, stage: 'link' as const, message: 'Link refused' }],
       isComplete: false,
     };
-    render(<PrbResultStep isCreating={false} createResult={createResult} jiraUrl="https://jira.example.com" keptRoles={['defect', 'sl', 'qe']} onRetry={onRetry} />);
+    render(<PrbResultStep isCreating={false} createResult={createResult} jiraUrl="https://jira.example.com" snowUrl="https://snow.example.com" problem={null}
+      keptRoles={['defect', 'sl', 'qe']} onRetry={onRetry} />);
     expect(screen.getByText('QE story is in Jira but not linked to the Defect — Link refused')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry the rest' }));
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('links the problem and says its Problem statement now names the Defect', () => {
+    const createResult = {
+      progress: { createdKeys: { defect: 'A-1' }, linkedRoles: [], labelledRoles: [], isProblemStamped: true },
+      failures: [],
+      isComplete: true,
+    };
+    const problem = { sysId: 's1', number: 'PRB0041664', shortDescription: 'Fix', description: '', stateLabel: 'New' };
+    render(<PrbResultStep isCreating={false} createResult={createResult} jiraUrl="https://jira.example.com" snowUrl="https://snow.example.com" problem={problem}
+      keptRoles={['defect']} onRetry={vi.fn()} />);
+    expect(screen.getByRole('link', { name: 'PRB0041664' }).getAttribute('href')).toBe('https://snow.example.com/problem.do?sysparm_query=number%3DPRB0041664');
+    expect(screen.getByText(/Problem statement ends with "- A-1"/)).toBeTruthy();
   });
 });

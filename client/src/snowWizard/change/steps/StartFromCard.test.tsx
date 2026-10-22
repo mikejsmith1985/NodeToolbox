@@ -11,6 +11,7 @@ import StartFromCard from './StartFromCard.tsx';
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
 vi.mock('../../../services/snowApi.ts', () => ({ snowFetch: vi.fn() }));
+vi.mock('../../../views/SnowHub/myOpenChanges.ts', () => ({ fetchMyOpenChanges: vi.fn(async () => [{ changeNumber: 'CHG0001234', shortDescription: 'Old title' }]) }));
 
 const BLANK = { sysId: '', displayName: '' };
 const BASIC_INFO = { category: 'hardware', changeType: 'normal', environment: '', requestedBy: BLANK, configItem: BLANK, assignmentGroup: BLANK, assignedTo: BLANK, changeManager: BLANK, tester: BLANK, serviceManager: BLANK, isExpedited: false };
@@ -55,8 +56,19 @@ describe('StartFromCard', () => {
     expect(observed.implementationPlan).toBe('');
   });
 
+  it('copies the picks as soon as one of my open changes is picked', async () => {
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.includes('table/change_request')
+      ? { result: [{ sys_id: { value: 'chg-sys', display_value: 'chg-sys' }, category: { value: 'software', display_value: 'Software' } }] }
+      : { result: [] }) as never);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load my open changes' }));
+    fireEvent.change(await screen.findByLabelText('Or pick one of my open changes'), { target: { value: 'CHG0001234' } });
+    expect(await screen.findByText(/^✓ Copied the picks from CHG0001234/)).toBeTruthy();
+    await waitFor(() => expect(observed.category).toBe('software'));
+  });
+
   it('says where templates come from when there are none yet', () => {
     render(<Harness />);
-    expect(screen.getByText('No saved templates yet — save one on the last step of a change.')).toBeTruthy();
+    expect(screen.getByText(/^No templates in this Wizard yet/)).toBeTruthy();
   });
 });

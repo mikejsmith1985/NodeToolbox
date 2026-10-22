@@ -11,6 +11,7 @@ import { readEnabledPlanEnvironments } from '../changeDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { buildBlankChangeTask, buildTaskFromTemplate, listTaskProblems } from '../taskCards.ts';
+import TemplateSaveCard from '../TemplateSaveCard.tsx';
 import { buildTaskTemplateData } from '../templateSave.ts';
 import type { TemplateLibrary } from '../useTemplateLibrary.ts';
 import TaskCard from './TaskCard.tsx';
@@ -49,7 +50,7 @@ function readIntro(isModify: boolean): string {
 }
 
 /** The tasks step. */
-export default function TasksStep({ crg, session, library }: TasksStepProps) {
+export default function TasksStep({ crg, session, updateSession, library }: TasksStepProps) {
   const { typeOptions, isLoading, loadErrorMessage } = useChangeTaskTypeOptions();
   const { state, actions } = crg;
   const enabledEnvironments = readEnabledPlanEnvironments(state);
@@ -72,6 +73,8 @@ export default function TasksStep({ crg, session, library }: TasksStepProps) {
       </ol>
       <AddTaskControls crg={crg} library={library} />
       {taskProblems.map((taskProblem) => <p key={taskProblem} className={styles.errorText}>{taskProblem}</p>)}
+      {/* The last picking step: every pick is made, nothing is written yet — the natural moment to keep them. */}
+      {session.mode === 'create' ? <TemplateSaveCard crg={crg} session={session} updateSession={updateSession} library={library} /> : null}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 // The list is ServiceNow's own (the same read as Toolbox's Modify CHG), so the number picked always exists — a typed
 // number can be mistyped and silently find nothing (pick, don't type). The list is read once per screen, on request.
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import styles from './ChangeWizard.module.css';
 import { useMyOpenChanges, type MyOpenChangesLoadState as LoadState } from './useMyOpenChanges.ts';
@@ -23,14 +23,21 @@ export function MyOpenChangesLoader({ loadState, onLoad }: { loadState: LoadStat
   );
 }
 
-/** One pick list of the loaded changes; nothing until they are loaded. */
+/**
+ * One pick list of the loaded changes; nothing until they are loaded. The picked change stays shown — snapping back to
+ * "Choose…" made a pick look ignored (owner feedback).
+ */
 export function MyOpenChangeSelect({ loadState, label, onPick }: { loadState: LoadState; label: string; onPick: (changeNumber: string) => void }) {
   const selectId = useId();
+  const [pickedNumber, setPickedNumber] = useState('');
   if (loadState.kind !== 'loaded' || loadState.changes.length === 0) return null;
   return (
     <div className={styles.fieldGroup}>
       <label className={styles.fieldLabel} htmlFor={selectId}>{label}</label>
-      <select id={selectId} className={styles.selectField} value="" onChange={(changeEvent) => { if (changeEvent.target.value) onPick(changeEvent.target.value); }}>
+      <select id={selectId} className={styles.selectField} value={pickedNumber} onChange={(changeEvent) => {
+        setPickedNumber(changeEvent.target.value);
+        if (changeEvent.target.value) onPick(changeEvent.target.value);
+      }}>
         <option value="">Choose…</option>
         {loadState.changes.map((change) => (
           <option key={change.changeNumber} value={change.changeNumber}>{`${change.changeNumber} — ${change.shortDescription}`}</option>

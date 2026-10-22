@@ -8,6 +8,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 
 import type { ChgTextFieldKey } from '../../../views/SnowHub/chgFormula/formulaCard.ts';
+import type { AiAssistPromptSession } from '../../../views/SnowHub/tabs/AiAssistPromptModal.tsx';
 import { ExistingChgRiskCheck } from '../../../views/SnowHub/tabs/ExistingChgRiskCheck.tsx';
 import { buildWizardPromptContext } from '../aiRounds.ts';
 import { applyChangeTextField, DRAFT_ENVIRONMENTS, readChangeTextFields, readEnabledPlanEnvironments, type CrgDraftState } from '../changeDraft.ts';
@@ -15,6 +16,7 @@ import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import type { PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { fetchChangeForModify } from '../modifyLoad.ts';
+import PromptRound from '../PromptRound.tsx';
 
 /** One change the check can run on. */
 interface RiskCheckTarget {
@@ -63,11 +65,39 @@ function useTargetSysId(target: RiskCheckTarget | undefined) {
   return answer?.changeNumber === target.changeNumber ? answer : { changeSysId: '', failureText: '' };
 }
 
+interface InlineRoundProps {
+  promptSession: AiAssistPromptSession;
+  onClose: () => void;
+  /** A used reply closes the round; its result is kept on the page by the caller. */
+  onApplied: (statusMessage: string) => void;
+}
+
+/**
+ * One Risk Check round drawn on the page, like every other AI round in the Wizard — never Toolbox's pop-up (owner:
+ * "embedded or a pop-up, not both"). A reply that is used closes the round by itself; one that is not stays open with
+ * the reason, and "Close this round" is there for a change of mind.
+ */
+function InlineRound({ promptSession, onClose, onApplied }: InlineRoundProps) {
+  const readReply = (replyText: string) => {
+    const { statusMessage, wasApplied } = promptSession.applyReply(replyText);
+    if (wasApplied) onApplied(statusMessage);
+    return statusMessage;
+  };
+  return (
+    <div>
+      <p className={styles.hint}>{promptSession.instructions}</p>
+      <PromptRound promptText={promptSession.promptText} copyLabel="Copy the prompt" readButtonLabel={promptSession.applyButtonLabel} onReadReply={readReply} />
+      <div className={styles.buttonRow}><button type="button" className={styles.secondaryButton} onClick={onClose}>Close this round</button></div>
+    </div>
+  );
+}
+
 /** The Risk Check, on the change the user picks. */
 export default function RiskCheckSection({ crg, session }: Pick<ChangeStepProps, 'crg' | 'session'>) {
   const pickerId = useId();
   const targets = listRiskCheckTargets(session, crg.state);
   const [chosenNumber, setChosenNumber] = useState('');
+  const [roundResultText, setRoundResultText] = useState('');
   const target = targets.find((candidate) => candidate.changeNumber === chosenNumber) ?? targets[0];
   const { changeSysId, failureText } = useTargetSysId(target);
   const draft = crg.state;
@@ -110,8 +140,13 @@ export default function RiskCheckSection({ crg, session }: Pick<ChangeStepProps,
           fieldValues={fieldValues}
           isProduction={PRODUCTION_LABELS.includes(target.environmentLabel)}
           onApplyChangeFields={applyChangeFields}
+          renderPromptSession={(promptSession, onClose) => (
+            <InlineRound key={promptSession.promptText} promptSession={promptSession} onClose={onClose}
+              onApplied={(statusMessage) => { setRoundResultText(statusMessage); onClose(); }} />
+          )}
         />
       ) : (failureText ? null : <p className={styles.hint} role="status">{`Opening ${target.changeNumber}…`}</p>)}
+      {roundResultText ? <p className={styles.successText}>{roundResultText}</p> : null}
     </section>
   );
 }

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: back to the Wizard after the bookmark.** Clicking the relay bookmark in the ServiceNow or Jira tab now
+  switches straight back to the Wizard tab (the Wizard names its window and tells the tab after hello).
+- **SNow Wizard PRB: the Defect key goes on the Problem statement** (GH #475) — `… Fix Needed - ENFCT-2175`, read fresh
+  and written once; a refused write is reported against the Defect and retried by "Retry the rest".
+- **SNow Wizard: clickable PRB and CHG links** — the problem on the confirm and result screens, the loaded change on
+  Modify and its save step, and the change on Review.
+- **SNow Wizard: "Start from a template"** as a choice on the change screen, and "Save the picks as a template" at the
+  end of **Build the tasks** (before anything is created), not only on the last step.
+
+### Changed
+- **SNow Wizard PRB: Jira projects listed by key** (`ENCUC — Enrollment …`), so typing in the list jumps by key.
+- **SNow Wizard: picking one of your open changes copies its picks at once**, and the list keeps showing the pick
+  instead of snapping back to "Choose…".
+- **SNow Wizard: every AI round is on the page.** The Risk Check rounds no longer open Toolbox's pop-up; a used reply
+  closes its round and keeps the result, "Close this round" covers a change of mind. Toolbox keeps its pop-up.
+- **SNow Wizard: "Paste from clipboard" no longer does nothing.** A file page often gets no clipboard answer, so after
+  2 s the cursor goes to the reply box with "press Ctrl+V now", and a paste into the empty box is read at once.
+
 ### Changed
 - **SNow Wizard: the file is the app — no installer, no loader.** Owner feedback: the install page and loader bookmark
   were unacceptable. Open `snow-hub-wizard.html` and you are in the Wizard. It now works like every other relay app:

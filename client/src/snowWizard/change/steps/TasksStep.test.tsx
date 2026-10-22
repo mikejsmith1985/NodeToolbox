@@ -102,4 +102,14 @@ describe('TasksStep', () => {
     render(<Harness session={createChangeWizardSession('create')} />);
     expect(screen.getByText(/task types could not be read: HTTP 403/)).toBeTruthy();
   });
+
+  it('offers to save the picks as a template on a new change, before anything is created', () => {
+    render(<Harness session={createChangeWizardSession('create')} />);
+    expect(screen.getByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeTruthy();
+  });
+
+  it('does not offer it while modifying a change', () => {
+    render(<Harness session={createChangeWizardSession('modify')} />);
+    expect(screen.queryByRole('heading', { name: 'Save the picks as a template (optional)' })).toBeNull();
+  });
 });

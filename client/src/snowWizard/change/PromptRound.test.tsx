@@ -34,5 +34,22 @@ describe('PromptRound', () => {
     readText.mockRejectedValueOnce(new Error('denied'));
     fireEvent.click(screen.getByRole('button', { name: 'Paste from clipboard' }));
     await screen.findByText(/would not share the clipboard/);
+    expect(document.activeElement).toBe(screen.getByLabelText(/Paste the assistant/));
+  });
+
+  it('stops waiting for a clipboard the browser never answers, and puts the cursor in the reply box', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { readText: vi.fn(() => new Promise<string>(() => undefined)) }, configurable: true });
+    render(<PromptRound promptText="Prompt" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Paste from clipboard' }));
+    await screen.findByText(/press Ctrl\+V now/, undefined, { timeout: 4000 });
+    expect(document.activeElement).toBe(screen.getByLabelText(/Paste the assistant/));
+  });
+
+  it('reads a reply pasted into the empty box straight away', () => {
+    const onReadReply = vi.fn(() => 'Read 1 field.');
+    render(<PromptRound promptText="Prompt" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={onReadReply} />);
+    fireEvent.paste(screen.getByLabelText(/Paste the assistant/), { clipboardData: { getData: () => 'SUMMARY: x' } });
+    expect(onReadReply).toHaveBeenCalledWith('SUMMARY: x');
+    expect(screen.getByRole('status').textContent).toBe('Read 1 field.');
   });
 });

@@ -6,7 +6,7 @@
 // all and fixed with one click; backout plans are judged and rewritten by the assistant and then written to
 // ServiceNow on request. Change-field fixes go into the Modify form and are saved with the change.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { JiraIssue } from '../../../types/jira.ts';
 import { isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
@@ -52,6 +52,11 @@ interface ExistingChgRiskCheckProps {
   isProduction?: boolean;
   /** Writes rewritten change fields into the Modify form; returns how many were applied. */
   onApplyChangeFields: (fields: Partial<Record<ChgTextFieldKey, string>>) => number;
+  /**
+   * Draws a prompt round somewhere other than Toolbox's pop-up (the SNow Wizard keeps every round on the page). Omitted,
+   * the pop-up is used — Toolbox is unchanged.
+   */
+  renderPromptSession?: (session: AiAssistPromptSession, onClose: () => void) => ReactNode;
 }
 
 /** The review's open gaps, sorted by where each is fixed. */
@@ -171,6 +176,7 @@ export function ExistingChgRiskCheck({
   fieldValues,
   onApplyChangeFields,
   isProduction = false,
+  renderPromptSession,
 }: ExistingChgRiskCheckProps) {
   const { isUnlocked } = useAiAssist();
   const [ctasks, setCtasks] = useState<ReviewedCtask[]>([]);
@@ -462,7 +468,8 @@ export function ExistingChgRiskCheck({
         {errorMessage ? <p className={styles.errorText} role="alert">{errorMessage}</p> : null}
         {statusMessage ? <p className={styles.successText}>{statusMessage}</p> : null}
       </div>
-      {promptSession !== null ? (
+      {promptSession !== null && renderPromptSession ? renderPromptSession(promptSession, () => setPromptSession(null)) : null}
+      {promptSession !== null && !renderPromptSession ? (
         <AiAssistPromptModal key={promptSession.promptText} onClose={() => setPromptSession(null)} session={promptSession} />
       ) : null}
     </section>

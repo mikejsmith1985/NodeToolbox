@@ -54,7 +54,8 @@ describe('WhichChangeStep', () => {
     fireEvent.change(screen.getByLabelText('Change number'), { target: { value: 'chg0001' } });
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
 
-    await waitFor(() => expect(screen.getByText(/CHG0001 \(New\) is loaded/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/\(New\) is loaded/)).toBeTruthy());
+    expect(screen.getByRole('link', { name: 'CHG0001' }).getAttribute('href')).toContain('change_request.do?sysparm_query=number%3DCHG0001');
     expect(fetchExistingTasks).toHaveBeenCalledWith('sys-1');
     expect(observed.latestTaskCount).toBe(1);
     expect(observed.latestPrdStart).toBe('2026-11-02T19:00');

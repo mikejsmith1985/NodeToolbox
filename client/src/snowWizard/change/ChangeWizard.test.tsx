@@ -174,7 +174,7 @@ describe('ChangeWizard — templates', () => {
 
   it('opens template management from the first screen and comes back', () => {
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Start from a template/ }));
     expect(screen.getByRole('heading', { name: 'Your templates' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
@@ -199,7 +199,7 @@ describe('ChangeWizard — templates', () => {
       chgPlanningContent: { implementationPlan: 'OLD plan', backoutPlan: 'OLD backout', testPlan: 'OLD test' }, ctaskTemplateIds: [],
     }]));
     render(<ChangeWizard onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Manage templates' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Start from a template/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Open it in a new change' }));
     expect(screen.getByText(/Filled in from your template “Monthly”/)).toBeTruthy();
     expect(screen.queryByText('OLD plan')).toBeNull();

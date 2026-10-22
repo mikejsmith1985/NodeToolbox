@@ -35,6 +35,16 @@ type TransportPair = Record<WizardSystem, AgentTransport>;
 const PAGE_ID = Date.now().toString(36);
 const SNOW_WINDOW_NAME = `snowWizardServiceNow-${PAGE_ID}`;
 const JIRA_WINDOW_NAME = `snowWizardJira-${PAGE_ID}`;
+/** This page's own name, which the bookmark uses to bring the Wizard back to the front after Connect. */
+export const APP_WINDOW_NAME = `snowWizardApp-${PAGE_ID}`;
+
+function nameThisWindow(): void {
+  try {
+    window.name = APP_WINDOW_NAME;
+  } catch {
+    // Unnamed, the Wizard still works; the user switches back to it by hand.
+  }
+}
 
 function readSnowIdentity(responseBody: string): string {
   try {
@@ -61,7 +71,9 @@ function setToolboxRelayConnected(isConnected: boolean): void {
 
 function createTransports(dependencies: WizardAppDependencies): TransportPair {
   const { setConnection } = useWizardConnectionStore.getState();
+  nameThisWindow();
   const sharedOptions = {
+    appWindowName: APP_WINDOW_NAME,
     listenerTarget: dependencies.listenerTarget,
     openWindow: dependencies.openWindow,
     channelName: WIZARD_CHANNEL_NAME,

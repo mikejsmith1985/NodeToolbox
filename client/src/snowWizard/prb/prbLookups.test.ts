@@ -64,8 +64,8 @@ describe('searchProblems', () => {
 });
 
 describe('loadJiraProjects', () => {
-  it('lists Jira projects by name', async () => {
-    jiraApiMock.jiraGet.mockResolvedValue([{ id: '2', key: 'ZZ', name: 'Zeta' }, { id: '1', key: 'AA', name: 'Alpha' }]);
+  it('lists Jira projects by key, not by name', async () => {
+    jiraApiMock.jiraGet.mockResolvedValue([{ id: '2', key: 'ZZ', name: 'Alpha' }, { id: '1', key: 'AA', name: 'Zeta' }]);
     expect((await loadJiraProjects()).map((project) => project.key)).toEqual(['AA', 'ZZ']);
   });
 });

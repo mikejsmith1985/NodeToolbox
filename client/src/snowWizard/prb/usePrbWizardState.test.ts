@@ -13,7 +13,7 @@ const lookupsMock = vi.hoisted(() => ({
   rememberPrbProject: vi.fn(),
 }));
 const createMock = vi.hoisted(() => ({
-  EMPTY_PRB_PROGRESS: { createdKeys: {}, linkedRoles: [], labelledRoles: [] },
+  EMPTY_PRB_PROGRESS: { createdKeys: {}, linkedRoles: [], labelledRoles: [], isProblemStamped: false },
   createPrbJiraWork: vi.fn(),
   findExistingPrbIssues: vi.fn(),
   hasPrbWorkToDo: vi.fn(() => true),
@@ -28,7 +28,7 @@ const PROBLEM = { sysId: 's1', number: 'PRB1', shortDescription: 'Broken', descr
 const EPIC = { key: 'EP-1', summary: 'Epic', statusName: 'Open' };
 const FOUND_DEFECT = { key: 'A-9', summary: '[DEV] PRB1 — Broken', issueTypeName: 'Defect', statusName: 'Open', labels: ['prb-prb1-defect'], linkedKeys: [] };
 const HAND_MADE_STORY = { key: 'X-2', summary: 'SL work', issueTypeName: 'Story', statusName: 'Open', labels: [], linkedKeys: [] };
-const PARTIAL_PROGRESS = { createdKeys: { defect: 'A-1', sl: 'A-2' }, linkedRoles: ['sl'], labelledRoles: [] };
+const PARTIAL_PROGRESS = { createdKeys: { defect: 'A-1', sl: 'A-2' }, linkedRoles: ['sl'], labelledRoles: [], isProblemStamped: false };
 
 async function walkToChoose() {
   const rendered = renderHook(() => usePrbWizardState());

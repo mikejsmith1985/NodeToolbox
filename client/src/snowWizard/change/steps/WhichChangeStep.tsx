@@ -3,7 +3,9 @@
 import { useId } from 'react';
 
 import type { ChangeStepProps } from '../changeWizardSession.ts';
+import { buildChangeLink } from '../createOutcome.ts';
 import MyOpenChangesPicker from '../MyOpenChangesPicker.tsx';
+import { loadSnowUrl } from '../../shell/wizardSettings.ts';
 import styles from '../ChangeWizard.module.css';
 import { useModifyLoader } from '../useModifyLoader.ts';
 
@@ -44,7 +46,10 @@ export default function WhichChangeStep({ crg, session, updateSession, onExit }:
       {loader.status.kind === 'failed' ? <p className={styles.errorText}>{loader.status.message}</p> : null}
       {loader.status.kind === 'refused' ? <RefusedNotice stateLabel={loader.status.stateLabel} onExit={onExit} /> : null}
       {loadedChange && loader.status.kind === 'idle' ? (
-        <p className={styles.successText}>{`${loadedChange.changeNumber} (${loadedChange.stateLabel}) is loaded. Press Next to walk through it — every step is filled in.`}</p>
+        <p className={styles.successText}>
+          <a href={buildChangeLink(loadSnowUrl(), loadedChange.changeNumber)} target="_blank" rel="noreferrer">{loadedChange.changeNumber}</a>
+          {` (${loadedChange.stateLabel}) is loaded. Press Next to walk through it — every step is filled in.`}
+        </p>
       ) : null}
     </div>
   );

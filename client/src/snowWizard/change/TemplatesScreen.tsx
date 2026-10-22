@@ -146,7 +146,7 @@ export default function TemplatesScreen({ library, onUseTemplate, onBack, useLab
       <h2 id="templates-heading" className={shellStyles.cardTitle}>Your templates</h2>
       <p className={styles.stepIntro}>A template remembers a change’s details, plan, environments and tasks. Share one with your team by sending its code or file.</p>
       {library.templates.length === 0
-        ? <p className={styles.hint}>You have no templates yet. Start from a change you’ve raised before, then press “Save as template”.</p>
+        ? <p className={styles.hint}>You have no templates in this Wizard yet. Paste a template code or add a template file below — or save one on the last step of any change.</p>
         : null}
       <ul className={styles.itemList} aria-label="Saved templates">
         {library.templates.map((template) => <TemplateCard key={template.id} template={template} library={library} onUseTemplate={onUseTemplate} useLabel={useLabel} />)}
