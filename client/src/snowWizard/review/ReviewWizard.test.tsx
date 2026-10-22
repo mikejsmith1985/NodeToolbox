@@ -1,7 +1,7 @@
 // ReviewWizard.test.tsx — Proves the Review job walks a reviewer from a change number to the checks to an editable,
 // copyable coaching note, guards ServiceNow as read-only for its whole life, and never offers a fix.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReadinessItem } from '../../views/SnowHub/guided/changeReadiness.ts';
@@ -11,7 +11,7 @@ import { COACHING_PHRASES } from './coachingNote.ts';
 import { isReadOnlySnowTransport } from './readOnlyTransport.ts';
 import ReviewWizard from './ReviewWizard.tsx';
 
-vi.mock('./changeReview.ts', () => ({ runChangeReview: vi.fn() }));
+vi.mock('./changeReview.ts', () => ({ runChangeReview: vi.fn(), AUTHOR_ONLY_ITEM_IDS: new Set(['riskCheck', 'prbs']) }));
 
 const mockedRunChangeReview = vi.mocked(runChangeReview);
 
@@ -31,6 +31,10 @@ function buildReview(overrides: Partial<ChangeReviewResult> = {}): ChangeReviewR
     items: REVIEW_ITEMS,
     coachingChange: { number: 'CHG0012345', creatorName: 'Smith, Jane', shortDescription: 'Login fix' },
     requesterEmail: 'jane@example.com',
+    facts: {
+      change: { changeNumber: 'CHG0012345', stateLabel: 'Assess', ownerName: 'Smith, Jane', configItemName: 'Login Service' },
+      textFields: null, plannedWindow: null, isProduction: true,
+    },
     ...overrides,
   };
 }
@@ -73,12 +77,30 @@ describe('ReviewWizard', () => {
     await findChange(' CHG0012345 ');
 
     expect(mockedRunChangeReview).toHaveBeenCalledWith('CHG0012345');
-    expect(screen.getByText('Change owner')).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: 'Checks' })).getByText('Change owner')).toBeTruthy();
     for (const verdictText of ['Done', 'Needs action', 'Does not apply', 'Could not check']) {
       expect(screen.getAllByText(verdictText).length).toBeGreaterThan(0);
     }
     expect(screen.queryByRole('button', { name: /create the planned outage/i })).toBeNull();
     expect(screen.getByText(/1 check needs action/i)).toBeTruthy();
+  });
+
+  it('explains what it checks before and after the look-up', async () => {
+    mockedRunChangeReview.mockResolvedValue(buildReview());
+    render(<ReviewWizard onExit={vi.fn()} />);
+    expect(screen.getByText(/^What the Wizard checks, and why/)).toBeTruthy();
+    await findChange('CHG0012345');
+    expect(screen.getByText(/^What the Wizard checks, and why/)).toBeTruthy();
+  });
+
+  it('offers a prompt to talk the change through with an AI assistant, carrying every verdict', async () => {
+    mockedRunChangeReview.mockResolvedValue(buildReview());
+    render(<ReviewWizard onExit={vi.fn()} />);
+    await findChange('CHG0012345');
+    const promptText = (screen.getByLabelText('Prompt for your AI assistant') as HTMLTextAreaElement).value;
+    expect(promptText).toContain('Change: CHG0012345');
+    expect(promptText).toContain('- Outage record: NEEDS ACTION — No outage is recorded.');
+    expect(screen.getByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
   });
 
   it('says plainly when the change cannot be found, and stays on the first step', async () => {

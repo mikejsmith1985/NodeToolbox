@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Wizard Review: "What the Wizard checks, and why".** Both Review steps carry a folded explanation of every
+  check the review runs — when it applies, what passes it, why Release Management cares — with the five restricted
+  change period rules and what each verdict means. It is built from the readiness engine's own names, Formula Card
+  fields and quality-gate questions, and keyed by every check id, so a new check without an explanation fails the build.
+- **SNow Wizard Review: talk it through with your AI assistant.** A copy-out prompt with the change's record and text,
+  every check's verdict and the rules behind them, asking Copilot to test the findings, look for passes that are only on
+  paper, and question the reviewer one point at a time.
+
+### Added
 - **SNow Wizard: back to the Wizard after the bookmark.** Clicking the relay bookmark in the ServiceNow or Jira tab now
   switches straight back to the Wizard tab (the Wizard names its window and tells the tab after hello).
 - **SNow Wizard PRB: the Defect key goes on the Problem statement** (GH #475) — `… Fix Needed - ENFCT-2175`, read fresh

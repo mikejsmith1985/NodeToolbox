@@ -40,6 +40,41 @@ const JUSTIFICATION_PARTS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   { label: 'the time-sensitive business or operational need', pattern: /deadline|time.?sensitive|urgent|regulat|complian|by (nov|dec|jan|oct)|member|customer|revenue|outage/i },
 ];
 
+/** Each rule's name, shared by the check and its plain-English description so the two never drift. */
+export const RCP_RULE_TITLES = {
+  window: 'Approved implementation window',
+  director: 'Director listed as Requested By',
+  approval: 'Director approval attached',
+  justification: 'Justification for changing during RCP',
+  leadTime: 'Submitted early enough',
+} as const;
+
+/** One restricted-change-period rule in words: its name and what passes it. */
+export interface RcpRuleDescription {
+  title: string;
+  passesWhen: string;
+}
+
+function formatHourOfDay(hour: number): string {
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+/**
+ * The five restricted-change-period rules in plain words, built from the same constants the checks use — so the
+ * explanation always states the nights, hours and lead time that are actually enforced.
+ */
+export function describeRcpRules(): RcpRuleDescription[] {
+  const nights = [...ALLOWED_NIGHT_WEEKDAYS].join(', ');
+  return [
+    { title: RCP_RULE_TITLES.window, passesWhen: `Work starts on a ${nights} night (${formatHourOfDay(NIGHT_START_HOUR)} to ${formatHourOfDay(NIGHT_END_HOUR)} Central), ends inside that night, and the task estimates for implementation, validation and backout fit in the window.` },
+    { title: RCP_RULE_TITLES.director, passesWhen: "Requested By is the Director-level Service Owner of the change's configuration item." },
+    { title: RCP_RULE_TITLES.approval, passesWhen: "The Director's approval is attached as an email (.msg / .eml) or a PDF." },
+    { title: RCP_RULE_TITLES.justification, passesWhen: `The justification explains ${JUSTIFICATION_PARTS.map((part) => part.label).join('; ')}.` },
+    { title: RCP_RULE_TITLES.leadTime, passesWhen: `A Moderate or High risk change is submitted at least ${LEAD_TIME_BUSINESS_DAYS} business days before it starts.` },
+  ];
+}
+
 /** The Central Time calendar facts of one instant. */
 interface CentralTimeParts {
   dateIso: string;
@@ -106,7 +141,7 @@ export function checkImplementationWindow(input: {
   plannedEndUtc: string | null;
   totalEstimateMinutes: number | null;
 }): RcpCheckResult {
-  const title = 'Approved implementation window';
+  const title = RCP_RULE_TITLES.window;
   if (!input.plannedStartUtc || !input.plannedEndUtc) {
     return { ruleId: 'window', title, status: 'fail', detail: 'The change has no planned start and end to check.' };
   }
@@ -129,7 +164,7 @@ export function checkImplementationWindow(input: {
 
 /** Rule 2: the Director-level Service Owner of the impacted CI is listed in Requested By. */
 export function checkRequestedByIsDirector(requestedBy: SnowReference, ciOwner: SnowReference | null): RcpCheckResult {
-  const title = 'Director listed as Requested By';
+  const title = RCP_RULE_TITLES.director;
   if (!requestedBy.sysId && !requestedBy.displayName.trim()) {
     return { ruleId: 'director', title, status: 'fail', detail: 'Requested By is empty — list the CI\'s Director-level Service Owner.' };
   }
@@ -146,7 +181,7 @@ export function checkRequestedByIsDirector(requestedBy: SnowReference, ciOwner: 
 
 /** Rule 3: the Director's email approval is attached (an .msg, .eml or .pdf file). */
 export function checkApprovalAttached(attachmentFileNames: readonly string[] | null): RcpCheckResult {
-  const title = 'Director approval attached';
+  const title = RCP_RULE_TITLES.approval;
   if (attachmentFileNames === null) {
     return { ruleId: 'approval', title, status: 'check', detail: 'The change\'s attachments could not be read — confirm the Director\'s approval email is attached.' };
   }
@@ -158,7 +193,7 @@ export function checkApprovalAttached(attachmentFileNames: readonly string[] | n
 
 /** Rule 4: the justification covers why now, the impact of waiting, and the time-sensitive need. */
 export function checkJustification(justification: string): RcpCheckResult {
-  const title = 'Justification for changing during RCP';
+  const title = RCP_RULE_TITLES.justification;
   if (justification.trim() === '') {
     return { ruleId: 'justification', title, status: 'fail', detail: 'The justification is empty.' };
   }
@@ -179,7 +214,7 @@ function countBusinessDaysBetween(fromDateIso: string, toDateIso: string): numbe
 
 /** Rule 5: a Moderate or High risk change is submitted at least three business days before it starts. */
 export function checkLeadTime(input: { riskLabel: string; todayIso: string; plannedStartUtc: string | null }): RcpCheckResult {
-  const title = 'Submitted early enough';
+  const title = RCP_RULE_TITLES.leadTime;
   if (input.riskLabel.trim() === '') {
     return { ruleId: 'leadTime', title, status: 'check', detail: `Risk is not set yet — Moderate and High risk changes need ${LEAD_TIME_BUSINESS_DAYS} business days of review.` };
   }

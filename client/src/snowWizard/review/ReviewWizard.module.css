@@ -90,3 +90,54 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* "What the Wizard checks, and why" — the folded explanation of every check, and the AI discussion card. */
+.rulesGuide {
+  margin-top: var(--spacing-md, 16px);
+}
+
+.guideHeading {
+  margin: var(--spacing-md, 16px) 0 var(--spacing-xs, 4px);
+  font-size: 1rem;
+}
+
+.guideList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  margin: 0;
+  padding-left: var(--spacing-lg, 24px);
+}
+
+.guideEntry {
+  padding: var(--spacing-sm, 8px) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.guideFacts {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: 2px var(--spacing-md, 16px);
+  margin: var(--spacing-xs, 4px) 0 0;
+}
+
+.guideFacts dt {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.guideFacts dd {
+  margin: 0;
+}
+
+.guideSubRules {
+  margin: var(--spacing-xs, 4px) 0 0;
+  padding-left: var(--spacing-lg, 24px);
+  color: var(--color-text-secondary);
+}
+
+.discussionPrompt {
+  min-height: 160px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+}

@@ -10,9 +10,12 @@ import CopyButton from '../shell/CopyButton.tsx';
 import type { WizardJobProps } from '../shell/wizardJobProps.ts';
 import { loadSnowUrl } from '../shell/wizardSettings.ts';
 import shellStyles from '../shell/WizardShell.module.css';
-import { runChangeReview, type ChangeReviewResult } from './changeReview.ts';
+import { listReadinessRuleGuide } from '../../views/SnowHub/guided/changeReadinessGuide.ts';
+import { AUTHOR_ONLY_ITEM_IDS, runChangeReview, type ChangeReviewResult } from './changeReview.ts';
 import { buildCoachingMailto, buildCoachingNote, renderCoachingNoteText } from './coachingNote.ts';
 import { installReadOnlySnowTransport } from './readOnlyTransport.ts';
+import { buildReviewDiscussionPrompt } from './reviewDiscussionPrompt.ts';
+import ReviewRulesGuide from './ReviewRulesGuide.tsx';
 import styles from './ReviewWizard.module.css';
 
 // ── Steps and words ──
@@ -35,6 +38,7 @@ const VERDICT_TEXT: Record<ReadinessItemState, string> = {
 
 const NOTE_FIELD_ID = 'review-coaching-note';
 const NUMBER_FIELD_ID = 'review-change-number';
+const DISCUSSION_FIELD_ID = 'review-discussion-prompt';
 const READ_ONLY_NOTICE = 'This is a review only — nothing is changed in ServiceNow.';
 
 /** Where each step sits relative to the current one. */
@@ -115,9 +119,10 @@ type ReviewJob = ReturnType<typeof useReviewJob>;
 
 // ── Step bodies ──
 
-/** Step 1: the change number. */
+/** Step 1: the change number, and what the review will check. */
 function NumberStep({ job }: { job: ReviewJob }) {
   return (
+    <>
     <div className={shellStyles.card}>
       <p className={shellStyles.hint}>{READ_ONLY_NOTICE}</p>
       <label className={shellStyles.fieldLabel} htmlFor={NUMBER_FIELD_ID}>Change number</label>
@@ -133,13 +138,34 @@ function NumberStep({ job }: { job: ReviewJob }) {
       {job.isLoading && <p className={shellStyles.hint} role="status">Checking the change…</p>}
       {job.problemText && <p className={styles.problem} role="alert">{job.problemText}</p>}
     </div>
+    <ReviewRulesGuide excludedItemIds={AUTHOR_ONLY_ITEM_IDS} />
+    </>
   );
 }
 
-/** Step 2: every check, its verdict in words, and why — never a fix. */
+/**
+ * "Talk it through with your AI assistant": one prompt carrying the change, every verdict and the rules, so the
+ * reviewer can question the change and test the Wizard's findings in their assistant's chat. Copy-out only.
+ */
+function DiscussionCard({ review }: { review: ChangeReviewResult }) {
+  const promptText = buildReviewDiscussionPrompt(review, listReadinessRuleGuide(AUTHOR_ONLY_ITEM_IDS));
+  return (
+    <div className={shellStyles.card}>
+      <h3 className={shellStyles.cardTitle}>Talk it through with your AI assistant (optional)</h3>
+      <p className={shellStyles.hint}>Copy this into Copilot to question the change and test these findings. It has the change&apos;s text, every check above and the rules behind them; it will ask you what it cannot tell from the record.</p>
+      <textarea id={DISCUSSION_FIELD_ID} className={`${shellStyles.inputField} ${styles.discussionPrompt}`} readOnly value={promptText} aria-label="Prompt for your AI assistant" />
+      <div className={shellStyles.actions}>
+        <CopyButton text={promptText} label="Copy the prompt" fallbackTargetId={DISCUSSION_FIELD_ID} />
+      </div>
+    </div>
+  );
+}
+
+/** Step 2: every check, its verdict in words, and why — never a fix — then the AI discussion and the rules. */
 function ChecksStep({ review }: { review: ChangeReviewResult }) {
   const summaryText = review.coachingChange.shortDescription.trim();
   return (
+    <>
     <div className={shellStyles.card}>
       <h3 className={shellStyles.cardTitle}><a href={buildChangeLink(loadSnowUrl(), review.changeNumber)} target="_blank" rel="noreferrer">{review.changeNumber}</a>{summaryText ? ` — ${summaryText}` : ''}</h3>
       <p className={styles.summaryLine}>{describeVerdicts(review.items)}</p>
@@ -156,6 +182,9 @@ function ChecksStep({ review }: { review: ChangeReviewResult }) {
         ))}
       </ul>
     </div>
+    <DiscussionCard review={review} />
+    <ReviewRulesGuide excludedItemIds={AUTHOR_ONLY_ITEM_IDS} />
+    </>
   );
 }
 

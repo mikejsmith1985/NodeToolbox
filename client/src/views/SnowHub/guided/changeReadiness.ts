@@ -112,6 +112,19 @@ const NON_EDITABLE_STATE_MARKERS = ['closed', 'cancel', 'implement'];
 const CONFIRM_PLACEHOLDER_PATTERN = /\[CONFIRM:[^\]]*\]/i;
 const DEFAULT_FAILURE_REASON = 'It could not be read just now.';
 
+/** The record checks' names, shared by the checks and their explanation (changeReadinessGuide.ts). */
+export const RECORD_ITEM_LABELS = {
+  owner: 'Change owner',
+  riskCheck: 'Risk check',
+  rcp: 'Restricted change period rules',
+  outage: 'Outage record',
+  ctaskCi: 'Task configuration items',
+  ctaskBackout: 'Task backout plans',
+  ctaskDates: 'Task dates',
+  prbs: 'Problem records',
+  testEvidence: 'Test evidence',
+} as const;
+
 // ── Small builders ──
 
 /** An item that passed. */
@@ -155,7 +168,7 @@ function countNoun(count: number, singular: string, plural: string): string {
 
 /** The change has an owner. */
 function evaluateOwner(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Change owner';
+  const label = RECORD_ITEM_LABELS.owner;
   if (facts.change === null) return buildCouldNotCheckItem('owner', label, facts, 'change');
   const ownerName = facts.change.ownerName.trim();
   return ownerName !== ''
@@ -166,7 +179,7 @@ function evaluateOwner(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** The risk check was run this session and judged the change ready. */
 function evaluateRiskCheck(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Risk check';
+  const label = RECORD_ITEM_LABELS.riskCheck;
   const action: ReadinessAction = { kind: 'openStep', stepId: 'riskCheck', label: 'Run the risk check' };
   if (facts.riskReview === null) {
     return buildNeedsActionItem('riskCheck', label, 'The risk check has not been run on this change yet.', action);
@@ -178,7 +191,7 @@ function evaluateRiskCheck(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** Every restricted-change-period rule passes. */
 function evaluateRcp(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Restricted change period rules';
+  const label = RECORD_ITEM_LABELS.rcp;
   const productionGate = readProductionGate('rcp', label, facts);
   if (productionGate) return productionGate;
   if (!facts.isRcpActive) return buildNotApplicableItem('rcp', label, 'The restricted change period rules are not in force.');
@@ -196,7 +209,7 @@ function evaluateRcp(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** A Production change has a planned outage linked. */
 function evaluateOutage(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Outage record';
+  const label = RECORD_ITEM_LABELS.outage;
   const productionGate = readProductionGate('outage', label, facts);
   if (productionGate) return productionGate;
   if (facts.outageCount === null) return buildCouldNotCheckItem('outage', label, facts, 'outages');
@@ -208,7 +221,7 @@ function evaluateOutage(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** Every change task carries the change's configuration item. */
 function evaluateCtaskCi(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Task configuration items';
+  const label = RECORD_ITEM_LABELS.ctaskCi;
   if (facts.ctasks === null) return buildCouldNotCheckItem('ctaskCi', label, facts, 'ctasks');
   if (facts.ctasks.length === 0) return buildNotApplicableItem('ctaskCi', label, 'The change has no tasks.');
   const differingTasks = facts.ctasks.filter((ctask) => !ctask.isConfigItemMatching);
@@ -226,7 +239,7 @@ function evaluateCtaskCi(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** Every implementation task has a backout plan. */
 function evaluateCtaskBackout(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Task backout plans';
+  const label = RECORD_ITEM_LABELS.ctaskBackout;
   if (facts.ctasks === null) return buildCouldNotCheckItem('ctaskBackout', label, facts, 'ctasks');
   const implementationTasks = facts.ctasks.filter((ctask) => ctask.isImplementation);
   if (implementationTasks.length === 0) return buildNotApplicableItem('ctaskBackout', label, 'The change has no implementation task.');
@@ -240,7 +253,7 @@ function evaluateCtaskBackout(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** Every change task has a planned start and end. */
 function evaluateCtaskDates(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Task dates';
+  const label = RECORD_ITEM_LABELS.ctaskDates;
   if (facts.ctasks === null) return buildCouldNotCheckItem('ctaskDates', label, facts, 'ctasks');
   if (facts.ctasks.length === 0) return buildNotApplicableItem('ctaskDates', label, 'The change has no tasks.');
   const undatedTasks = facts.ctasks.filter((ctask) => !ctask.hasPlannedDates);
@@ -253,7 +266,7 @@ function evaluateCtaskDates(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** Every PRB the change's issues mention is linked to this change. */
 function evaluatePrbs(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Problem records';
+  const label = RECORD_ITEM_LABELS.prbs;
   if (facts.prbs === null) return buildCouldNotCheckItem('prbs', label, facts, 'prbs');
   if (facts.prbs.length === 0) return buildNotApplicableItem('prbs', label, 'The change\'s issues mention no problem record.');
   const unlinkedPrbs = facts.prbs.filter((prb) => prb.linkStatus !== 'thisChange');
@@ -271,7 +284,7 @@ function evaluatePrbs(facts: ChangeReadinessFacts): ReadinessItem {
 
 /** A Production change has test evidence attached. */
 function evaluateTestEvidence(facts: ChangeReadinessFacts): ReadinessItem {
-  const label = 'Test evidence';
+  const label = RECORD_ITEM_LABELS.testEvidence;
   const productionGate = readProductionGate('testEvidence', label, facts);
   if (productionGate) return productionGate;
   if (facts.attachmentFileNames === null) return buildCouldNotCheckItem('testEvidence', label, facts, 'attachments');
@@ -284,7 +297,7 @@ function evaluateTestEvidence(facts: ChangeReadinessFacts): ReadinessItem {
 // ── Formula Card sections (spec 040 FR-011) ──
 
 /** One Formula Card section judged from the change's own text. */
-interface FormulaTextSection {
+export interface FormulaTextSection {
   id: ReadinessItemId;
   sectionNumber: number;
   fieldKeys: readonly ChgTextFieldKey[];
@@ -293,7 +306,7 @@ interface FormulaTextSection {
 }
 
 // Which text answers each section, and the quality-gate question Release Management asks of it (formulaCard.ts).
-const FORMULA_TEXT_SECTIONS: readonly FormulaTextSection[] = [
+export const FORMULA_TEXT_SECTIONS: readonly FormulaTextSection[] = [
   { id: 'formulaIdentity', sectionNumber: 1, fieldKeys: ['shortDescription', 'description'], gateQuestionIndex: 0 },
   { id: 'formulaBusinessNeed', sectionNumber: 2, fieldKeys: ['justification'], gateQuestionIndex: 1 },
   { id: 'formulaRisk', sectionNumber: 3, fieldKeys: ['riskImpact'], gateQuestionIndex: null },
@@ -301,11 +314,11 @@ const FORMULA_TEXT_SECTIONS: readonly FormulaTextSection[] = [
   { id: 'formulaTesting', sectionNumber: 6, fieldKeys: ['testPlan'], gateQuestionIndex: 4 },
   { id: 'formulaBackout', sectionNumber: 7, fieldKeys: ['backoutPlan'], gateQuestionIndex: 3 },
 ];
-const SCHEDULE_SECTION_NUMBER = 4;
-const SCHEDULE_GATE_QUESTION_INDEX = 3;
+export const SCHEDULE_SECTION_NUMBER = 4;
+export const SCHEDULE_GATE_QUESTION_INDEX = 3;
 
 /** "Formula Card 1: Change Identity", named from the card itself so the two never drift. */
-function readSectionLabel(sectionNumber: number): string {
+export function readSectionLabel(sectionNumber: number): string {
   const sectionName = FORMULA_CARD_FIELDS.find((entry) => entry.section.startsWith(`${sectionNumber}.`))?.section ?? `${sectionNumber}.`;
   return `Formula Card ${sectionName.replace(/^(\d+)\.\s*/, '$1: ')}`;
 }
