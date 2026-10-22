@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A prompt too long for one AI chat message is now split into parts, not cut (GH #475).** v0.325.0 cut long Jira
+  details and told you to choose fewer issues when a prompt was still too long. Now nothing is cut:
+  - Any prompt over the limit is halved at a line break, and halved again, until every part fits.
+  - Each part has its own copy button and is headed "PART n OF N".
+  - Every part but the last tells the assistant to reply only "READY FOR PART n+1". The last part tells it to answer
+    using all the parts, and you paste only that answer.
+  - This applies to every SNow Wizard prompt and to Toolbox's AI Assist dialog (Enhance, Risk Check, Fix, Check again).
+
 ### Added
 - **SNow Wizard tasks no longer all run one after another (GH #475).** The timing prompt now also asks how each task
   runs, and the timeline places it that way:
@@ -23,9 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **The SNow Wizard's AI Assist prompt carried the Jira details twice (GH #475).** It reached 134,856 characters, and
   Copilot refuses anything over 128,000. The details now appear once.
-- **Every Wizard prompt now fits under 120,000 characters.** When there is too much Jira detail, the long issues are cut
-  evenly and each cut names the issue where the rest is. The rules and the reply format are never cut, and a prompt
-  still over the limit says so.
 - **SNow Wizard final checks no longer offer buttons that fix nothing (GH #475).**
   - **Test evidence:** "Attach test evidence" only jumped back to step 1. It is replaced by a note saying the evidence
     is handled on save: the last step sweeps Jira (the change's issues, their sub-tasks and linked issues), zips every

@@ -7,7 +7,7 @@ import { useId, useState, type ClipboardEvent } from 'react';
 
 import CopyButton from '../shell/CopyButton.tsx';
 import styles from './ChangeWizard.module.css';
-import { describePromptOverLimit } from './promptBudget.ts';
+import { describePromptParts, splitPromptIntoParts } from '../../views/SnowHub/chgFormula/promptParts.ts';
 
 interface PromptRoundProps {
   promptText: string;
@@ -45,7 +45,8 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
   const replyFieldId = useId();
   const [replyText, setReplyText] = useState('');
   const [statusText, setStatusText] = useState('');
-  const overLimitText = describePromptOverLimit(promptText);
+  // A prompt too long for one chat message comes as parts, each with its own copy button (GH #475).
+  const promptParts = splitPromptIntoParts(promptText);
 
   /** One click instead of select-all and paste: takes the clipboard's text and reads it straight away. */
   async function pasteAndRead() {
@@ -73,10 +74,29 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
 
   return (
     <div className={styles.card}>
-      <label className={styles.fieldLabel} htmlFor={promptFieldId}>1. Copy this and paste it into your AI assistant</label>
-      <textarea id={promptFieldId} className={styles.textArea} readOnly value={promptText} />
-      <div className={styles.buttonRow}><CopyButton text={promptText} label={copyLabel} fallbackTargetId={promptFieldId} /></div>
-      {overLimitText ? <p className={styles.errorText} role="alert">{overLimitText}</p> : null}
+      {promptParts.length === 1 ? (
+        <>
+          <label className={styles.fieldLabel} htmlFor={promptFieldId}>1. Copy this and paste it into your AI assistant</label>
+          <textarea id={promptFieldId} className={styles.textArea} readOnly value={promptText} />
+          <div className={styles.buttonRow}><CopyButton text={promptText} label={copyLabel} fallbackTargetId={promptFieldId} /></div>
+        </>
+      ) : (
+        <>
+          <p className={styles.fieldLabel}>1. Copy each part and paste it into your AI assistant, in order</p>
+          <p className={styles.hint}>{describePromptParts(promptParts.length)}</p>
+          {promptParts.map((partText, partIndex) => {
+            const partFieldId = `${promptFieldId}-part-${partIndex + 1}`;
+            const partLabel = `Part ${partIndex + 1} of ${promptParts.length}`;
+            return (
+              <div key={partFieldId}>
+                <label className={styles.fieldLabel} htmlFor={partFieldId}>{partLabel}</label>
+                <textarea id={partFieldId} className={styles.textArea} readOnly value={partText} />
+                <div className={styles.buttonRow}><CopyButton text={partText} label={`Copy part ${partIndex + 1} of ${promptParts.length}`} fallbackTargetId={partFieldId} /></div>
+              </div>
+            );
+          })}
+        </>
+      )}
       <label className={styles.fieldLabel} htmlFor={replyFieldId}>2. Paste the assistant&apos;s whole reply here</label>
       <textarea id={replyFieldId} className={styles.textArea} value={replyText} onPaste={handleReplyPaste}
         onChange={(changeEvent) => setReplyText(changeEvent.target.value)} />

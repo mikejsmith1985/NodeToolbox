@@ -6,11 +6,14 @@ import { describe, expect, it, vi } from 'vitest';
 import PromptRound from './PromptRound.tsx';
 
 describe('PromptRound', () => {
-  it('warns when a prompt is still over an AI chat box\'s limit, and not otherwise', () => {
-    const { rerender } = render(<PromptRound promptText="Prompt" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
-    expect(screen.queryByRole('alert')).toBeNull();
-    rerender(<PromptRound promptText={'p'.repeat(130_000)} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
-    expect(screen.getByRole('alert').textContent).toContain('130,000 characters');
+  it('splits a prompt too long for one chat message into parts, each with its own copy button (GH #475)', () => {
+    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+    render(<PromptRound promptText={longPrompt} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
+    expect(screen.queryByRole('button', { name: 'Copy the prompt' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy part 1 of 2' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy part 2 of 2' })).toBeTruthy();
+    expect((screen.getByLabelText('Part 2 of 2') as HTMLTextAreaElement).value).toMatch(/^PART 2 OF 2 — the last part/);
+    expect(screen.getByText(/comes in 2 parts\. Paste them in order into the same chat/)).toBeTruthy();
   });
 
   it('shows the prompt, waits for a reply, then reports what the reader said', () => {

@@ -7,7 +7,7 @@
 import { describeTaskPeople, type ChgPromptContext } from '../../views/SnowHub/chgFormula/chgPromptContext.ts';
 import { formatMinutes, readPlannedWindowMinutes, rollUpEstimates, sumEstimateMinutes } from '../../views/SnowHub/ctaskDurations.ts';
 import { DRAFT_ENVIRONMENTS, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
-import { buildIssueDetailTextWithin } from './promptBudget.ts';
+import { buildIssueDetailText } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { describeTaskCard } from './taskCards.ts';
 import { buildEnvironmentTimelines, describeEnvironmentTimeline, describeTaskTiming } from './taskTimeline.ts';
 
@@ -19,9 +19,6 @@ function readAssessmentLines(draft: CrgDraftState): string[] {
 }
 
 const CI_PER_CHANGE_LABEL = 'one per change — see Environments';
-// The Jira work's share of a Risk Check prompt, which also carries the change's seven texts, every CTASK and the rules,
-// so the whole stays inside an AI chat box's 128,000 characters (GH #475).
-const JIRA_SOURCE_CHARACTER_BUDGET = 50_000;
 
 /** The environments switched on, each with the configuration item its own change will carry. */
 function readEnabledChanges(draft: CrgDraftState) {
@@ -80,7 +77,7 @@ export function buildWizardPromptContext(draft: CrgDraftState): ChgPromptContext
     changeTaskLines: describeChangeTasks(draft),
     changeTaskInstructionLines: draft.changeTasks.map((card, cardIndex) => (card.description.trim() === '' ? '' : `${describeTaskCard(card, cardIndex)}: ${card.description.trim()}`)),
     durationEstimates: readChangeDurations(draft),
-    jiraSourceText: readSelectedIssues(draft).length > 0 ? buildIssueDetailTextWithin(readSelectedIssues(draft), JIRA_SOURCE_CHARACTER_BUDGET).text : undefined,
+    jiraSourceText: readSelectedIssues(draft).length > 0 ? buildIssueDetailText(readSelectedIssues(draft)) : undefined,
   };
 }
 

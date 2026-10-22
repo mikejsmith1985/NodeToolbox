@@ -8,6 +8,7 @@ import { useState } from 'react';
 
 import { CheckIcon, ClipboardIcon } from '../../../components/AppIcons/index.tsx';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
+import { describePromptParts, splitPromptIntoParts } from '../chgFormula/promptParts.ts';
 import styles from './CreateChgTab.module.css';
 
 /**
@@ -38,6 +39,9 @@ export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalPro
   const [replyText, setReplyText] = useState('');
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const { hasCopied, confirmCopy } = useCopyFeedback();
+  const [copiedPartIndex, setCopiedPartIndex] = useState<number | null>(null);
+  // A prompt too long for one chat message comes as parts, each copied on its own (GH #475).
+  const promptParts = splitPromptIntoParts(session.promptText);
 
   const handleApplyReply = () => {
     const applyOutcome = session.applyReply(replyText);
@@ -52,11 +56,31 @@ export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalPro
     <div className={styles.passphraseOverlay}>
       <div className={styles.promptModal}>
         <p className={styles.promptInstructions}>{session.instructions}</p>
-        <textarea className={styles.promptTextArea} readOnly value={session.promptText} />
+        {promptParts.length > 1 ? <p className={styles.promptInstructions}>{describePromptParts(promptParts.length)}</p> : null}
+        {promptParts.map((partText, partIndex) => {
+          const isPartCopied = hasCopied && copiedPartIndex === partIndex;
+          const copyLabel = promptParts.length === 1 ? 'Copy to Clipboard' : `Copy part ${partIndex + 1} of ${promptParts.length}`;
+          return (
+            <div key={partIndex}>
+              <textarea
+                aria-label={promptParts.length === 1 ? 'Prompt' : `Prompt part ${partIndex + 1} of ${promptParts.length}`}
+                className={styles.promptTextArea}
+                readOnly
+                value={partText}
+              />
+              <div className={styles.promptActions}>
+                <button
+                  className={styles.aiAssistButton}
+                  onClick={() => { setCopiedPartIndex(partIndex); confirmCopy(partText); }}
+                  type="button"
+                >
+                  {isPartCopied ? <><CheckIcon /> Copied!</> : <><ClipboardIcon /> {copyLabel}</>}
+                </button>
+              </div>
+            </div>
+          );
+        })}
         <div className={styles.promptActions}>
-          <button className={styles.aiAssistButton} onClick={() => confirmCopy(session.promptText)} type="button">
-            {hasCopied ? <><CheckIcon /> Copied!</> : <><ClipboardIcon /> Copy to Clipboard</>}
-          </button>
           <button className={styles.linkButton} onClick={onClose} type="button">
             Close
           </button>

@@ -17,7 +17,7 @@ import {
 import type { CtaskTemplate, TaskTimelinePlacement } from '../../views/SnowHub/hooks/useCrgState.ts';
 import { DRAFT_ENVIRONMENTS, readEnabledPlanEnvironments, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
 import { readTaskEnvironmentTicks, type PlanEnvironmentKey } from './ctaskEnvironmentPlan.ts';
-import { fitPromptToBudget } from './promptBudget.ts';
+import { buildIssueDetailText } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { describeTaskCard } from './taskCards.ts';
 import {
   describeTaskPlacement, readLaterDate, readLocalTimeZone, readMinutesBetween, readPlacementCell, readTaskPlacement, resolveNotBeforeDate,
@@ -318,7 +318,7 @@ function describeChangeForPrompt(draft: CrgDraftState): string[] {
 export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
   const enabledEnvironments = readEnabledPlanEnvironments(draft);
   const selectedIssues = readSelectedIssues(draft);
-  return fitPromptToBudget(selectedIssues, (issueDetailText) => [
+  return [
     'You are a Release Manager timing the tasks (CTASKs) of a ServiceNow change, so they can be scheduled back to back inside the change window.',
     '',
     `The change windows (one change per environment), on the ${readLocalTimeZone()} clock:`,
@@ -327,7 +327,7 @@ export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
     '',
     'The tasks:',
     ...draft.changeTasks.flatMap((card, cardIndex) => describeTaskForPrompt(card, cardIndex, enabledEnvironments)),
-    ...(selectedIssues.length > 0 ? ['', 'Jira work this change delivers:', issueDetailText] : []),
+    ...(selectedIssues.length > 0 ? ['', 'Jira work this change delivers:', buildIssueDetailText(selectedIssues)] : []),
     '',
     ...TIMING_RULES,
     '',
@@ -335,7 +335,7 @@ export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
     '<task id> | <implementation minutes> | <validation minutes> | <backout minutes> | <in order / whole window / with T<n>, then "; not before HH:MM <zone>" if any> | <why>',
     '',
     CODE_BLOCK_REPLY_INSTRUCTION,
-  ].join('\n')).promptText;
+  ].join('\n');
 }
 
 /** A cell's length in whole minutes, or null when the cell is not a length (a title, a reason, an empty cell). */
