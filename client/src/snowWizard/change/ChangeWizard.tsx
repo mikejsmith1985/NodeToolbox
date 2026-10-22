@@ -46,6 +46,7 @@ import ScopeStep from './steps/ScopeStep.tsx';
 import TasksStep from './steps/TasksStep.tsx';
 import WhichChangeStep from './steps/WhichChangeStep.tsx';
 import { listTaskProblems } from './taskCards.ts';
+import { listUntimedTaskProblems } from './taskTimeline.ts';
 import TemplatesScreen from './TemplatesScreen.tsx';
 import { useDraftReadiness } from './useDraftReadiness.ts';
 import { useImplementationBackout } from './useImplementationBackout.ts';
@@ -94,7 +95,7 @@ function renderStep(stepId: ChangeWizardStepId, stepProps: ChangeStepProps, extr
     whichChange: () => <WhichChangeStep {...stepProps} onExit={extras.onExit} />,
     scope: () => <ScopeStep {...stepProps} />,
     // The AI's text can always be edited by hand right here, before it goes into ServiceNow.
-    aiDraft: () => <><AiDraftStep {...withChoices} /><WritingEditor crg={stepProps.crg} /></>,
+    aiDraft: () => <><AiDraftStep {...withChoices} jiraEvidence={extras.jiraEvidence} /><WritingEditor crg={stepProps.crg} /></>,
     details: () => <DetailsStep {...withChoices} />,
     planning: () => <PlanningStep {...withChoices} />,
     environments: () => <EnvironmentsStep {...withChoices} />,
@@ -121,7 +122,7 @@ function buildProgress(crg: CrgHook, session: ChangeWizardSession, items: Readin
     detailsGaps: readDetailsGaps(crg.state),
     planningGaps: readPlanningGaps(crg.state),
     environmentProblems: readEnvironmentProblems(crg.state),
-    taskProblems: listTaskProblems(crg.state.changeTasks, readEnabledPlanEnvironments(crg.state), session.mode),
+    taskProblems: [...listTaskProblems(crg.state.changeTasks, readEnabledPlanEnvironments(crg.state), session.mode), ...listUntimedTaskProblems(crg.state)],
     reviewedStepIds: session.reviewedStepIds,
     isChecksSatisfied: session.areChecksAcknowledged || (items ? isReady(items) : session.wereChecksReady),
     paperworkNeed,
@@ -259,8 +260,7 @@ function ChangeJob({ job, resumedAgeText, startingPoint, onExit, onStartOver }: 
   const isChecking = stepIds.indexOf(currentStepId) >= stepIds.indexOf('aiDraft');
   const issueKeys = useMemo(() => [...crg.state.selectedIssueKeys].sort(), [crg.state.selectedIssueKeys]);
   useDefaultJiraEvidenceTicks(job.jobId, issueKeys, isChecking);
-  const jiraEvidenceFileNames = useMemo(() => jiraEvidence.map((evidence) => evidence.attachment.filename), [jiraEvidence]);
-  const { items } = useDraftReadiness(crg.state, session, isChecking, jiraEvidenceFileNames);
+  const { items } = useDraftReadiness(crg.state, session, isChecking, jiraEvidence);
   const progress = buildProgress(crg, session, items, paperworkNeed);
   const runner = useFinishRunner({
     crg, session, updateSession, ctaskEnvironmentPlan, environmentValueByKey: buildEnvironmentValueByKey(choiceOptions.u_environment ?? []),

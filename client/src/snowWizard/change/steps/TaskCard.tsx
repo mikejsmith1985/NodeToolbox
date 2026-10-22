@@ -12,6 +12,7 @@ import ChoiceSelect from '../ChoiceSelect.tsx';
 import styles from '../ChangeWizard.module.css';
 import { readTaskEnvironmentTicks, toggleTaskEnvironment, type PlanEnvironmentKey } from '../ctaskEnvironmentPlan.ts';
 import { describeTaskCard } from '../taskCards.ts';
+import { describeTaskTiming } from '../taskTimeline.ts';
 
 /** Everything one card needs, and the ways it can change. */
 export interface TaskCardProps {
@@ -122,6 +123,7 @@ export default function TaskCard(props: TaskCardProps) {
       <SnowLookupField label="Assignment group" tableName="sys_user_group" value={task.assignmentGroup} onChange={(assignmentGroup) => onChange({ ...task, assignmentGroup })} />
       <SnowLookupField label="Assigned to" tableName="sys_user" value={task.assignedTo} onChange={(assignedTo) => onChange({ ...task, assignedTo })} />
       <p className={styles.hint}>The configuration item is the change&apos;s own, so there is nothing to pick.</p>
+      <p className={styles.hint}>{describeTaskTiming(task) ? `⏱️ Timing: ${describeTaskTiming(task)}` : '⏱️ No timing yet — “Time the tasks with AI” below works it out.'}</p>
       {isEnvironmentChoiceShown ? <TaskEnvironmentTicks task={task} taskIndex={taskIndex} enabledEnvironments={props.enabledEnvironments} onChange={onChange} /> : null}
       <TaskOrderButtons {...props} />
       <SaveAsTaskTemplate task={task} taskIndex={taskIndex} onSaveAsTemplate={props.onSaveAsTemplate} />

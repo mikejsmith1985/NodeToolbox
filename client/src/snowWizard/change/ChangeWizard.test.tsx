@@ -35,6 +35,7 @@ function buildSavedDraft(backoutPlan: string) {
     changeTasks: [{
       id: 'task-1', name: 'Business Checkout', createdAt: '', shortDescription: 'Business Checkout', description: '', assignmentGroup: PERSON,
       assignedTo: PERSON, plannedStartDate: '', plannedEndDate: '', closeNotes: '', changeTaskType: 'review',
+      durationEstimates: { implementationMinutes: '20', validationMinutes: '10', backoutMinutes: '5' },
     }],
   };
 }

@@ -5,7 +5,9 @@
 // draft's facts are assembled here from the draft itself; a modify starts from what that gatherer read and lays the
 // user's edits on top. Every assumption about what Create will add is the create path's own behaviour, named below.
 
-import type { ChangeReadinessFacts, ReadinessAction, ReadinessCtask, ReadinessItem, ReadinessPrb } from '../../views/SnowHub/guided/changeReadiness.ts';
+import type {
+  ChangeReadinessFacts, ReadinessAction, ReadinessCtask, ReadinessItem, ReadinessPrb, TestEvidenceCoverage,
+} from '../../views/SnowHub/guided/changeReadiness.ts';
 import { readBackoutSectionFromDescription } from '../../views/SnowHub/chgFormula/ctaskReviewRecord.ts';
 import { readLocalDateTimeAsUtc } from '../../views/SnowHub/rcp/rcpNewChange.ts';
 import { isRcpPeriodActive } from '../../views/SnowHub/rcp/rcpRules.ts';
@@ -13,6 +15,7 @@ import { DRAFT_ENVIRONMENTS, readChangeTextFields, readProductionEnvironmentKey,
 import type { ChangeWizardMode, ChangeWizardStepId } from './changeWizardSteps.ts';
 import { evaluateDraftRcp } from './draftChangePlan.ts';
 import { isExistingTaskEdited, type ExistingTaskLink } from './modifyTasks.ts';
+import { isTaskTimed, listTimelineOverruns } from './taskTimeline.ts';
 
 /** Everything the facts are built from. */
 export interface DraftReadinessInput {
@@ -24,6 +27,8 @@ export interface DraftReadinessInput {
   todayIso: string;
   /** Files chosen on the Evidence step; they are attached to every change once it exists. */
   evidenceFileNames: readonly string[];
+  /** The Jira issues those files come from; absent when not known, so the evidence is judged on its files alone. */
+  evidenceIssueKeys?: readonly string[];
   /** Where each PRB the chosen issues mention stands; null when the scan failed. */
   prbRows: readonly ReadinessPrb[] | null;
   prbFailureReason?: string;
@@ -60,8 +65,9 @@ function readDraftConfigItem(draft: CrgDraftState) {
 }
 
 /**
- * One staged task as it will be created: create stamps the change's configuration item on it, and a task with no
- * dates of its own takes the change's window (ctaskParentDefaults.resolveCtaskPlannedWindow).
+ * One staged task as it will be created: create stamps the change's configuration item on it, and a timed task is
+ * dated in its own slot of the change's window (taskTimeline.dateTaskCards). An untimed task would only inherit the
+ * whole window, which is not a timeline, so it counts as undated.
  */
 function readStagedCtask(task: CrgDraftState['changeTasks'][number], hasChangeConfigItem: boolean, hasChangeWindow: boolean): ReadinessCtask {
   return {
@@ -69,7 +75,28 @@ function readStagedCtask(task: CrgDraftState['changeTasks'][number], hasChangeCo
     isImplementation: (task.changeTaskType ?? '').toLowerCase() === IMPLEMENTATION_TASK_TYPE,
     isConfigItemMatching: hasChangeConfigItem,
     hasBackoutPlan: readBackoutSectionFromDescription(task.description) !== '',
-    hasPlannedDates: (task.plannedStartDate !== '' && task.plannedEndDate !== '') || hasChangeWindow,
+    hasPlannedDates: hasChangeWindow && isTaskTimed(task),
+  };
+}
+
+/** True when the text names the issue key as a whole word ("ABC-1" but not "ABC-12"). */
+function isIssueNamed(text: string, issueKey: string): boolean {
+  const escapedKey = issueKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^A-Z0-9-])${escapedKey}(?![0-9])`, 'i').test(text);
+}
+
+/**
+ * How the evidence covers the chosen Jira issues: which have no file, and which have a file the test plan never names.
+ * Undefined when the issues the files come from are not known.
+ */
+export function readTestEvidenceCoverage(draft: CrgDraftState, evidenceIssueKeys: readonly string[] | undefined): TestEvidenceCoverage | undefined {
+  if (evidenceIssueKeys === undefined || draft.selectedIssueKeys.size === 0) return undefined;
+  const coveredKeys = new Set(evidenceIssueKeys);
+  const selectedKeys = [...draft.selectedIssueKeys].sort();
+  const testPlan = draft.chgPlanningContent.testPlan;
+  return {
+    issuesWithoutEvidence: selectedKeys.filter((issueKey) => !coveredKeys.has(issueKey)),
+    issuesMissingFromTestPlan: selectedKeys.filter((issueKey) => coveredKeys.has(issueKey) && !isIssueNamed(testPlan, issueKey)),
   };
 }
 
@@ -100,6 +127,8 @@ function buildNewChangeFacts(input: DraftReadinessInput, isRcpActive: boolean): 
     prbs: input.prbRows?.map((row) => (row.linkStatus === 'unlinked' ? { ...row, linkStatus: 'thisChange' as const } : row)) ?? null,
     attachmentFileNames: [...input.evidenceFileNames],
     failureReasons: input.prbRows === null && input.prbFailureReason ? { prbs: input.prbFailureReason } : {},
+    testEvidenceCoverage: readTestEvidenceCoverage(draft, input.evidenceIssueKeys),
+    ctaskTimelineProblems: listTimelineOverruns(draft),
   };
 }
 
@@ -140,6 +169,8 @@ function buildExistingChangeFacts(input: DraftReadinessInput, existingFacts: Cha
     riskReview: input.riskReview,
     attachmentFileNames: attachedFileNames === null && input.evidenceFileNames.length === 0
       ? null : [...(attachedFileNames ?? []), ...input.evidenceFileNames],
+    testEvidenceCoverage: readTestEvidenceCoverage(draft, input.evidenceIssueKeys),
+    ctaskTimelineProblems: listTimelineOverruns(draft),
   };
 }
 

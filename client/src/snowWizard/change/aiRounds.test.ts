@@ -26,7 +26,7 @@ describe('buildWizardPromptContext', () => {
     const context = buildWizardPromptContext(buildDraft());
     expect(context.changeOwnerLabel).toBe('Pat Owner');
     expect(context.categoryLabel).toBe('software');
-    expect(context.environmentLines).toEqual(['PRD: 2026-11-02T19:00 → 2026-11-02T21:00']);
+    expect(context.environmentLines).toEqual(['PRD: 2026-11-02T19:00 → 2026-11-02T21:00 (window: 2 hours)']);
   });
 });
 
@@ -43,7 +43,7 @@ describe('one set of texts for a REL and a PRD change (GH #468)', () => {
   it('names each change\'s own configuration item instead of one for both', () => {
     const context = buildWizardPromptContext(buildTwoChangeDraft());
     expect(context.configItemLabel).toBe('one per change — see Environments');
-    expect(context.environmentLines[0]).toBe('REL: 2026-10-22T19:00 → 2026-10-22T21:00 (configuration item: EAM - Release)');
+    expect(context.environmentLines[0]).toBe('REL: 2026-10-22T19:00 → 2026-10-22T21:00 (window: 2 hours) (configuration item: EAM - Release)');
   });
 
   it('tells the AI the texts serve both changes, so it never asks which one it is writing for', () => {

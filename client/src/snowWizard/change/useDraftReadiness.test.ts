@@ -8,6 +8,7 @@ import { scanIssuesForProblems } from '../../views/SnowHub/problems/changeProble
 import { useCrgState } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { CrgDraftState } from './changeDraft.ts';
 import { createChangeWizardSession } from './changeWizardSession.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 import { useDraftReadiness } from './useDraftReadiness.ts';
 
 vi.mock('../../services/jiraApi.ts', () => ({ jiraGet: vi.fn(async () => []) }));
@@ -17,6 +18,10 @@ vi.mock('../../views/SnowHub/guided/changeReadinessFacts.ts', async (importOrigi
   ...(await importOriginal<typeof import('../../views/SnowHub/guided/changeReadinessFacts.ts')>()),
   gatherChangeReadinessFacts: vi.fn(),
 }));
+
+function buildEvidence(issueKey: string, filename: string): JiraEvidenceAttachment {
+  return { issueKey, issueSummary: '', attachment: { filename } } as unknown as JiraEvidenceAttachment;
+}
 
 function readDraftWithIssue(): CrgDraftState {
   const draft = renderHook(() => useCrgState({ storageKey: 'snowWizard:change:readiness-test' })).result.current.state;
@@ -47,15 +52,33 @@ describe('useDraftReadiness', () => {
     vi.mocked(scanIssuesForProblems).mockResolvedValue([]);
     const issueDraft = readDraftWithIssue();
     // Test evidence is only asked of a Production change.
-    const draft = { ...issueDraft, prdEnvironment: { ...issueDraft.prdEnvironment, isEnabled: true } };
+    const draft = {
+      ...issueDraft, prdEnvironment: { ...issueDraft.prdEnvironment, isEnabled: true },
+      chgPlanningContent: { ...issueDraft.chgPlanningContent, testPlan: 'ABC-1: execution results attached.' },
+    };
     const session = createChangeWizardSession('create');
     const withoutJira = renderHook(() => useDraftReadiness(draft, session, true));
     await waitFor(() => expect(withoutJira.result.current.items).not.toBeNull());
     expect(withoutJira.result.current.items?.find((item) => item.id === 'testEvidence')?.state).toBe('needsAction');
-    const jiraFileNames = ['ENCUC_2082_execution.xlsx'];
-    const withJira = renderHook(() => useDraftReadiness(draft, session, true, jiraFileNames));
+    const withJira = renderHook(() => useDraftReadiness(draft, session, true, [buildEvidence('ABC-1', 'ENCUC_2082_execution.xlsx')]));
     await waitFor(() => expect(withJira.result.current.items).not.toBeNull());
     expect(withJira.result.current.items?.find((item) => item.id === 'testEvidence')?.state).toBe('done');
+  });
+
+  it('judges the evidence by the issues it covers: every issue needs a file, and the test plan must name each', async () => {
+    const issueDraft = readDraftWithIssue();
+    const draft = { ...issueDraft, selectedIssueKeys: new Set(['ABC-1', 'ABC-2']), prdEnvironment: { ...issueDraft.prdEnvironment, isEnabled: true } };
+    const session = createChangeWizardSession('create');
+    const evidence = [buildEvidence('ABC-1', 'results.xlsx')];
+    const missingIssue = renderHook(() => useDraftReadiness(draft, session, true, evidence));
+    await waitFor(() => expect(missingIssue.result.current.items).not.toBeNull());
+    expect(missingIssue.result.current.items?.find((item) => item.id === 'testEvidence')?.reason).toBe('1 file is attached, but ABC-2 has no test evidence file.');
+    const oneIssueDraft = { ...draft, selectedIssueKeys: new Set(['ABC-1']) };
+    const unnamed = renderHook(() => useDraftReadiness(oneIssueDraft, session, true, evidence));
+    await waitFor(() => expect(unnamed.result.current.items).not.toBeNull());
+    expect(unnamed.result.current.items?.find((item) => item.id === 'testEvidence')).toMatchObject({
+      state: 'needsAction', action: { kind: 'openStep', stepId: 'changeText', focusField: 'testPlan' },
+    });
   });
 
   it('reads what ServiceNow holds for a change being modified', async () => {

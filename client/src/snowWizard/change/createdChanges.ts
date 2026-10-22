@@ -15,6 +15,7 @@ import type { CrgDraftState } from './changeDraft.ts';
 import type { CreatedChangeSummary } from './createOutcome.ts';
 import { filterStagedCtasksForEnvironment, type CtaskEnvironmentPlan } from './ctaskEnvironmentPlan.ts';
 import { fetchChangeForModify } from './modifyLoad.ts';
+import { dateTaskCards } from './taskTimeline.ts';
 
 /** One task ServiceNow holds on a created change. */
 export interface CreatedTaskRecord {
@@ -185,7 +186,7 @@ export interface SaveCreatedChangeInput {
 
 /**
  * Writes the finished change to one created change (its own environment's values), then each of its task cards to
- * the task made for it. Returns a plain summary; a failed write throws with ServiceNow's reason.
+ * the task made for it, dated back to back inside the change's window. Returns a plain summary; a failed write throws with ServiceNow's reason.
  */
 export async function saveCreatedChange(input: SaveCreatedChangeInput, writers: CreatedChangeWriters = DEFAULT_WRITERS): Promise<string> {
   const { createdChange, draft } = input;
@@ -199,8 +200,10 @@ export async function saveCreatedChange(input: SaveCreatedChangeInput, writers: 
   const assignmentNotes: string[] = [];
   if (matches.length > 0) {
     const changeDefaults = await writers.readChangeDefaults(changeSysId);
-    for (const { card, taskRecord } of matches) {
-      await writers.updateTask(taskRecord.sysId, changeSysId, card, changeDefaults);
+    // Each task keeps its own slot on the timeline; a card with no dates would otherwise take the whole change window.
+    const datedCards = dateTaskCards(matches.map(({ card }) => card), changeDefaults.plannedStartDate);
+    for (const [matchIndex, { card, taskRecord }] of matches.entries()) {
+      await writers.updateTask(taskRecord.sysId, changeSysId, datedCards[matchIndex], changeDefaults);
       const assignmentNote = await enforceTaskAssignment(card, taskRecord, writers);
       if (assignmentNote) assignmentNotes.push(assignmentNote);
     }

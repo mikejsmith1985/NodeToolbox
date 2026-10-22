@@ -7,6 +7,7 @@
 import { fetchChangeTaskDefaults, createChangeTasks, updateChangeTaskRecord, type CtaskTemplate } from '../../views/SnowHub/hooks/useCrgState.ts';
 import type { ChangeTaskDefaults } from '../../views/SnowHub/ctaskParentDefaults.ts';
 import { fetchChangeForModify } from './modifyLoad.ts';
+import { dateTaskCards } from './taskTimeline.ts';
 import { buildTaskTemplateData } from './templateSave.ts';
 
 /** One card that is a task the change already has. */
@@ -104,7 +105,10 @@ export async function saveModifyTasks(input: SaveModifyTasksInput, writers: Modi
   if (taskWrites.updates.length === 0 && taskWrites.creates.length === 0) return null;
   const changeSysId = input.changeSysId || await writers.resolveChangeSysId(input.changeNumber);
   const changeDefaults = await writers.readChangeDefaults(changeSysId);
-  for (const { link, task } of taskWrites.updates) await writers.updateTask(link.sysId, changeSysId, task, changeDefaults);
-  if (taskWrites.creates.length > 0) await writers.createTasks(changeSysId, taskWrites.creates, changeDefaults);
+  // Every written task carries its own slot on the change's timeline, worked out over all of the change's cards.
+  const datedTasks = dateTaskCards(input.draftTasks, changeDefaults.plannedStartDate);
+  const readDatedTask = (task: CtaskTemplate) => datedTasks[input.draftTasks.indexOf(task)] ?? task;
+  for (const { link, task } of taskWrites.updates) await writers.updateTask(link.sysId, changeSysId, readDatedTask(task), changeDefaults);
+  if (taskWrites.creates.length > 0) await writers.createTasks(changeSysId, taskWrites.creates.map(readDatedTask), changeDefaults);
   return describeTaskWrites(taskWrites, input.changeNumber);
 }

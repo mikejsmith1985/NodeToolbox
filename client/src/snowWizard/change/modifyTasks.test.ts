@@ -69,3 +69,15 @@ describe('saveModifyTasks', () => {
     expect(summary).toBe('1 task updated and 1 task added on CHG1.');
   });
 });
+
+describe('saveModifyTasks — the timeline', () => {
+  it('writes each edited or new task with its own slot on the change\'s timeline', async () => {
+    const writers = buildWriters();
+    vi.mocked(writers.readChangeDefaults).mockResolvedValue({ configItemSysId: 'ci-1', plannedStartDate: '2026-10-24T22:00', plannedEndDate: '2026-10-25T01:00' });
+    const timing = { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '20' };
+    const draftTasks = [{ ...LOADED_TASKS[0], durationEstimates: timing }, LOADED_TASKS[1], buildTask({ id: 'card-3', name: '', shortDescription: 'Smoke test', changeTaskType: '', durationEstimates: timing })];
+    await saveModifyTasks({ changeNumber: 'CHG1', changeSysId: 'chg-sys', draftTasks, links: LINKS }, writers);
+    expect(vi.mocked(writers.updateTask).mock.calls[0][2]).toMatchObject({ plannedStartDate: '2026-10-24T22:00', plannedEndDate: '2026-10-24T22:45' });
+    expect(vi.mocked(writers.createTasks).mock.calls[0][1][0]).toMatchObject({ plannedStartDate: '2026-10-24T22:45', plannedEndDate: '2026-10-24T23:30' });
+  });
+});

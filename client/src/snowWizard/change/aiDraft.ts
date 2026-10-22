@@ -9,6 +9,7 @@ import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub
 import { buildAiAssistPromptText, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
 import { applyChangeTextField, readChangeTextFields, readSelectedIssues, type CrgDraftState, type CrgHook } from './changeDraft.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 
 /** The draft setters an accepted suggestion writes through — the same ones the screens use. */
 export type AiDraftWriters = Pick<CrgHook['actions'], 'updateGeneratedField' | 'setChgPlanningContent'>;
@@ -36,13 +37,34 @@ const NOTHING_NEW_MESSAGE = 'The reply is in, but everything it suggested is alr
 const BEST_GUESS_INSTRUCTION = 'Make your best guess for every field from the facts above. Do not write [CONFIRM: ...] '
   + 'placeholders in this round: if a fact you need is missing, ask me for it here in this chat first, then write the fields.';
 
+// The plans must carry the timeline and the durations the CAB asks for, worked out from the task estimates above.
+const TIMELINE_INSTRUCTION = 'The Implementation Plan must follow the task timeline above: the tasks in the order they run, each '
+  + 'with its planned start and end, then the Implementation, Validation and Backout Duration and the window length, taken from '
+  + 'the task estimates. Never write "not estimated", "TBD" or "unknown" for a duration — use the estimates given.';
+// What the Test Plan must say about the evidence, so it is judged by the files rather than by the words alone.
+const EVIDENCE_INSTRUCTION = 'The Test Plan must name every Jira issue key above with the evidence file(s) that show it was '
+  + 'tested. For an issue with no file, say plainly that its test evidence is not attached yet; never cite evidence it does not have.';
+
+/** The files each chosen Jira issue holds — the test evidence zipped onto the change — one line per issue. */
+function describeEvidenceByIssue(draft: CrgDraftState, jiraEvidence: readonly JiraEvidenceAttachment[]): string[] {
+  const issueLines = readSelectedIssues(draft).map((issue) => {
+    const fileNames = jiraEvidence.filter((evidence) => evidence.issueKey === issue.key).map((evidence) => evidence.attachment.filename);
+    return `  ${issue.key}: ${fileNames.length > 0 ? fileNames.join(', ') : 'no files — no test evidence for this issue'}`;
+  });
+  if (issueLines.length === 0) return [];
+  return ['', 'Test evidence (the files on each Jira issue — they are zipped and attached to the change):', ...issueLines, EVIDENCE_INSTRUCTION];
+}
+
 /**
  * The whole prompt: Toolbox's seven-field AI Assist prompt, seeded with the chosen Jira work, the change's own picks
- * (category, type, environments, planning answers) as facts, and anything already written.
+ * (category, type, environments, planning answers) and its task timeline as facts, the test evidence on each issue, and
+ * anything already written.
  */
-export function buildAiDraftPrompt(draft: CrgDraftState): string {
+export function buildAiDraftPrompt(draft: CrgDraftState, jiraEvidence: readonly JiraEvidenceAttachment[] = []): string {
   const basePrompt = buildAiAssistPromptText(readSelectedIssues(draft), readChangeTextFields(draft), buildWizardPromptContext(draft));
-  return [basePrompt, ...buildMultiChangeNote(draft), '', BEST_GUESS_INSTRUCTION].join('\n');
+  return [
+    basePrompt, ...buildMultiChangeNote(draft), ...describeEvidenceByIssue(draft, jiraEvidence), '', TIMELINE_INSTRUCTION, '', BEST_GUESS_INSTRUCTION,
+  ].join('\n');
 }
 
 /** Reads a pasted reply into one suggestion per text, skipping any that already say the same thing. */

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Wizard: the task timeline, the durations and evidence-based checks.**
+  - **Timing round:** the tasks step gains "⏱️ Time the tasks with AI", a copy/paste round.
+    - It gives every task card the three estimates the CAB asks for (implementation, validation, backout).
+    - The prompt makes the AI estimate from the Jira work and each task's own words, and never answer "unknown",
+      "TBD" or "not estimated".
+    - Next is held until every task is timed, so no task or change goes out "not estimated".
+  - **Schedule:** each change's tasks run back to back inside its own window (Implementation → Technical Checkout →
+    Business Checkout), with a warning when they run past it.
+  - **Saves:** create's final save and modify's task save write each task's own slot. A task is no longer reset to
+    the whole change window.
+  - **AI draft prompt:** it now carries:
+    - each window's length;
+    - every task's planned start, end and estimates;
+    - the change's added-up durations;
+    - the evidence files on each Jira issue.
+    It also tells the AI to build the implementation plan from that timeline and to name each issue's evidence in
+    the test plan.
+  - **Checks:** "Test evidence" now fails when a chosen Jira issue has no evidence file, or when the test plan never
+    names an issue whose evidence is attached. "Fix all with AI" handles the second case. "Task dates" fails for an
+    untimed task, or when the tasks overrun the window.
+
 ### Fixed
 - **SNow Wizard: test evidence can be added after the save.** When everything went through but the evidence zip, the
   last screen no longer says "All done"; it says only the evidence is missing and offers a "Test evidence is not on …

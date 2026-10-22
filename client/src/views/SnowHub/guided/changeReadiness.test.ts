@@ -249,6 +249,34 @@ describe('testEvidence', () => {
   it('is not applicable off Production', () => {
     expect(readItem('testEvidence', { isProduction: false, attachmentFileNames: [] }).state).toBe('notApplicable');
   });
+
+  it('judges the files against the issues when they are known: an issue with no file needs action', () => {
+    const item = readItem('testEvidence', { testEvidenceCoverage: { issuesWithoutEvidence: ['ABC-2'], issuesMissingFromTestPlan: [] } });
+    expect(item.state).toBe('needsAction');
+    expect(item.reason).toContain('but ABC-2 has no test evidence file.');
+    expect(item.action).toMatchObject({ kind: 'openStep', stepId: 'testEvidence' });
+  });
+
+  it('sends a test plan that never names an evidenced issue back to the writing', () => {
+    const item = readItem('testEvidence', { testEvidenceCoverage: { issuesWithoutEvidence: [], issuesMissingFromTestPlan: ['ABC-1'] } });
+    expect(item.reason).toBe('The test plan does not name ABC-1, whose test evidence is attached.');
+    expect(item.action).toMatchObject({ kind: 'openStep', stepId: 'changeText', focusField: 'testPlan' });
+  });
+
+  it('is done when every issue has a file the test plan names', () => {
+    const item = readItem('testEvidence', { testEvidenceCoverage: { issuesWithoutEvidence: [], issuesMissingFromTestPlan: [] } });
+    expect(item.state).toBe('done');
+    expect(item.reason).toContain('covering every issue');
+  });
+});
+
+describe('ctaskDates — the timeline', () => {
+  it('needs action when dated tasks still run past the window', () => {
+    const item = readItem('ctaskDates', { ctaskTimelineProblems: ["On the PRD change the tasks run 15 minutes past the window's end."] });
+    expect(item.state).toBe('needsAction');
+    expect(item.reason).toContain('15 minutes past');
+    expect(item.action).toMatchObject({ kind: 'openStep', stepId: 'ctaskTimeline' });
+  });
 });
 
 describe('Formula Card sections', () => {

@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { buildAiDraftPrompt, readAiDraftReply, type AiDraftReply } from '../aiDraft.ts';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
+import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
 import PromptRound from '../PromptRound.tsx';
 
 /**
@@ -21,9 +22,13 @@ export type AiDraftPurpose = 'write' | 'polish';
 /** The shared step props, plus what the round is for. */
 export interface AiDraftStepProps extends ChangeStepProps {
   purpose?: AiDraftPurpose;
-  /** Builds the prompt from the draft; defaults to the seven-field writing prompt. */
-  buildPrompt?: (draft: ChangeStepProps['crg']['state']) => string;
+  /** Builds the prompt from the draft and the test evidence; defaults to the seven-field writing prompt. */
+  buildPrompt?: (draft: ChangeStepProps['crg']['state'], jiraEvidence: readonly JiraEvidenceAttachment[]) => string;
+  /** The files on the chosen Jira issues — the test evidence the Test Plan must name. */
+  jiraEvidence?: readonly JiraEvidenceAttachment[];
 }
+
+const NO_JIRA_EVIDENCE: readonly JiraEvidenceAttachment[] = [];
 
 const PURPOSE_WORDS: Readonly<Record<AiDraftPurpose, { intro: string; applyVerb: string; doneVerb: string }>> = {
   write: {
@@ -93,11 +98,11 @@ function SuggestionPicker({ draftReply, applyVerb, onFill }: { draftReply: AiDra
 }
 
 /** Step: let the AI write the change from the chosen Jira work. */
-export default function AiDraftStep({ crg, purpose = 'write', buildPrompt = buildAiDraftPrompt }: AiDraftStepProps) {
+export default function AiDraftStep({ crg, purpose = 'write', buildPrompt = buildAiDraftPrompt, jiraEvidence = NO_JIRA_EVIDENCE }: AiDraftStepProps) {
   const words = PURPOSE_WORDS[purpose];
   const [draftReply, setDraftReply] = useState<AiDraftReply | null>(null);
   const [filledCount, setFilledCount] = useState<number | null>(null);
-  const promptText = useMemo(() => buildPrompt(crg.state), [buildPrompt, crg.state]);
+  const promptText = useMemo(() => buildPrompt(crg.state, jiraEvidence), [buildPrompt, crg.state, jiraEvidence]);
 
   function handleReadReply(replyText: string): string {
     const readReply = readAiDraftReply(replyText, crg.state);

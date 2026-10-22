@@ -142,6 +142,7 @@ function buildCard(cardId: string, shortDescription: string, environmentKeys: Ar
   return {
     id: cardId, name: shortDescription, createdAt: '', shortDescription, description: 'Production deployment', changeTaskType: 'implementation',
     assignmentGroup: SCM, assignedTo: VAZQUEZ, plannedStartDate: '', plannedEndDate: '', closeNotes: '', environmentKeys,
+    durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '20' },
   };
 }
 

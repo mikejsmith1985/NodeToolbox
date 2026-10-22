@@ -143,3 +143,18 @@ describe('saveCreatedChange — the tasks end up with the group and person chose
   });
 });
 });
+
+describe('saveCreatedChange — the tasks keep their place on the timeline', () => {
+  it('dates each task back to back from the change\'s start instead of giving each the whole window', async () => {
+    const timedDeploy = { ...buildCard('c1', 'Deploy'), changeTaskType: 'implementation', durationEstimates: { implementationMinutes: '30', validationMinutes: '15', backoutMinutes: '20' } };
+    const timedCheckout = { ...buildCard('c2', 'Business Checkout', ['PRD']), durationEstimates: { implementationMinutes: '20', validationMinutes: '10', backoutMinutes: '5' } };
+    const writers = buildWriters([{ sysId: 't1', number: 'CTASK1', shortDescription: 'Deploy' }, { sysId: 't2', number: 'CTASK2', shortDescription: 'Business Checkout' }]);
+    vi.mocked(writers.readChangeDefaults).mockResolvedValue({ configItemSysId: 'ci-prd', plannedStartDate: '2026-10-24T22:00', plannedEndDate: '2026-10-25T01:00' });
+    await saveCreatedChange({
+      draft: { ...buildDraft(), changeTasks: [timedDeploy, timedCheckout] }, createdChange: { environmentLabel: 'PRD', changeNumber: 'CHG2' },
+      environmentValueByKey: {}, ctaskEnvironmentPlan: { Deploy: { REL: true, PRD: true, PFIX: false }, 'Business Checkout': { REL: false, PRD: true, PFIX: false } },
+    }, writers);
+    const writtenDates = vi.mocked(writers.updateTask).mock.calls.map((call) => [call[2].plannedStartDate, call[2].plannedEndDate]);
+    expect(writtenDates).toEqual([['2026-10-24T22:00', '2026-10-24T22:45'], ['2026-10-24T22:45', '2026-10-24T23:15']]);
+  });
+});

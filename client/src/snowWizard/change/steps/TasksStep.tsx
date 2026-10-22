@@ -14,7 +14,9 @@ import { buildBlankChangeTask, buildTaskFromTemplate, listTaskProblems } from '.
 import TemplateSaveCard from '../TemplateSaveCard.tsx';
 import { buildTaskTemplateData } from '../templateSave.ts';
 import type { TemplateLibrary } from '../useTemplateLibrary.ts';
+import { listUntimedTaskProblems } from '../taskTimeline.ts';
 import TaskCard from './TaskCard.tsx';
+import TaskTimelineSection from './TaskTimelineSection.tsx';
 
 /** The step also needs the job's template library, for "Add from a saved task" and "Save as task template". */
 export interface TasksStepProps extends ChangeStepProps {
@@ -55,7 +57,7 @@ export default function TasksStep({ crg, session, updateSession, library }: Task
   const { state, actions } = crg;
   const enabledEnvironments = readEnabledPlanEnvironments(state);
   const existingTaskIds = new Set((session.modify?.existingTasks ?? []).map((link) => link.taskId));
-  const taskProblems = listTaskProblems(state.changeTasks, enabledEnvironments, session.mode);
+  const taskProblems = [...listTaskProblems(state.changeTasks, enabledEnvironments, session.mode), ...listUntimedTaskProblems(state)];
   const updateTask = (updatedTask: CtaskTemplate) => actions.updateChangeTask(updatedTask.id, buildTaskTemplateData(updatedTask));
   return (
     <div>
@@ -72,6 +74,7 @@ export default function TasksStep({ crg, session, updateSession, library }: Task
         ))}
       </ol>
       <AddTaskControls crg={crg} library={library} />
+      <TaskTimelineSection crg={crg} />
       {taskProblems.map((taskProblem) => <p key={taskProblem} className={styles.errorText}>{taskProblem}</p>)}
       {/* The last picking step: every pick is made, nothing is written yet — the natural moment to keep them. */}
       {session.mode === 'create' ? <TemplateSaveCard crg={crg} session={session} updateSession={updateSession} library={library} /> : null}

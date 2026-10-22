@@ -4,9 +4,12 @@
 // here from the draft — for AI Assist (aiDraft.ts) and for Toolbox's Risk Check (RiskCheckSection). Nothing is ever
 // sent automatically and nothing is written until the user applies it (propose-only, FR-008).
 
-import type { ChgPromptContext } from '../../views/SnowHub/chgFormula/chgPromptContext.ts';
+import { describeTaskPeople, type ChgPromptContext } from '../../views/SnowHub/chgFormula/chgPromptContext.ts';
+import { formatMinutes, readPlannedWindowMinutes, rollUpEstimates, sumEstimateMinutes } from '../../views/SnowHub/ctaskDurations.ts';
 import { buildIssueDetailText } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { DRAFT_ENVIRONMENTS, readSelectedIssues, type CrgDraftState } from './changeDraft.ts';
+import { describeTaskCard } from './taskCards.ts';
+import { buildEnvironmentTimelines, describeEnvironmentTimeline, describeTaskTiming } from './taskTimeline.ts';
 
 /** The assessment answers as "label: value" lines, skipping blanks. */
 function readAssessmentLines(draft: CrgDraftState): string[] {
@@ -26,10 +29,33 @@ function readEnabledChanges(draft: CrgDraftState) {
   }));
 }
 
-/** One environment's change as a fact line: its window, and its own configuration item when it has one. */
+/** One environment's change as a fact line: its window and how long it is, and its own configuration item when it has one. */
 function describeEnvironmentChange({ label, environment, configItemName }: ReturnType<typeof readEnabledChanges>[number]): string {
-  const windowText = `${environment.plannedStartDate || 'no start'} → ${environment.plannedEndDate || 'no end'}`;
+  const windowMinutes = readPlannedWindowMinutes(environment.plannedStartDate, environment.plannedEndDate);
+  const lengthText = windowMinutes === null ? '' : ` (window: ${formatMinutes(windowMinutes)})`;
+  const windowText = `${environment.plannedStartDate || 'no start'} → ${environment.plannedEndDate || 'no end'}${lengthText}`;
   return environment.configItem.displayName ? `${label}: ${windowText} (configuration item: ${configItemName})` : `${label}: ${windowText}`;
+}
+
+/**
+ * The tasks as the AI must write them into the plans: each change's tasks in the order they run, with planned times and
+ * estimates (the timeline), then who does each task. A task not timed yet is named with its people only.
+ */
+function describeChangeTasks(draft: CrgDraftState): string[] {
+  const timelineLines = buildEnvironmentTimelines(draft)
+    .filter((timeline) => timeline.schedule.length > 0)
+    .flatMap((timeline) => [`Timeline of the ${timeline.label} change, in the order the tasks run:`, ...describeEnvironmentTimeline(timeline)]);
+  const peopleLines = draft.changeTasks.map((card, cardIndex) => {
+    const timingText = describeTaskTiming(card) || 'no timing yet';
+    return `${describeTaskCard(card, cardIndex)} (${timingText}) — ${describeTaskPeople(card.assignedTo.displayName, card.assignmentGroup.displayName)}`;
+  });
+  return [...timelineLines, ...peopleLines];
+}
+
+/** The change's three durations, added up from its tasks' estimates — undefined while no task is timed. */
+function readChangeDurations(draft: CrgDraftState): ChgPromptContext['durationEstimates'] {
+  const rolledUp = rollUpEstimates(draft.changeTasks.map((card) => card.durationEstimates));
+  return sumEstimateMinutes(rolledUp) > 0 ? rolledUp : undefined;
 }
 
 /** The record facts the prompts need, from the draft. */
@@ -48,7 +74,9 @@ export function buildWizardPromptContext(draft: CrgDraftState): ChgPromptContext
     changeOwnerLabel: basicInfo.assignedTo.displayName,
     environmentLines: enabledChanges.map(describeEnvironmentChange),
     assessmentLines: readAssessmentLines(draft),
-    changeTaskLines: draft.changeTasks.map((task) => task.shortDescription || task.name),
+    changeTaskLines: describeChangeTasks(draft),
+    changeTaskInstructionLines: draft.changeTasks.map((card, cardIndex) => (card.description.trim() === '' ? '' : `${describeTaskCard(card, cardIndex)}: ${card.description.trim()}`)),
+    durationEstimates: readChangeDurations(draft),
     jiraSourceText: readSelectedIssues(draft).length > 0 ? buildIssueDetailText(readSelectedIssues(draft)) : undefined,
   };
 }

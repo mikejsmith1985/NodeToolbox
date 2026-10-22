@@ -27,6 +27,7 @@ function buildProductionDraft(): CrgDraftState {
     changeTasks: [{
       id: 'task-1', name: 'Business Checkout', createdAt: '', shortDescription: 'Business Checkout', description: '',
       assignmentGroup: OWNER, assignedTo: OWNER, plannedStartDate: '', plannedEndDate: '', closeNotes: '', changeTaskType: 'review',
+      durationEstimates: { implementationMinutes: '20', validationMinutes: '10', backoutMinutes: '5' },
     }],
   };
 }
@@ -52,6 +53,24 @@ describe('buildDraftReadinessFacts — a new change', () => {
     const facts = buildDraftReadinessFacts(buildInput());
     expect(facts.outageCount).toBe(1);
     expect(facts.ctasks).toEqual([{ number: 'Business Checkout', isImplementation: false, isConfigItemMatching: true, hasBackoutPlan: false, hasPlannedDates: true }]);
+  });
+
+  it('counts an untimed task as undated — the whole change window is not a timeline — and flags tasks that overrun the window', () => {
+    const draft = buildProductionDraft();
+    const untimedTask = { ...draft.changeTasks[0], durationEstimates: undefined };
+    expect(buildDraftReadinessFacts(buildInput({ draft: { ...draft, changeTasks: [untimedTask] } })).ctasks?.[0].hasPlannedDates).toBe(false);
+    const longTask = { ...draft.changeTasks[0], durationEstimates: { implementationMinutes: '120', validationMinutes: '30', backoutMinutes: '5' } };
+    expect(buildDraftReadinessFacts(buildInput({ draft: { ...draft, changeTasks: [longTask] } })).ctaskTimelineProblems)
+      .toEqual(["On the PRD change the tasks run 30 minutes past the window's end. Make the window longer, or shorten the tasks."]);
+  });
+
+  it('judges the evidence by the issues it comes from, only when those issues are known', () => {
+    const draft = { ...buildProductionDraft(), selectedIssueKeys: new Set(['ABC-1', 'ABC-12']) };
+    const facts = buildDraftReadinessFacts(buildInput({ draft, evidenceIssueKeys: ['ABC-12'] }));
+    expect(facts.testEvidenceCoverage).toEqual({ issuesWithoutEvidence: ['ABC-1'], issuesMissingFromTestPlan: ['ABC-12'] });
+    const namedDraft = { ...draft, chgPlanningContent: { ...draft.chgPlanningContent, testPlan: 'ABC-1 and ABC-12 passed in INT.' } };
+    expect(buildDraftReadinessFacts(buildInput({ draft: namedDraft, evidenceIssueKeys: ['ABC-12'] })).testEvidenceCoverage?.issuesMissingFromTestPlan).toEqual([]);
+    expect(buildDraftReadinessFacts(buildInput({ draft })).testEvidenceCoverage).toBeUndefined();
   });
 
   it('counts a mentioned PRB with no change as linked, because creating the change links it', () => {

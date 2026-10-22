@@ -94,7 +94,7 @@ const RULE_GUIDE: Record<ReadinessItemId, () => GuideText> = {
     whyItMatters: 'If one task fails, the team needs that task\'s own way back.',
   }),
   ctaskDates: () => ({
-    label: RECORD_ITEM_LABELS.ctaskDates, appliesTo: 'Changes with tasks.', passesWhen: 'Every change task has a planned start and a planned end.',
+    label: RECORD_ITEM_LABELS.ctaskDates, appliesTo: 'Changes with tasks.', passesWhen: 'Every change task has a planned start and a planned end; in the Wizard, the tasks also run back to back, in stage order, inside the change\'s window.',
     whyItMatters: 'The tasks\' timeline shows the work fits the change\'s window.',
   }),
   prbs: () => ({
@@ -103,7 +103,7 @@ const RULE_GUIDE: Record<ReadinessItemId, () => GuideText> = {
     whyItMatters: 'The problem shows which change fixes it.',
   }),
   testEvidence: () => ({
-    label: RECORD_ITEM_LABELS.testEvidence, appliesTo: PRODUCTION_ONLY, passesWhen: 'At least one file is attached to the change.',
+    label: RECORD_ITEM_LABELS.testEvidence, appliesTo: PRODUCTION_ONLY, passesWhen: 'At least one file is attached to the change; where the change\'s Jira issues are known, every issue has an evidence file and the test plan names each one.',
     whyItMatters: 'Release Management needs proof the change was tested before it reaches Production.',
   }),
   formulaIdentity: () => describeFormulaSection('formulaIdentity'),

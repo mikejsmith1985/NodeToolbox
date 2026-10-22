@@ -13,6 +13,7 @@ import { readCentralTodayIso } from '../../views/SnowHub/rcp/rcpRules.ts';
 import type { CrgDraftState } from './changeDraft.ts';
 import type { ChangeWizardSession } from './changeWizardSession.ts';
 import { buildDraftReadinessFacts } from './draftReadinessFacts.ts';
+import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
 
 /**
  * The checks the Wizard leaves out. The AI review verdict: Toolbox's Risk Check is run on the real ticket instead,
@@ -39,14 +40,15 @@ interface ReadAnswer {
   existingFacts: ChangeReadinessFacts | null;
 }
 
-const NO_JIRA_EVIDENCE: readonly string[] = [];
+const NO_JIRA_EVIDENCE: readonly JiraEvidenceAttachment[] = [];
 
 /**
  * The checklist for the draft. `isActive` holds the reads back until the checks matter (the Checks step and after),
- * so typing on an earlier step never fires them. `jiraEvidenceFileNames` are the Jira files ticked on "Add proof" —
- * they go in the evidence zip at create, so they count as test evidence exactly like files from this computer.
+ * so typing on an earlier step never fires them. `jiraEvidence` is the Jira files ticked on "Add proof" — they go in
+ * the evidence zip at create, so they count as test evidence, and the issue each comes from is checked against the
+ * change's issues and its test plan.
  */
-export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSession, isActive: boolean, jiraEvidenceFileNames: readonly string[] = NO_JIRA_EVIDENCE): DraftReadiness {
+export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSession, isActive: boolean, jiraEvidence: readonly JiraEvidenceAttachment[] = NO_JIRA_EVIDENCE): DraftReadiness {
   const [readAnswer, setReadAnswer] = useState<ReadAnswer | null>(null);
   const issueKeys = useMemo(() => [...draft.selectedIssueKeys].sort(), [draft.selectedIssueKeys]);
   const changeNumber = session.modify?.changeNumber ?? '';
@@ -66,15 +68,19 @@ export function useDraftReadiness(draft: CrgDraftState, session: ChangeWizardSes
     return () => { isCurrent = false; };
   }, [isActive, requestKey, session.mode, changeNumber, issueKeys, session.riskReview, isRcpRulesEnabled]);
 
-  const evidenceFileNames = useMemo(() => [...session.evidenceFileNames, ...jiraEvidenceFileNames], [session.evidenceFileNames, jiraEvidenceFileNames]);
+  const evidenceFileNames = useMemo(
+    () => [...session.evidenceFileNames, ...jiraEvidence.map((evidence) => evidence.attachment.filename)], [session.evidenceFileNames, jiraEvidence]);
+  // A file from this computer belongs to no issue, so per-issue coverage is judged only when every file came from Jira.
+  const evidenceIssueKeys = useMemo(
+    () => (session.evidenceFileNames.length > 0 ? undefined : jiraEvidence.map((evidence) => evidence.issueKey)), [session.evidenceFileNames, jiraEvidence]);
   const items = useMemo(() => {
     if (!readAnswer || readAnswer.requestKey !== requestKey) return null;
     return excludeSkippedChecks(buildChangeReadiness(buildDraftReadinessFacts({
       mode: session.mode, draft, riskReview: session.riskReview, isRcpRulesEnabled, todayIso: readCentralTodayIso(),
-      evidenceFileNames, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
+      evidenceFileNames, evidenceIssueKeys, prbRows: readAnswer.prbRows, prbFailureReason: readAnswer.prbFailureReason,
       existingFacts: readAnswer.existingFacts, existingTaskLinks: session.modify?.existingTasks,
     })));
-  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, evidenceFileNames, session.modify?.existingTasks]);
+  }, [readAnswer, requestKey, session.mode, draft, session.riskReview, isRcpRulesEnabled, evidenceFileNames, evidenceIssueKeys, session.modify?.existingTasks]);
 
   return { items };
 }

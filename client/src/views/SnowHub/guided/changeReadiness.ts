@@ -94,6 +94,21 @@ export interface ChangeReadinessFacts {
   prbs: readonly ReadinessPrb[] | null;
   attachmentFileNames: readonly string[] | null;
   failureReasons: Partial<Record<ReadinessFactName, string>>;
+  /**
+   * Whether the evidence covers the work, where the reader knows the change's Jira issues (the Wizard does; a change
+   * read from ServiceNow alone does not, and is judged on its files). Absent means "not known".
+   */
+  testEvidenceCoverage?: TestEvidenceCoverage;
+  /** What is wrong with the tasks' timeline beyond missing dates (tasks that overrun the window); absent means none known. */
+  ctaskTimelineProblems?: readonly string[];
+}
+
+/** How the test evidence lines up with the change's Jira issues. */
+export interface TestEvidenceCoverage {
+  /** Issues with no evidence file at all. */
+  issuesWithoutEvidence: readonly string[];
+  /** Issues with evidence that the test plan never names. */
+  issuesMissingFromTestPlan: readonly string[];
 }
 
 // ── Constants ──
@@ -257,11 +272,15 @@ function evaluateCtaskDates(facts: ChangeReadinessFacts): ReadinessItem {
   if (facts.ctasks === null) return buildCouldNotCheckItem('ctaskDates', label, facts, 'ctasks');
   if (facts.ctasks.length === 0) return buildNotApplicableItem('ctaskDates', label, 'The change has no tasks.');
   const undatedTasks = facts.ctasks.filter((ctask) => !ctask.hasPlannedDates);
-  return undatedTasks.length === 0
+  const timelineAction: ReadinessAction = { kind: 'openStep', stepId: 'ctaskTimeline', label: 'Plan the task timeline' };
+  if (undatedTasks.length > 0) {
+    return buildNeedsActionItem('ctaskDates', label,
+      `${undatedTasks.map((ctask) => ctask.number).join(', ')} ${undatedTasks.length === 1 ? 'has' : 'have'} no planned start or end.`, timelineAction);
+  }
+  const timelineProblems = facts.ctaskTimelineProblems ?? [];
+  return timelineProblems.length === 0
     ? buildDoneItem('ctaskDates', label, 'Every task has a planned start and end.')
-    : buildNeedsActionItem('ctaskDates', label,
-      `${undatedTasks.map((ctask) => ctask.number).join(', ')} ${undatedTasks.length === 1 ? 'has' : 'have'} no planned start or end.`,
-      { kind: 'openStep', stepId: 'ctaskTimeline', label: 'Plan the task timeline' });
+    : buildNeedsActionItem('ctaskDates', label, timelineProblems.join(' '), timelineAction);
 }
 
 /** Every PRB the change's issues mention is linked to this change. */
@@ -288,10 +307,29 @@ function evaluateTestEvidence(facts: ChangeReadinessFacts): ReadinessItem {
   const productionGate = readProductionGate('testEvidence', label, facts);
   if (productionGate) return productionGate;
   if (facts.attachmentFileNames === null) return buildCouldNotCheckItem('testEvidence', label, facts, 'attachments');
-  return facts.attachmentFileNames.length > 0
-    ? buildDoneItem('testEvidence', label, `${countNoun(facts.attachmentFileNames.length, 'file is', 'files are')} attached.`)
-    : buildNeedsActionItem('testEvidence', label, 'Nothing is attached to show the change was tested.',
-      { kind: 'openStep', stepId: 'testEvidence', label: 'Attach test evidence' });
+  const attachAction: ReadinessAction = { kind: 'openStep', stepId: 'testEvidence', label: 'Attach test evidence' };
+  if (facts.attachmentFileNames.length === 0) return buildNeedsActionItem('testEvidence', label, 'Nothing is attached to show the change was tested.', attachAction);
+  const filesText = `${countNoun(facts.attachmentFileNames.length, 'file is', 'files are')} attached`;
+  return facts.testEvidenceCoverage ? judgeEvidenceCoverage(facts.testEvidenceCoverage, filesText, attachAction) : buildDoneItem('testEvidence', label, `${filesText}.`);
+}
+
+/**
+ * Evidence judged against the work it should prove: every issue needs a file, and the test plan must name each issue
+ * whose file is attached — a file count alone passed a change whose evidence covered one story out of five.
+ */
+function judgeEvidenceCoverage(coverage: TestEvidenceCoverage, filesText: string, attachAction: ReadinessAction): ReadinessItem {
+  const label = RECORD_ITEM_LABELS.testEvidence;
+  const { issuesWithoutEvidence, issuesMissingFromTestPlan } = coverage;
+  if (issuesWithoutEvidence.length > 0) {
+    return buildNeedsActionItem('testEvidence', label,
+      `${filesText}, but ${issuesWithoutEvidence.join(', ')} ${issuesWithoutEvidence.length === 1 ? 'has' : 'have'} no test evidence file.`, attachAction);
+  }
+  if (issuesMissingFromTestPlan.length > 0) {
+    return buildNeedsActionItem('testEvidence', label,
+      `The test plan does not name ${issuesMissingFromTestPlan.join(', ')}, whose test evidence is attached.`,
+      { kind: 'openStep', stepId: 'changeText', focusField: 'testPlan', label: 'Name the evidence in the test plan' });
+  }
+  return buildDoneItem('testEvidence', label, `${filesText}, covering every issue, and the test plan names each one.`);
 }
 
 // ── Formula Card sections (spec 040 FR-011) ──
