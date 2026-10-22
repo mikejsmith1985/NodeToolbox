@@ -212,8 +212,29 @@ function countBusinessDaysBetween(fromDateIso: string, toDateIso: string): numbe
   return businessDayCount;
 }
 
-/** Rule 5: a Moderate or High risk change is submitted at least three business days before it starts. */
-export function checkLeadTime(input: { riskLabel: string; todayIso: string; plannedStartUtc: string | null }): RcpCheckResult {
+/** When a change went in, as far as ServiceNow records it. Both are absent for a change still being written (New). */
+export interface LeadTimeSubmission {
+  /** When approval was requested (ServiceNow's "approval set") — the moment Change Management's clock starts. */
+  submittedAtUtc?: string | null;
+  /** When the change was raised; only a lower bound on when it went in, used when approval-set is blank. */
+  raisedAtUtc?: string | null;
+}
+
+/** The lead-time verdict measured from one day, in the words that name what that day was. */
+function judgeLeadTimeFrom(fromDateIso: string, startDateIso: string, riskLabel: string, fromWords: string): RcpCheckResult {
+  const title = RCP_RULE_TITLES.leadTime;
+  const businessDays = countBusinessDaysBetween(fromDateIso, startDateIso);
+  return businessDays >= LEAD_TIME_BUSINESS_DAYS
+    ? { ruleId: 'leadTime', title, status: 'pass', detail: `${riskLabel} risk, ${fromWords} ${businessDays} business days before it starts.` }
+    : { ruleId: 'leadTime', title, status: 'fail', detail: `${riskLabel} risk, ${fromWords} only ${businessDays} business days before it starts — ${LEAD_TIME_BUSINESS_DAYS} are needed.` };
+}
+
+/**
+ * Rule 5: a Moderate or High risk change is submitted at least three business days before it starts. A change already
+ * submitted is measured from when it went for approval — measuring an old change from today failed it more each day
+ * it waited for its own window (GH #475). Only a change still being written is measured from today.
+ */
+export function checkLeadTime(input: { riskLabel: string; todayIso: string; plannedStartUtc: string | null } & LeadTimeSubmission): RcpCheckResult {
   const title = RCP_RULE_TITLES.leadTime;
   if (input.riskLabel.trim() === '') {
     return { ruleId: 'leadTime', title, status: 'check', detail: `Risk is not set yet — Moderate and High risk changes need ${LEAD_TIME_BUSINESS_DAYS} business days of review.` };
@@ -224,10 +245,19 @@ export function checkLeadTime(input: { riskLabel: string; todayIso: string; plan
   if (!input.plannedStartUtc) {
     return { ruleId: 'leadTime', title, status: 'fail', detail: 'The change has no planned start to measure the review time against.' };
   }
-  const businessDays = countBusinessDaysBetween(input.todayIso, readCentralTimeParts(input.plannedStartUtc).dateIso);
-  return businessDays >= LEAD_TIME_BUSINESS_DAYS
-    ? { ruleId: 'leadTime', title, status: 'pass', detail: `${input.riskLabel} risk with ${businessDays} business days of review before it starts.` }
-    : { ruleId: 'leadTime', title, status: 'fail', detail: `${input.riskLabel} risk with only ${businessDays} business days before it starts — ${LEAD_TIME_BUSINESS_DAYS} are needed.` };
+  const startDateIso = readCentralTimeParts(input.plannedStartUtc).dateIso;
+  if (input.submittedAtUtc) {
+    const submittedDateIso = readCentralTimeParts(input.submittedAtUtc).dateIso;
+    return judgeLeadTimeFrom(submittedDateIso, startDateIso, input.riskLabel, `sent for approval on ${submittedDateIso},`);
+  }
+  const fromToday = judgeLeadTimeFrom(input.todayIso, startDateIso, input.riskLabel, 'submitted today,');
+  if (fromToday.status === 'pass' || !input.raisedAtUtc) return fromToday;
+  const raisedDateIso = readCentralTimeParts(input.raisedAtUtc).dateIso;
+  const fromRaised = judgeLeadTimeFrom(raisedDateIso, startDateIso, input.riskLabel, `raised on ${raisedDateIso},`);
+  // Raised early enough, but ServiceNow does not say when it went for approval: a person confirms the date.
+  return fromRaised.status === 'pass'
+    ? { ...fromRaised, status: 'check', detail: `${fromRaised.detail} Confirm it was sent for approval by then.` }
+    : fromRaised;
 }
 
 // How far ahead to look for an approved night before giving up.

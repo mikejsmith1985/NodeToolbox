@@ -81,4 +81,22 @@ describe('ChecksStep', () => {
     expect(updateSession).toHaveBeenCalledWith({ readinessRefreshCount: 1 });
     expect(goToStep).not.toHaveBeenCalled();
   });
+
+  it('says how evidence and the Director reply get done instead of showing buttons that fix nothing (GH #475)', () => {
+    const evidenceGap: ReadinessItem = {
+      id: 'testEvidence', label: 'Test evidence', state: 'needsAction', reason: '34 files are attached, but DENP-1479 has no test evidence file.',
+      action: { kind: 'openStep', stepId: 'testEvidence', label: 'Attach test evidence' },
+    };
+    const rcpGap: ReadinessItem = {
+      id: 'rcp', label: 'Restricted change period rules', state: 'needsAction', reason: 'Not met: Director approval attached.',
+      action: { kind: 'openStep', stepId: 'rcpChecklist', label: 'Open the RCP checklist' },
+    };
+    const session = { ...createChangeWizardSession('modify'), modify: { changeNumber: 'CHG9', stateLabel: 'New', loadedSnapshot: {}, loadedStepValues: {}, existingTaskNames: [], changeSysId: 'sys-9' } };
+    render(<Harness items={[evidenceGap, rcpGap, DATES_GAP]} session={session} goToStep={vi.fn()} updateSession={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Attach test evidence' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open the RCP checklist' })).toBeNull();
+    expect(screen.getByText(/Handled when you save: the last step sweeps Jira/)).toBeTruthy();
+    expect(screen.getByText(/Waiting on the Director's reply\? Save anyway/)).toBeTruthy();
+    expect(screen.getByText('1 check needs action. 2 more are handled when you save or when a reply comes back — see the notes below.')).toBeTruthy();
+  });
 });

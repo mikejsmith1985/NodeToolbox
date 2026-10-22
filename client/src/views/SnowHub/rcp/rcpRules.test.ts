@@ -146,6 +146,20 @@ describe('checkLeadTime', () => {
   it('asks for a check when the risk is not known yet', () => {
     expect(checkLeadTime({ riskLabel: '', todayIso: '2026-10-05', plannedStartUtc: FRIDAY_7_30_PM_CT }).status).toBe('check');
   });
+
+  it('measures a submitted change from when it went for approval, not from today (GH #475)', () => {
+    const result = checkLeadTime({ riskLabel: 'Moderate', todayIso: '2026-10-08', plannedStartUtc: FRIDAY_7_30_PM_CT, submittedAtUtc: '2026-10-02T15:00:00Z' });
+    expect(result.status).toBe('pass');
+    expect(result.detail).toMatch(/sent for approval on 2026-10-02/);
+    const late = checkLeadTime({ riskLabel: 'Moderate', todayIso: '2026-10-08', plannedStartUtc: FRIDAY_7_30_PM_CT, submittedAtUtc: '2026-10-07T15:00:00Z' });
+    expect(late.status).toBe('fail');
+  });
+
+  it('asks a person to confirm when only the raised date shows it was early enough', () => {
+    const result = checkLeadTime({ riskLabel: 'High', todayIso: '2026-10-08', plannedStartUtc: FRIDAY_7_30_PM_CT, raisedAtUtc: '2026-10-01T15:00:00Z' });
+    expect(result.status).toBe('check');
+    expect(result.detail).toMatch(/raised on 2026-10-01.*Confirm it was sent for approval/);
+  });
 });
 
 describe('isRcpPeriodActive', () => {

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard final checks no longer offer buttons that fix nothing (GH #475).**
+  - **Test evidence:** "Attach test evidence" only jumped back to step 1. It is replaced by a note saying the evidence
+    is handled on save: the last step sweeps Jira (the change's issues, their sub-tasks and linked issues), zips every
+    file and attaches the zip.
+  - **RCP: Director approval:** a note says to save anyway and attach the Director's reply (.msg / .eml / PDF) to the
+    change when it comes back. The check passes then.
+  - **RCP: Submitted early enough:** a note says how a late submission is handled (move the start to a later approved
+    night, or explain in the justification). "Open the RCP checklist" stays only when another rule it can fix also failed.
+  - The summary counts these separately: "N checks need action. M more are handled when you save or when a reply comes back."
+- **RCP "Submitted early enough" measured an existing change from today (GH #475).** A change already sent for
+  approval failed more each day it waited for its own window.
+  - It is now measured from when it went for approval (ServiceNow's *approval set*).
+  - When that is blank, the raised date is used. If the raised date is early enough, a person is asked to confirm it.
+  - A change still in New is measured from today.
+  - This applies everywhere the RCP rules run: the Wizard, the Existing CHG RCP check and the in-flight sweep.
+
 ### Added
 - **Export every template from Toolbox to the SNow Wizard in one go.** SNow Hub → Configuration → *Templates &
   Defaults* → CHG Templates has a new **Export all templates for the SNow Wizard** section. **Download all templates**

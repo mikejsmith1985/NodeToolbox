@@ -19,7 +19,7 @@ const PERSON = { sysId: 'usr-1', displayName: 'Pat Owner' };
 const BLANK_PERSON = { sysId: '', displayName: '' };
 
 /** A draft with every step's values written, REL and PRD windows, and Business Checkout staged. */
-function buildSavedDraft(backoutPlan: string) {
+function buildSavedDraft(backoutPlan: string, implementationMinutes = '20') {
   const window = (day: string) => ({ plannedStartDate: `2026-11-0${day}T19:00`, plannedEndDate: `2026-11-0${day}T21:00` });
   return {
     fetchedIssues: [{ id: 'ABC-1', key: 'ABC-1', fields: { summary: 'Login' } }],
@@ -35,15 +35,15 @@ function buildSavedDraft(backoutPlan: string) {
     changeTasks: [{
       id: 'task-1', name: 'Business Checkout', createdAt: '', shortDescription: 'Business Checkout', description: '', assignmentGroup: PERSON,
       assignedTo: PERSON, plannedStartDate: '', plannedEndDate: '', closeNotes: '', changeTaskType: 'review',
-      durationEstimates: { implementationMinutes: '20', validationMinutes: '10', backoutMinutes: '5' },
+      durationEstimates: { implementationMinutes, validationMinutes: '10', backoutMinutes: '5' },
     }],
   };
 }
 
 /** Puts a job waiting on `stepId`, with every earlier step passed, then opens the wizard and continues it. */
-function openJobAt(stepId: ChangeWizardStepId, backoutPlan = '1. Roll back') {
+function openJobAt(stepId: ChangeWizardStepId, backoutPlan = '1. Roll back', implementationMinutes = '20') {
   const stepIds = listChangeWizardStepIds('create');
-  localStorage.setItem(buildChangeStorageKey(JOB_ID), JSON.stringify(buildSavedDraft(backoutPlan)));
+  localStorage.setItem(buildChangeStorageKey(JOB_ID), JSON.stringify(buildSavedDraft(backoutPlan, implementationMinutes)));
   useWizardJobStore.setState({ jobs: { newChange: { jobId: JOB_ID, kind: 'newChange', stepId, status: 'inProgress', updatedAt: Date.now(), payloadKey: 'draft' } } });
   // Past "Create in ServiceNow", the job's REL and PRD changes already exist.
   const isPastCreate = stepIds.indexOf(stepId) > stepIds.indexOf('createChanges');
@@ -112,9 +112,10 @@ describe('ChangeWizard — new change', () => {
   });
 
   it('brings the user straight back to the checks from a value fix, without stepping through finished steps (GH #468)', async () => {
-    openJobAt('checks');
-    fireEvent.click(await screen.findByRole('button', { name: 'Attach test evidence' }));
-    expect(screen.getByRole('heading', { name: /What's in this change\?/ })).toBeTruthy();
+    // A task too long for its window: the timeline is fixed on "Build the tasks".
+    openJobAt('checks', undefined, '600');
+    fireEvent.click(await screen.findByRole('button', { name: 'Plan the task timeline' }));
+    expect(screen.getByRole('heading', { name: /Build the tasks/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back to “Risk check & final checks”' }));
     expect(screen.getByRole('heading', { name: /Risk check & final checks/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Back to “/ })).toBeNull();

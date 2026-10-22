@@ -12,6 +12,7 @@ import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import { useState } from 'react';
 
+import { describeCheckFollowUp, isHandledLater } from '../checkFollowUps.ts';
 import { isWritingCheck, resolveFixStepId } from '../draftReadinessFacts.ts';
 import { fetchChangeForModify } from '../modifyLoad.ts';
 import { runReadinessFix, type ReadinessFixTarget } from '../readinessFixes.ts';
@@ -43,8 +44,10 @@ async function resolveFixTargets(session: ChecksStepProps['session']): Promise<R
   return targets;
 }
 
-/** One check: its state, its reason, and its one fix. */
-function CheckLine({ item, fixStatus, onFix }: { item: ReadinessItem; fixStatus?: FixStatus; onFix: (item: ReadinessItem) => void }) {
+/** One check: its state, its reason, and its one fix — or, when nothing here can fix it, how it does get done. */
+function CheckLine({ item, changeNumber, fixStatus, onFix }: { item: ReadinessItem; changeNumber: string; fixStatus?: FixStatus; onFix: (item: ReadinessItem) => void }) {
+  const followUp = describeCheckFollowUp(item, changeNumber);
+  const hasFixButton = item.state === 'needsAction' && item.action !== null && !isWritingCheck(item) && (followUp?.isFixButtonUseful ?? true);
   return (
     <li className={styles.checkItem}>
       <div className={styles.checkHeader}>
@@ -53,7 +56,8 @@ function CheckLine({ item, fixStatus, onFix }: { item: ReadinessItem; fixStatus?
       </div>
       <p className={styles.hint}>{item.reason}</p>
       {item.state === 'needsAction' && isWritingCheck(item) ? <p className={styles.hint}>The Risk Check above rewrites this.</p> : null}
-      {item.state === 'needsAction' && item.action && !isWritingCheck(item) ? (
+      {followUp?.notes.map((note) => <p key={note} className={styles.hint}>{note}</p>)}
+      {hasFixButton && item.action ? (
         <div className={styles.buttonRow}>
           <button type="button" className={styles.secondaryButton} disabled={fixStatus?.kind === 'running'} onClick={() => onFix(item)}>
             {fixStatus?.kind === 'running' ? 'Fixing in ServiceNow…' : item.action.label}
@@ -64,6 +68,17 @@ function CheckLine({ item, fixStatus, onFix }: { item: ReadinessItem; fixStatus?
       {fixStatus?.kind === 'failed' ? <p className={styles.errorText} role="status">{`✗ Not fixed: ${fixStatus.message}`}</p> : null}
     </li>
   );
+}
+
+/** "1 check needs action. 2 more are handled when you save or when a reply comes back." — only the parts that apply. */
+function describeOpenChecks(actionNowCount: number, handledLaterCount: number): string {
+  const sentences: string[] = [];
+  if (actionNowCount > 0) sentences.push(`${actionNowCount} check${actionNowCount === 1 ? ' needs' : 's need'} action.`);
+  if (handledLaterCount > 0) {
+    sentences.push(`${actionNowCount > 0 ? `${handledLaterCount} more` : `${handledLaterCount} check${handledLaterCount === 1 ? '' : 's'}`} `
+      + `${handledLaterCount === 1 ? 'is' : 'are'} handled when you save or when a reply comes back — see the notes below.`);
+  }
+  return sentences.join(' ');
 }
 
 /** The "go on anyway" acknowledgement, shown only while something is not done. */
@@ -104,7 +119,9 @@ export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
   }
 
   if (items === null) return <p className={styles.hint} role="status">Checking your change…</p>;
-  const needsActionCount = items.filter((item) => item.state === 'needsAction').length;
+  const changeNumber = session.modify?.changeNumber ?? '';
+  const handledLaterCount = items.filter((item) => isHandledLater(item, changeNumber)).length;
+  const actionNowCount = items.filter((item) => item.state === 'needsAction').length - handledLaterCount;
   // "Not needed" counts as passing: it is a check that does not apply to this change.
   const passingCount = items.filter((item) => item.state === 'done' || item.state === 'notApplicable').length;
   const isAllReady = isReady(items);
@@ -120,9 +137,9 @@ export default function ChecksStep({ items, ...stepProps }: ChecksStepProps) {
       </div>
       {isAllReady
         ? <p className={styles.successText}>Everything that applies is done. This change should pass review.</p>
-        : <p className={styles.noticeText}>{`${needsActionCount} check(s) need action.`}</p>}
+        : <p className={styles.noticeText}>{describeOpenChecks(actionNowCount, handledLaterCount)}</p>}
       <ul className={styles.itemList} aria-label="Checks">
-        {items.map((item) => <CheckLine key={item.id} item={item} fixStatus={fixStatusById[item.id]} onFix={(fixItem) => { void handleFix(fixItem); }} />)}
+        {items.map((item) => <CheckLine key={item.id} item={item} changeNumber={changeNumber} fixStatus={fixStatusById[item.id]} onFix={(fixItem) => { void handleFix(fixItem); }} />)}
       </ul>
       {isAllReady ? null : <Acknowledgement items={items} session={session} updateSession={updateSession} />}
     </div>

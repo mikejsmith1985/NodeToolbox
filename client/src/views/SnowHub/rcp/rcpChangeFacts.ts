@@ -42,12 +42,18 @@ export interface RcpChangeFacts {
   attachmentFileNames: string[] | null;
   justification: string;
   backoutPlan: string;
+  /** When approval was requested; null when ServiceNow has not recorded it. */
+  submittedAtUtc?: string | null;
+  /** When the change was raised — kept only once it has left New, as a lower bound on when it went in. */
+  raisedAtUtc?: string | null;
 }
 
 const CHANGE_FACT_FIELDS = [
   'sys_id', 'number', 'state', 'risk', 'start_date', 'end_date', 'requested_by', 'cmdb_ci',
-  'justification', 'short_description', 'backout_plan', 'u_environment',
+  'justification', 'short_description', 'backout_plan', 'u_environment', 'approval_set', 'sys_created_on',
 ].join(',');
+// A change in New is still being written: its lead time runs from today, not from when it was raised.
+const NEW_STATE_PATTERN = /^new$/i;
 // A ServiceNow date-time value, which the Table API stores and returns in UTC.
 const SNOW_UTC_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/;
 const PRODUCTION_ENVIRONMENT_KEYS = new Set(['prd', 'pfix']);
@@ -125,6 +131,8 @@ export async function fetchRcpChangeFacts(changeSysId: string): Promise<RcpChang
     attachmentFileNames,
     justification: extractStringValue(changeRecord.justification),
     backoutPlan: extractStringValue(changeRecord.backout_plan),
+    submittedAtUtc: readUtcInstant(changeRecord.approval_set),
+    raisedAtUtc: NEW_STATE_PATTERN.test(extractStringValue(changeRecord.state).trim()) ? null : readUtcInstant(changeRecord.sys_created_on),
   };
 }
 
@@ -192,6 +200,8 @@ export function evaluateRcpChecklist(facts: RcpChangeFacts, todayIso: string): R
     checkRequestedByIsDirector(facts.requestedBy, facts.ciOwner),
     checkApprovalAttached(facts.attachmentFileNames),
     checkJustification(facts.justification),
-    checkLeadTime({ riskLabel: facts.riskLabel, todayIso, plannedStartUtc: facts.plannedStartUtc }),
+    checkLeadTime({
+      riskLabel: facts.riskLabel, todayIso, plannedStartUtc: facts.plannedStartUtc, submittedAtUtc: facts.submittedAtUtc, raisedAtUtc: facts.raisedAtUtc,
+    }),
   ];
 }

@@ -26,6 +26,8 @@ const CHANGE_RECORD = {
   short_description: { value: 'Recon | deploy v1.5 | PRD', display_value: 'Recon | deploy v1.5 | PRD' },
   backout_plan: { value: 'Redeploy v1.4.', display_value: 'Redeploy v1.4.' },
   u_environment: { value: 'prd', display_value: 'PRD' },
+  approval_set: { value: '2026-10-02 15:00:00', display_value: '10/02/2026 10:00:00 AM' },
+  sys_created_on: { value: '2026-10-01 14:00:00', display_value: '10/01/2026 09:00:00 AM' },
 };
 const TASK_DESCRIPTION = 'Deploy.\n• Implementation: 1 hour\n• Post-deployment validation/monitoring: 30 minutes\n• Backout/recovery and restoration validation: 1 hour';
 
@@ -64,7 +66,20 @@ describe('fetchRcpChangeFacts', () => {
       ciOwner: { sysId: 'user-dir', displayName: 'Lee, Jordan' },
       attachmentFileNames: ['Director approval.msg'],
       totalEstimateMinutes: 150,
+      submittedAtUtc: '2026-10-02T15:00:00Z',
+      raisedAtUtc: '2026-10-01T14:00:00Z',
     }));
+  });
+
+  it('measures the lead time from when it went for approval, and keeps no raised date for a change still in New (GH #475)', async () => {
+    installServiceNow();
+    const facts = await fetchRcpChangeFacts('chg-1');
+    const leadTime = evaluateRcpChecklist(facts, '2026-10-08').find((result) => result.ruleId === 'leadTime');
+    expect(leadTime?.status).toBe('pass');
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => (path.startsWith('/api/now/table/change_request/')
+      ? { result: { ...CHANGE_RECORD, state: { value: '-5', display_value: 'New' }, approval_set: { value: '', display_value: '' } } }
+      : {}));
+    expect((await fetchRcpChangeFacts('chg-1')).raisedAtUtc).toBeNull();
   });
 
   it('reports what it could not read as unknown rather than failing the whole check', async () => {
