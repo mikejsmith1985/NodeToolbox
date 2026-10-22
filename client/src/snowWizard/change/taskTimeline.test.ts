@@ -73,7 +73,34 @@ describe('reading the timing reply', () => {
   });
 
   it('says plainly when the reply has no timings at all', () => {
-    expect(readTaskTimelineReply('Sure, which tasks?', cards).isUsable).toBe(false);
+    const reply = readTaskTimelineReply('Sure, which tasks?', cards);
+    expect(reply.isUsable).toBe(false);
+    expect(reply.message).toContain('No task timings could be read');
+  });
+
+  it('reads the task title echoed after the id, and lengths in hours', () => {
+    const reply = readTaskTimelineReply('TIMELINE:\nT1 — Deploy | 1h 30m | 0.5 hours | 45 min | three modules\nT2 - Checkout | 10 mins | 5 | 2 hrs | smoke', cards);
+    expect(reply.estimatesByTaskId).toEqual({
+      c1: { implementationMinutes: '90', validationMinutes: '30', backoutMinutes: '45' },
+      c2: { implementationMinutes: '10', validationMinutes: '5', backoutMinutes: '120' },
+    });
+  });
+
+  it('reads a markdown table with bold ids, skipping its header and divider rows', () => {
+    const tableReply = [
+      '| Task | Implementation | Validation | Backout | Why |',
+      '|---|---|---|---|---|',
+      '| **T1** | 30 | 15 | 20 | deploy |',
+      '| **T2** | 10 | 5 | 5 | checkout |',
+    ].join('\n');
+    expect(Object.keys(readTaskTimelineReply(tableReply, cards).estimatesByTaskId)).toEqual(['c1', 'c2']);
+  });
+
+  it('matches a modify\'s cards by their CTASK number or their title, and names that number in the prompt', () => {
+    const loadedCards = [{ ...buildCard('m1', 'Implementation - Payments'), name: 'CTASK0012345' }, buildCard('m2', 'Business Checkout')];
+    const reply = readTaskTimelineReply('CTASK0012345 | 45 | 15 | 30 | modules\nBusiness Checkout | 20 | 10 | 5 | smoke', loadedCards);
+    expect(Object.keys(reply.estimatesByTaskId)).toEqual(['m1', 'm2']);
+    expect(buildTaskTimelinePrompt(buildDraft(loadedCards))).toContain('T1 — Implementation - Payments [CTASK0012345]');
   });
 });
 

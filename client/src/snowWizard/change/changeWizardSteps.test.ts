@@ -58,6 +58,11 @@ describe('listChangeWizardStepIds', () => {
     expect(modifyStepIds).toContain('tasks');
     expect(modifyStepIds.at(-1)).toBe('finish');
   });
+
+  it('times a modify\'s tasks before the AI writes the change, so the writing uses the new timeline', () => {
+    const modifyStepIds = listChangeWizardStepIds('modify');
+    expect(modifyStepIds.indexOf('tasks')).toBeLessThan(modifyStepIds.indexOf('aiDraft'));
+  });
 });
 
 describe('evaluateStepCompletion', () => {

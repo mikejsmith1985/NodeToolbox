@@ -53,7 +53,7 @@ const CREATE_STEP_IDS: readonly ChangeWizardStepId[] = [
   'scope', 'details', 'planning', 'environments', 'tasks', 'aiDraft', 'createChanges', 'checks', 'paperwork', 'finish',
 ];
 const MODIFY_STEP_IDS: readonly ChangeWizardStepId[] = [
-  'whichChange', 'scope', 'details', 'planning', 'environments', 'aiDraft', 'tasks', 'checks', 'paperwork', 'finish',
+  'whichChange', 'scope', 'details', 'planning', 'environments', 'tasks', 'aiDraft', 'checks', 'paperwork', 'finish',
 ];
 
 // The steps as three stages, so eleven chips read as "where am I" at a glance.
@@ -64,8 +64,8 @@ const CREATE_PHASES: readonly GuidedFlowPhase[] = [
   { label: '④ Risk check & save', stepIds: ['checks', 'paperwork', 'finish'] },
 ];
 const MODIFY_PHASES: readonly GuidedFlowPhase[] = [
-  { label: '① Load & pick', stepIds: ['whichChange', 'scope', 'details', 'planning', 'environments'] },
-  { label: '② Write & risk check', stepIds: ['aiDraft', 'tasks', 'checks', 'paperwork'] },
+  { label: '① Load & pick', stepIds: ['whichChange', 'scope', 'details', 'planning', 'environments', 'tasks'] },
+  { label: '② Write & risk check', stepIds: ['aiDraft', 'checks', 'paperwork'] },
   { label: '③ Save', stepIds: ['finish'] },
 ];
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **SNow Wizard: the task timings are read whatever form Copilot answers in.**
+  - The reader used to accept only the exact `T1 | 30 | 15 | 20` form. It now also reads:
+    - a title echoed after the id (`T1 — Deploy | …`);
+    - markdown tables with bold ids;
+    - lengths in hours (`1h 30m`, `1.5 hours`);
+    - tasks named by CTASK number or by title.
+  - On a modify, the prompt names each existing task's CTASK number.
+  - A reply that cannot be read now says why, with the expected form.
+  - On a modify, the tasks step now comes before the AI writes the change. Modules added to the Implementation task
+    are then timed first, and the writing uses the new timeline.
+
 ### Added
 - **SNow Wizard: the task timeline, the durations and evidence-based checks.**
   - **Timing round:** the tasks step gains "⏱️ Time the tasks with AI", a copy/paste round.

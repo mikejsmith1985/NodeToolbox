@@ -49,13 +49,20 @@ export interface TaskTimelineReply {
 
 /** The line that starts the reply's timings. */
 export const TIMELINE_REPLY_MARKER = 'TIMELINE:';
-// "T2 | 30 | 15 | 20 | why" — the task id the prompt gave, then implementation, validation and backout minutes.
-const TIMING_LINE_PATTERN = /^\s*[-*]?\s*T(\d+)\s*\|\s*(\d+)[^|]*\|\s*(\d+)[^|]*\|\s*(\d+)/i;
+// One cell's length: "30", "30 min", "1h 30m", "1.5 hours", "2 hrs". Assistants word it every way, so all are read.
+const DURATION_CELL_PATTERN = /^(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*(?:m(?:in(?:ute)?s?)?)?)?$/i;
+const PROMPT_ID_PATTERN = /\bT(\d+)\b/i;
+const CTASK_NUMBER_PATTERN = /CTASK\d+/i;
+// Bold, italic and code marks an assistant puts around a table cell or a list item.
+const MARKDOWN_MARK_PATTERN = /\*\*|__|`/g;
+const MINUTES_PER_HOUR = 60;
+const ESTIMATES_PER_LINE = 3;
 const IMPLEMENTATION_TASK_TYPE = 'implementation';
 const MILLISECONDS_PER_MINUTE = 60_000;
 // The form's date-time length: "YYYY-MM-DDTHH:mm".
 const FORM_DATE_TIME_LENGTH = 16;
-const NOT_A_TIMING_MESSAGE = 'That reply has no task timings. Copy the whole reply from the assistant (it starts with TIMELINE:) and paste it again.';
+const NOT_A_TIMING_MESSAGE = '⚠️ No task timings could be read from that reply. Each task needs a line with its id (T1, T2…) '
+  + 'and three lengths, like “T1 | 30 | 15 | 20 | why”. Ask the assistant to answer in that form, then paste its whole reply again.';
 
 /** "T1", "T2": how the prompt names each card, so the reply can say which is which. */
 function readTaskPromptId(taskIndex: number): string {
@@ -175,12 +182,17 @@ export function describeEnvironmentTimeline(timeline: EnvironmentTimeline): stri
   return [windowLine, ...taskLines, ...overrunLine];
 }
 
+/** " [CTASK0012345]" for a task the change already has (a modify names its cards by number), else ''. */
+function readCtaskNumberText(card: CtaskTemplate): string {
+  return CTASK_NUMBER_PATTERN.test(card.name) ? ` [${card.name.trim()}]` : '';
+}
+
 /** One card as the timing prompt shows it: its id, title, type, which changes get it, and its instructions. */
 function describeTaskForPrompt(card: CtaskTemplate, cardIndex: number, enabledEnvironments: readonly PlanEnvironmentKey[]): string[] {
   const ticks = readTaskEnvironmentTicks(card, enabledEnvironments);
   const environmentText = enabledEnvironments.filter((environmentKey) => ticks[environmentKey]).join(' and ') || 'no change yet';
   return [
-    `${readTaskPromptId(cardIndex)} — ${describeTaskCard(card, cardIndex)} (type: ${card.changeTaskType || 'not chosen'}; on the ${environmentText} change)`,
+    `${readTaskPromptId(cardIndex)} — ${describeTaskCard(card, cardIndex)}${readCtaskNumberText(card)} (type: ${card.changeTaskType || 'not chosen'}; on the ${environmentText} change)`,
     `  Instructions: ${card.description.trim() || '(none written)'}`,
   ];
 }
@@ -226,21 +238,58 @@ export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
   ].join('\n');
 }
 
-/** The estimates one reply line gives, or null when any of the three is not above zero. */
-function readTimingLine(lineMatch: RegExpExecArray): DurationEstimates | null {
-  const [implementationMinutes, validationMinutes, backoutMinutes] = [lineMatch[2], lineMatch[3], lineMatch[4]];
-  const estimates = { implementationMinutes, validationMinutes, backoutMinutes };
-  return listMissingEstimateLabels(estimates).length === 0 ? estimates : null;
+/** A cell's length in whole minutes, or null when the cell is not a length (a title, a reason, an empty cell). */
+function readDurationCell(cellText: string): number | null {
+  const durationMatch = DURATION_CELL_PATTERN.exec(cellText.trim());
+  if (!durationMatch || (durationMatch[1] === undefined && durationMatch[2] === undefined)) return null;
+  const totalMinutes = Number(durationMatch[1] ?? 0) * MINUTES_PER_HOUR + Number(durationMatch[2] ?? 0);
+  return totalMinutes > 0 ? Math.round(totalMinutes) : null;
 }
 
-/** Reads a pasted timing reply into each card's three estimates, naming any card it left untimed. */
+/** A reply line as cells: split on "|" (a table or the asked-for form), else on tabs or commas. */
+function splitReplyCells(replyLine: string): string[] {
+  const plainLine = replyLine.replace(MARKDOWN_MARK_PATTERN, '').trim();
+  const separator = plainLine.includes('|') ? '|' : /\t|,/;
+  return plainLine.split(separator).map((cellText) => cellText.trim()).filter((cellText) => cellText !== '');
+}
+
+/** Lower-case letters and digits only, so a title compares without punctuation or spacing. */
+function normaliseTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** The card a line's naming text is about: its prompt id (T2), its CTASK number, or its exact title. */
+function findNamedCard(namingText: string, cards: readonly CtaskTemplate[]): CtaskTemplate | undefined {
+  const ctaskNumber = CTASK_NUMBER_PATTERN.exec(namingText)?.[0].toUpperCase();
+  const numberedCard = ctaskNumber ? cards.find((card) => card.name.trim().toUpperCase() === ctaskNumber) : undefined;
+  if (numberedCard) return numberedCard;
+  const promptIdMatch = PROMPT_ID_PATTERN.exec(namingText);
+  if (promptIdMatch) return cards[Number(promptIdMatch[1]) - 1];
+  const namingKey = normaliseTitle(namingText.replace(/^[-–—•\d.)\s]+/, ''));
+  return namingKey === '' ? undefined : cards.find((card, cardIndex) => normaliseTitle(describeTaskCard(card, cardIndex)) === namingKey);
+}
+
+/** One reply line read: the card it names and its three estimates, or null when it is not a timing line. */
+function readTimingLine(replyLine: string, cards: readonly CtaskTemplate[]): { card: CtaskTemplate; estimates: DurationEstimates } | null {
+  const cells = splitReplyCells(replyLine);
+  const firstLengthIndex = cells.findIndex((cellText) => readDurationCell(cellText) !== null);
+  if (firstLengthIndex < 1) return null;
+  const lengths = cells.slice(firstLengthIndex).map(readDurationCell).filter((minutes): minutes is number => minutes !== null);
+  const card = findNamedCard(cells.slice(0, firstLengthIndex).join(' '), cards);
+  if (!card || lengths.length < ESTIMATES_PER_LINE) return null;
+  const [implementationMinutes, validationMinutes, backoutMinutes] = lengths.map(String);
+  return { card, estimates: { implementationMinutes, validationMinutes, backoutMinutes } };
+}
+
+/**
+ * Reads a pasted timing reply into each card's three estimates, naming any card it left untimed. Lines are matched by
+ * the task's prompt id, its CTASK number or its title, in the asked-for form, a markdown table, or a list.
+ */
 export function readTaskTimelineReply(replyText: string, cards: readonly CtaskTemplate[]): TaskTimelineReply {
   const estimatesByTaskId: Record<string, DurationEstimates> = {};
   for (const replyLine of stripCodeFences(replyText).split(/\r?\n/)) {
-    const lineMatch = TIMING_LINE_PATTERN.exec(replyLine);
-    const card = lineMatch ? cards[Number(lineMatch[1]) - 1] : undefined;
-    const estimates = lineMatch && card ? readTimingLine(lineMatch) : null;
-    if (card && estimates && !estimatesByTaskId[card.id]) estimatesByTaskId[card.id] = estimates;
+    const timingLine = readTimingLine(replyLine, cards);
+    if (timingLine && !estimatesByTaskId[timingLine.card.id]) estimatesByTaskId[timingLine.card.id] = timingLine.estimates;
   }
   const timedCount = Object.keys(estimatesByTaskId).length;
   if (timedCount === 0) return { isUsable: false, message: NOT_A_TIMING_MESSAGE, estimatesByTaskId };
