@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BACKFILL_PROJECT_KEYS,
   buildBackfillPlan,
+  buildKeyLookupJql,
   buildSourceTiers,
   buildTargetSearchJql,
   buildUpdateFields,
@@ -57,6 +58,14 @@ describe('target selection', () => {
     const jql = buildTargetSearchJql(['ENCUC', 'ENFCT']);
     expect(jql).toContain('project in (ENCUC, ENFCT)');
     expect(jql).toContain('statusCategory != Done');
+  });
+
+  it('leaves the [QE]/[SL] match to code, so the search has no text clause to slow it down or miss a tag', () => {
+    expect(buildTargetSearchJql(['ENCUC'])).not.toContain('summary ~');
+  });
+
+  it('looks issues up by key, in a stable order so paging cannot skip one', () => {
+    expect(buildKeyLookupJql(['ENCUC-1', 'ENFCT-2'])).toBe('key in (ENCUC-1, ENFCT-2) ORDER BY key ASC');
   });
 
   it('parses a typed project list and defaults to ENCUC + ENFCT', () => {

@@ -82,12 +82,17 @@ export function parseProjectKeys(projectText: string): string[] {
 }
 
 /**
- * The search that finds candidate targets. Jira's text search ignores the brackets, so this is
- * deliberately broad; `isBackfillTargetSummary` applies the exact [QE]/[SL] rule afterwards.
+ * The search that scans for targets: every open issue in the projects. There is deliberately no text
+ * clause, because Jira's text search ignores the brackets and may not index two-letter words usefully;
+ * `isBackfillTargetSummary` applies the exact [QE]/[SL] rule to the summaries that come back.
  */
 export function buildTargetSearchJql(projectKeys: readonly string[]): string {
-  return `project in (${projectKeys.join(', ')}) AND statusCategory != Done `
-    + 'AND (summary ~ "QE" OR summary ~ "SL") ORDER BY key ASC';
+  return `project in (${projectKeys.join(', ')}) AND statusCategory != Done ORDER BY key ASC`;
+}
+
+/** The search that reads specific issues by key, ordered so that paging through it cannot skip one. */
+export function buildKeyLookupJql(issueKeys: readonly string[]): string {
+  return `key in (${issueKeys.join(', ')}) ORDER BY key ASC`;
 }
 
 /** True for null, undefined, or text that is only whitespace. */

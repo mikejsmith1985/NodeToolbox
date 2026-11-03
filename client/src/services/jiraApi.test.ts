@@ -61,6 +61,42 @@ describe('jiraApi', () => {
     await expect(jiraGet(JIRA_PATH)).rejects.toThrow('Jira GET /rest/api/3/issue/ABC-123 failed: 503');
   });
 
+  it('reports the reason from NodeToolbox\'s own proxy failure body', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(
+      JSON.stringify({ error: 'Proxy error', message: 'read ECONNRESET' }),
+      { status: 502, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(jiraGet(JIRA_PATH)).rejects.toThrow(`Jira GET ${JIRA_PATH} failed: 502 — Proxy error: read ECONNRESET`);
+  });
+
+  it('prefers Jira\'s own words when a body carries both shapes', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(
+      JSON.stringify({ errorMessages: ['Field rejected'], error: 'Other', message: 'Other detail' }),
+      { status: 400 },
+    ));
+
+    await expect(jiraGet(JIRA_PATH)).rejects.toThrow(`Jira GET ${JIRA_PATH} failed: 400 — Field rejected`);
+  });
+
+  it('quotes a gateway\'s HTML error page as readable text and marks it as not from Jira', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(
+      '<html><head><title>502 Bad Gateway</title><style>body { color: red }</style></head><body><h1>Bad   Gateway</h1></body></html>',
+      { status: 502, headers: { 'Content-Type': 'text/html' } },
+    ));
+
+    await expect(jiraGet(JIRA_PATH)).rejects.toThrow(
+      `Jira GET ${JIRA_PATH} failed: 502 — not a Jira reply, likely a gateway in front of it: 502 Bad Gateway Bad Gateway`,
+    );
+  });
+
+  it('keeps a long gateway page to a readable length', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(`<p>${'x'.repeat(5000)}</p>`, { status: 504 }));
+
+    const failure = await jiraGet(JIRA_PATH).catch((error: Error) => error.message);
+    expect(String(failure).length).toBeLessThan(400);
+  });
+
   it('jiraPost sends JSON with the expected headers', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,

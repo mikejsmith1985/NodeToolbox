@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     somebody filled since the preview.
 
 ### Fixed
+- **QE/SL Backfill: Preview no longer stops on a bare "Failed: 502" and asks Jira for much less.**
+  - A failure now names the step (field list, target search, target details, or source lookup), the row it reached,
+    the request, and the reason.
+  - Preview scans summaries first and reads links and long text only for the [QE]/[SL] issues and their sources. The
+    scan no longer uses Jira text search; the exact [QE]/[SL] match is made in code.
+  - If a gateway refuses a request, it is retried at half the size, down to 5 issues, and the result says so. A step
+    that still fails stops the preview and offers nothing to apply, because a missing source could copy the wrong text.
+  - A scan that cannot reach every open issue now warns you instead of looking complete.
+- **Any Jira failure can now give its reason, not only its status code.** Failures from NodeToolbox's own proxy show
+  why Jira could not be reached, and an error page from a gateway is quoted and marked as not coming from Jira.
 - **A prompt too long for one AI chat message is now split into parts, not cut (GH #475).** v0.325.0 cut long Jira
   details and told you to choose fewer issues when a prompt was still too long. Now nothing is cut:
   - Any prompt over the limit is halved at a line break, and halved again, until every part fits.

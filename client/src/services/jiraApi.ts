@@ -19,6 +19,9 @@ const JSON_CONTENT_TYPE = 'application/json';
 const NO_CONTENT_STATUS = 204;
 const RESET_CONTENT_STATUS = 205;
 const TOOLBOX_API_EVENT = 'toolbox:api';
+// Enough of a gateway's error page to identify it, without pasting a whole web page into an error message.
+const MAX_NON_JSON_ERROR_LENGTH = 200;
+const NON_JIRA_REPLY_LABEL = 'not a Jira reply, likely a gateway in front of it';
 
 /** Shape of `event.detail` for every `toolbox:api` CustomEvent dispatched on window. */
 export interface JiraApiEventDetail {
@@ -37,37 +40,69 @@ function emitApiEvent(detail: JiraApiEventDetail): void {
   window.dispatchEvent(new CustomEvent<JiraApiEventDetail>(TOOLBOX_API_EVENT, { detail }));
 }
 
+/** Reads Jira's own error shape: { errorMessages: [...], errors: { field: "msg" } }. */
+function readJiraErrors(errorBody: Record<string, unknown>): string[] {
+  const jiraErrorMessages = Array.isArray(errorBody.errorMessages)
+    ? (errorBody.errorMessages as unknown[]).filter((msg): msg is string => typeof msg === 'string')
+    : [];
+  // The field KEY rides along with its message. Jira's "This field is required" on a custom
+  // field names nothing on its own, and the key is the one thing that lets somebody find the
+  // field on the screen (GH #384).
+  const jiraFieldErrors =
+    errorBody.errors !== null && typeof errorBody.errors === 'object'
+      ? Object.entries(errorBody.errors as Record<string, string>)
+        .map(([fieldKey, fieldMessage]) => `${fieldKey}: ${fieldMessage}`)
+      : [];
+  return [...jiraErrorMessages, ...jiraFieldErrors].filter(Boolean);
+}
+
+/** Reads NodeToolbox's own proxy error shape, { error, message }, which says why Jira could not be reached. */
+function readProxyError(errorBody: Record<string, unknown>): string {
+  return [errorBody.error, errorBody.message]
+    .filter((part): part is string => typeof part === 'string' && part !== '')
+    .join(': ');
+}
+
 /**
- * Throws a descriptive error when the response is not OK.
- * Attempts to read Jira's JSON error body so the UI surfaces the actual
- * rejection reason (e.g. "Issue Type is required.") rather than just the
- * HTTP status code.
+ * Quotes a body that is not JSON, normally a gateway's HTML error page. Saying that the reply did not come
+ * from Jira is the useful part: it separates "a gateway gave up" from "Jira or NodeToolbox refused this".
+ */
+async function describeNonJsonBody(bodyCopy: Response | undefined): Promise<string> {
+  try {
+    const bodyText = (await bodyCopy?.text()) ?? '';
+    const readableText = bodyText
+      .replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, MAX_NON_JSON_ERROR_LENGTH);
+    return readableText ? `${NON_JIRA_REPLY_LABEL}: ${readableText}` : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Finds the most specific reason a failed response offers, or an empty string when it offers none. */
+async function readFailureDetail(response: Response): Promise<string> {
+  // A body can only be read once, so a copy is kept in case it turns out not to be JSON.
+  const bodyCopy = response.clone?.();
+  try {
+    const errorBody = await response.json() as Record<string, unknown>;
+    const jiraErrors = readJiraErrors(errorBody);
+    return jiraErrors.length > 0 ? jiraErrors.join('; ') : readProxyError(errorBody);
+  } catch {
+    return describeNonJsonBody(bodyCopy);
+  }
+}
+
+/**
+ * Throws a descriptive error when the response is not OK, so the UI surfaces the actual reason
+ * (e.g. "Issue Type is required.") rather than just the HTTP status code.
  */
 async function assertSuccessfulResponse(response: Response, messagePrefix: string): Promise<void> {
   if (!response.ok) {
-    // Start with the bare status code as the fallback description.
-    let errorDetail = String(response.status);
-    try {
-      // Jira error bodies look like: { errorMessages: [...], errors: { field: "msg" } }
-      const errorBody = await response.json() as Record<string, unknown>;
-      const jiraErrorMessages = Array.isArray(errorBody.errorMessages)
-        ? (errorBody.errorMessages as unknown[]).filter((msg): msg is string => typeof msg === 'string')
-        : [];
-      // The field KEY rides along with its message. Jira's "This field is required" on a custom
-      // field names nothing on its own, and the key is the one thing that lets somebody find the
-      // field on the screen (GH #384).
-      const jiraFieldErrors =
-        errorBody.errors !== null && typeof errorBody.errors === 'object'
-          ? Object.entries(errorBody.errors as Record<string, string>)
-            .map(([fieldKey, fieldMessage]) => `${fieldKey}: ${fieldMessage}`)
-          : [];
-      const allJiraErrors = [...jiraErrorMessages, ...jiraFieldErrors].filter(Boolean);
-      if (allJiraErrors.length > 0) {
-        errorDetail = `${response.status} — ${allJiraErrors.join('; ')}`;
-      }
-    } catch {
-      // JSON parsing failed — the status code is the best description we have.
-    }
+    const failureDetail = await readFailureDetail(response);
+    const errorDetail = failureDetail ? `${response.status} — ${failureDetail}` : String(response.status);
     throw new Error(`${messagePrefix}: ${errorDetail}`);
   }
 }

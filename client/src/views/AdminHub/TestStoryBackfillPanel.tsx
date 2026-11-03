@@ -7,7 +7,6 @@
 
 import React, { useState } from 'react';
 
-import { fetchIssuesPaged } from '../../services/fetchIssuesPaged.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import {
   FIELD_MAPPING_ENTRIES,
@@ -22,6 +21,7 @@ import {
   DEFAULT_BACKFILL_PROJECT_KEYS,
   DESCRIPTION_FIELD_ID,
   buildBackfillPlan,
+  buildKeyLookupJql,
   buildSourceTiers,
   buildTargetSearchJql,
   buildUpdateFields,
@@ -34,17 +34,36 @@ import {
   type BackfillIssue,
   type BackfillPlanRow,
 } from './testStoryBackfill.ts';
+import { fetchSearchAdaptively } from './testStoryBackfillSearch.ts';
 
 // ── Named constants ──
 
-/** Issues requested per search page. */
-const SEARCH_PAGE_SIZE = 100;
-/** The most targets one run will hold; well above the expected backlog, low enough to stay responsive. */
-const MAX_TARGETS_PER_RUN = 2000;
-/** Keys per `key in (…)` source lookup, kept short so the JQL stays well under URL length limits. */
-const SOURCE_KEY_BATCH_SIZE = 50;
-/** Fields every target search needs besides the instance-specific ones. */
+/** Issues requested per page of the summaries-only scan, which is light enough for a large page. */
+const SCAN_PAGE_SIZE = 100;
+/** The most open issues one run will scan; a run that hits this says so rather than looking complete. */
+const MAX_SCANNED_ISSUES = 10000;
+/** Keys per `key in (…)` lookup. These rows carry links and long text, so each request is kept small. */
+const KEY_LOOKUP_BATCH_SIZE = 20;
+/** The smallest page tried after a gateway refusal; a refusal at this size is not about request size. */
+const MINIMUM_PAGE_SIZE = 5;
+/** The only field the scan needs, since the [QE]/[SL] match is made on the summary. */
+const SCAN_FIELDS = ['summary'];
+/** Fields every target needs for planning besides the instance-specific ones. */
 const BASE_TARGET_FIELDS = ['summary', 'status', 'issuelinks', 'parent', DESCRIPTION_FIELD_ID];
+
+/** Everything one preview run produced. */
+interface BackfillPreview {
+  fieldConfig: BackfillFieldConfig;
+  warnings: string[];
+  plan: BackfillPlanRow[];
+  summaryMessage: string;
+}
+
+/** Lets a running search report progress and any page-size reduction back to the preview. */
+interface SearchReporter {
+  onProgress?: (retrievedCount: number, totalMatchingCount: number) => void;
+  onPageSizeReduced: (nextPageSize: number) => void;
+}
 
 /** What happened when one target was written. */
 interface ApplyOutcome {
@@ -83,26 +102,132 @@ async function loadFieldConfig(): Promise<{ fieldConfig: BackfillFieldConfig; wa
   };
 }
 
-/** Runs a search page by page and returns every issue it found. */
-async function searchAllIssues(jql: string, fieldIds: readonly string[]): Promise<BackfillIssue[]> {
+/** Reads a whole search, asking for smaller pages if a gateway refuses a large one. */
+function searchIssues(
+  jql: string,
+  fieldIds: readonly string[],
+  pageOptions: { initialPageSize: number; ceiling: number },
+  reporter: SearchReporter,
+) {
   const fieldsParam = encodeURIComponent([...new Set(fieldIds)].filter(Boolean).join(','));
-  const outcome = await fetchIssuesPaged<BackfillIssue>(
+  return fetchSearchAdaptively<BackfillIssue>(
     (startAt, pageSize) => jiraGet<{ issues?: BackfillIssue[]; total?: number }>(
       `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${fieldsParam}&startAt=${startAt}&maxResults=${pageSize}`,
     ),
-    { pageSize: SEARCH_PAGE_SIZE, ceiling: MAX_TARGETS_PER_RUN },
+    { ...pageOptions, minimumPageSize: MINIMUM_PAGE_SIZE, ...reporter },
   );
-  return outcome.issues;
 }
 
-/** Fetches every candidate source issue in small `key in (…)` batches. */
-async function fetchSourceIssues(sourceKeys: readonly string[], fieldIds: readonly string[]): Promise<BackfillIssue[]> {
-  const sourceIssues: BackfillIssue[] = [];
-  for (let i = 0; i < sourceKeys.length; i += SOURCE_KEY_BATCH_SIZE) {
-    const keyBatch = sourceKeys.slice(i, i + SOURCE_KEY_BATCH_SIZE);
-    sourceIssues.push(...await searchAllIssues(`key in (${keyBatch.join(',')})`, fieldIds));
+/** Reads specific issues in small `key in (…)` batches, reporting how many of them are done. */
+async function lookUpIssuesByKey(
+  issueKeys: readonly string[],
+  fieldIds: readonly string[],
+  reporter: SearchReporter,
+): Promise<BackfillIssue[]> {
+  const foundIssues: BackfillIssue[] = [];
+  for (let i = 0; i < issueKeys.length; i += KEY_LOOKUP_BATCH_SIZE) {
+    const keyBatch = issueKeys.slice(i, i + KEY_LOOKUP_BATCH_SIZE);
+    const outcome = await searchIssues(
+      buildKeyLookupJql(keyBatch),
+      fieldIds,
+      { initialPageSize: KEY_LOOKUP_BATCH_SIZE, ceiling: keyBatch.length },
+      { onPageSizeReduced: reporter.onPageSizeReduced },
+    );
+    foundIssues.push(...outcome.issues);
+    reporter.onProgress?.(i + keyBatch.length, issueKeys.length);
   }
-  return sourceIssues;
+  return foundIssues;
+}
+
+/**
+ * Runs one stage of the preview, and on failure names the stage and shows the full request.
+ * The request is decoded so that someone reading the message can see the actual JQL that failed.
+ */
+async function runPreviewStep<StepResult>(stepLabel: string, runStep: () => Promise<StepResult>): Promise<StepResult> {
+  try {
+    return await runStep();
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed during ${stepLabel}: ${decodeFailureMessage(rawMessage)}`, { cause: error });
+  }
+}
+
+/** Makes a percent-encoded request readable, leaving any text that is not validly encoded as it was. */
+function decodeFailureMessage(rawMessage: string): string {
+  try {
+    return decodeURIComponent(rawMessage);
+  } catch {
+    return rawMessage;
+  }
+}
+
+/** Builds the line under the preview: what was found, plus anything that makes the result less than complete. */
+function buildSummaryMessage(
+  counts: { targetCount: number; scannedCount: number; totalOpenCount: number; plannedWriteCount: number },
+  projectKeys: readonly string[],
+  wasPageSizeReduced: boolean,
+): string {
+  const notes = [
+    `${counts.targetCount} open [QE]/[SL] issues found in ${projectKeys.join(', ')}; ${counts.plannedWriteCount} empty fields can be filled.`,
+  ];
+  if (counts.totalOpenCount > counts.scannedCount) {
+    notes.push(`Warning: only ${counts.scannedCount} of ${counts.totalOpenCount} open issues were scanned, so some [QE]/[SL] issues may be missing.`);
+  }
+  if (wasPageSizeReduced) notes.push('A gateway refused larger requests, so smaller ones were used.');
+  return notes.join(' ');
+}
+
+/** Turns a stage name into a progress callback, so a long preview visibly keeps moving. */
+function buildStageReporter(reportStatus: (message: string) => void) {
+  return (stageLabel: string) => (retrievedCount: number, totalCount: number): void => {
+    reportStatus(`${stageLabel}: ${retrievedCount} of ${totalCount}…`);
+  };
+}
+
+/**
+ * Builds the whole preview using reads only: resolve the fields, scan summaries for targets, then read
+ * full details for the targets and their sources. Heavy fields are requested only for issues that need
+ * them, and any failed stage stops the run because a missing source could put the wrong text in a field.
+ */
+async function loadBackfillPreview(projectKeys: readonly string[], reportStatus: (message: string) => void): Promise<BackfillPreview> {
+  let wasPageSizeReduced = false;
+  const onPageSizeReduced = (nextPageSize: number): void => {
+    wasPageSizeReduced = true;
+    reportStatus(`A gateway refused a large request; retrying with ${nextPageSize} issues per request…`);
+  };
+  const reportStage = buildStageReporter(reportStatus);
+
+  const loaded = await runPreviewStep('field list', loadFieldConfig);
+  const acFieldIds = [loaded.fieldConfig.acWriteFieldId, ...loaded.fieldConfig.acReadFieldIds];
+  const scan = await runPreviewStep('target search', () => searchIssues(
+    buildTargetSearchJql(projectKeys),
+    SCAN_FIELDS,
+    { initialPageSize: SCAN_PAGE_SIZE, ceiling: MAX_SCANNED_ISSUES },
+    { onProgress: reportStage('Scanning open issues'), onPageSizeReduced },
+  ));
+  const targetKeys = scan.issues.filter((issue) => isBackfillTargetSummary(issue.fields.summary)).map((issue) => issue.key);
+  const targets = await runPreviewStep('target details', () => lookUpIssuesByKey(
+    targetKeys,
+    [...BASE_TARGET_FIELDS, ...acFieldIds, loaded.fieldConfig.epicLinkFieldId],
+    { onProgress: reportStage('Reading [QE]/[SL] issues'), onPageSizeReduced },
+  ));
+  const sourceKeys = collectSourceKeys(targets.map((target) => buildSourceTiers(target, loaded.fieldConfig.epicLinkFieldId)));
+  const sources = await runPreviewStep('source lookup', () => lookUpIssuesByKey(
+    sourceKeys,
+    ['summary', DESCRIPTION_FIELD_ID, ...acFieldIds],
+    { onProgress: reportStage('Reading source issues'), onPageSizeReduced },
+  ));
+  const plan = buildBackfillPlan(targets, sources, loaded.fieldConfig);
+
+  return {
+    ...loaded,
+    plan,
+    summaryMessage: buildSummaryMessage(
+      { targetCount: targets.length, scannedCount: scan.issues.length, totalOpenCount: scan.totalMatchingCount, plannedWriteCount: countPlannedWrites(plan) },
+      projectKeys,
+      wasPageSizeReduced,
+    ),
+  };
 }
 
 /** The preview table: one row per target, one cell per field decision, plus the apply result. */
@@ -162,28 +287,13 @@ export function TestStoryBackfillPanel(): React.ReactElement {
     setPlan([]);
     setStatusMessage('Loading…');
     try {
-      const loaded = await loadFieldConfig();
-      const acFieldIds = [loaded.fieldConfig.acWriteFieldId, ...loaded.fieldConfig.acReadFieldIds];
-      const searchHits = await searchAllIssues(
-        buildTargetSearchJql(projectKeys),
-        [...BASE_TARGET_FIELDS, ...acFieldIds, loaded.fieldConfig.epicLinkFieldId],
-      );
-      const targets = searchHits.filter((issue) => isBackfillTargetSummary(issue.fields.summary));
-      const sourceKeys = collectSourceKeys(
-        targets.map((target) => buildSourceTiers(target, loaded.fieldConfig.epicLinkFieldId)),
-      );
-      const sources = await fetchSourceIssues(sourceKeys, ['summary', DESCRIPTION_FIELD_ID, ...acFieldIds]);
-      const nextPlan = buildBackfillPlan(targets, sources, loaded.fieldConfig);
-
-      setFieldConfig(loaded.fieldConfig);
-      setFieldWarnings(loaded.warnings);
-      setPlan(nextPlan);
-      setStatusMessage(
-        `${targets.length} open [QE]/[SL] issues found in ${projectKeys.join(', ')}; `
-        + `${countPlannedWrites(nextPlan)} empty fields can be filled.`,
-      );
+      const preview = await loadBackfillPreview(projectKeys, setStatusMessage);
+      setFieldConfig(preview.fieldConfig);
+      setFieldWarnings(preview.warnings);
+      setPlan(preview.plan);
+      setStatusMessage(preview.summaryMessage);
     } catch (error) {
-      setStatusMessage(`Failed: ${toMessage(error)}`);
+      setStatusMessage(error instanceof Error ? error.message : `Failed: ${String(error)}`);
     } finally {
       setIsBusy(false);
     }
