@@ -27,6 +27,7 @@ import { ChgTeamStandardsPanel } from './ChgTeamStandardsPanel.tsx'
 import { RcpRulesPanel } from './RcpRulesPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
+import { TestStoryBackfillPanel } from './TestStoryBackfillPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -76,7 +77,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'change-audit' | 'settings-backup' | 'field-mapping'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'test-story-backfill' | 'change-audit' | 'settings-backup' | 'field-mapping'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -89,6 +90,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'component-manager', label: '🧩 Components' },
   { key: 'subtask-promotion', label: '⬆️ Sub-task → Story' },
+  { key: 'test-story-backfill', label: '🧪 QE/SL Backfill' },
   { key: 'settings-backup', label: '💾 Settings Backup' },
   { key: 'field-mapping', label: '🔗 Field Mapping' },
 ]
@@ -2936,6 +2938,13 @@ export default function AdminHubView() {
         <section id="admin-hub-subtask-promotion-panel" role="tabpanel" aria-labelledby="admin-hub-subtask-promotion-tab">
           {/* Recreates sub-tasks as Stories linked back to their old parent — Jira offers no type change. */}
           <SubtaskPromotionPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'test-story-backfill' && (
+        <section id="admin-hub-test-story-backfill-panel" role="tabpanel" aria-labelledby="admin-hub-test-story-backfill-tab">
+          {/* Fills empty description / AC on open [QE]/[SL] issues from their [DEV] story, Defect, or parent. */}
+          <TestStoryBackfillPanel />
         </section>
       )}
     </ViewFrame>

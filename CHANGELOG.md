@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin Hub → 🧪 QE/SL Backfill: fill the description and acceptance criteria a Jira automation never cloned.**
+  A one-off clean-up for open issues with [QE] or [SL] in the summary (projects default to ENCUC, ENFCT):
+  - Each EMPTY Description or Acceptance Criteria is filled from, in order: a linked [DEV] issue, a linked Defect,
+    then the parent (the sub-task parent, else the Epic Link). A blank value falls through to the next source.
+  - A field that already has content is never changed. Two different values from the same kind of source (for
+    example two linked [DEV] stories) are reported and skipped, never guessed between.
+  - Preview shows every planned write and writes nothing. Apply re-reads each issue first and skips any field
+    somebody filled since the preview.
+
 ### Fixed
 - **A prompt too long for one AI chat message is now split into parts, not cut (GH #475).** v0.325.0 cut long Jira
   details and told you to choose fewer issues when a prompt was still too long. Now nothing is cut:
