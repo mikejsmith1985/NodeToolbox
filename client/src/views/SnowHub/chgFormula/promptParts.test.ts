@@ -29,12 +29,19 @@ describe('splitPromptIntoParts', () => {
   });
 
   it('heads every part, asks the assistant to wait on all but the last, and answers on the last', () => {
-    const parts = splitPromptIntoParts(buildLongPrompt(2_000), ASSISTANT_PROMPT_CHARACTER_LIMIT);
+    const parts = splitPromptIntoParts(buildLongPrompt(2_000), 80_000);
     expect(parts).toHaveLength(2);
     expect(parts[0]).toMatch(/^PART 1 OF 2 — .*Do not answer yet: reply only with "READY FOR PART 2"\./);
     expect(parts[0]).toMatch(/\(End of part 1 of 2\. Reply only with "READY FOR PART 2"\.\)$/);
     expect(parts[1]).toMatch(/^PART 2 OF 2 — the last part\. You now have the whole request: answer it now/);
     expect(parts[1]).not.toContain('READY FOR PART');
+  });
+
+  it('splits a 50,000-character Risk Check into parts Google\'s AI Mode reads whole (GH #499)', () => {
+    const parts = splitPromptIntoParts(buildLongPrompt(700));
+    expect(parts.length).toBeGreaterThan(2);
+    parts.forEach((partText) => expect(partText.length).toBeLessThanOrEqual(ASSISTANT_PROMPT_CHARACTER_LIMIT));
+    expect(ASSISTANT_PROMPT_CHARACTER_LIMIT).toBeLessThanOrEqual(25_000);
   });
 
   it('halves even one enormous line', () => {

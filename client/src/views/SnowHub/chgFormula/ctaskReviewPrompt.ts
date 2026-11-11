@@ -69,7 +69,9 @@ function renderCtaskBlock(ctask: ReviewedCtask): string {
     `  Type: ${typeText}`,
     `  Configuration item: ${ctask.configItem.displayName.trim() || NOT_SET_TEXT}`,
     `  People: ${describeTaskPeople(ctask.assignedTo.displayName, ctask.assignmentGroup.displayName)}`,
-    `  Description: ${ctask.description.trim() || NOT_SET_TEXT}`,
+    // The task's instructions are already written out under "Change task instructions" in the record facts; writing
+    // them again here doubled the prompt past what Google's AI Mode reads (GH #499), so the block points to them.
+    `  Instructions: ${ctask.description.trim() ? `see ${ctask.number} under "Change task instructions"` : NOT_SET_TEXT}`,
     `  Backout plan: ${ctask.backoutPlan.trim() || NOT_SET_TEXT}`,
   ].join('\n');
 }

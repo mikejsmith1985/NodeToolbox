@@ -71,6 +71,15 @@ describe('the risk check with change tasks', () => {
     expect(prompt).toMatch(/do not judge configuration items/i);
   });
 
+  it('points to each task\'s instructions instead of writing them out a second time (GH #499)', () => {
+    const part = buildCtaskCheckPart([buildCtask({ description: 'Objective: validate the transformers.' })]);
+    const blockText = part?.contextLines.join('\n') ?? '';
+    expect(blockText).not.toContain('Objective: validate the transformers.');
+    expect(blockText).toContain('Instructions: see CTASK0012345 under "Change task instructions"');
+    const blankPart = buildCtaskCheckPart([buildCtask({ description: '  ' })]);
+    expect(blankPart?.contextLines.join('\n')).toContain('Instructions: (not set)');
+  });
+
   it('leaves the change-only prompt exactly as it was when there are no tasks', () => {
     expect(buildChgRiskCheckPrompt(CONTEXT, FIELDS, buildCtaskCheckPart([]))).toBe(buildChgRiskCheckPrompt(CONTEXT, FIELDS));
   });

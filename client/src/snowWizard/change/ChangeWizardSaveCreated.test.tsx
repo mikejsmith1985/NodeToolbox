@@ -181,7 +181,10 @@ function openCreatedJob() {
 async function writeCheckAndSave() {
   await expectStep('AI Assist: let AI write it');
   expect(screen.getByText(/CHG0052017 and CHG0052018 are in ServiceNow but not finished/)).toBeTruthy();
-  expect((screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value).toContain('ENCUC-2334');
+  // The prompt may come as one message or, past AI Mode's size, in parts — read it whole either way.
+  const promptFields = [screen.queryByLabelText(/Copy this and paste it/), ...screen.queryAllByLabelText(/^Part \d+ of \d+$/)];
+  const promptText = promptFields.filter(Boolean).map((promptField) => (promptField as HTMLTextAreaElement).value).join('\n');
+  expect(promptText).toContain('ENCUC-2334');
   fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: [
     'IMPLEMENTATION_PLAN: 1. SCM deploys the release (CTASK0100002).', 'TEST_PLAN: 1. Business checkout (CTASK0100003).', 'BACKOUT_PLAN: 1. If checkout fails, SCM redeploys the prior build.',
   ].join('\n') } });
