@@ -13,6 +13,7 @@ import { ReadinessAiPanel } from './ReadinessAiPanel.tsx';
 import { useAiAssistStore } from '../../../../store/aiAssistStore.ts';
 import { saveFeatureReviewSimpleField } from '../../../SprintDashboard/featureReviewFixes.ts';
 import type { ReadinessLens } from '../readinessScan.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../../utils/promptFile.ts';
 
 function buildLens(): ReadinessLens {
   return {
@@ -78,6 +79,15 @@ describe('ReadinessAiPanel', () => {
     const prompt = screen.getByLabelText(/ai prompt/i) as HTMLTextAreaElement;
     expect(prompt.value).toContain('F-1');
     expect(prompt.value).toContain('READINESS_TABLE:');
+  });
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    const longLens = buildLens();
+    longLens.features[0].summary = 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1);
+    render(<ReadinessAiPanel lens={longLens} writeFieldIds={WRITE_FIELD_IDS} onProposalWritten={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('writes only the accepted estimate through the shared writer, never ownership', async () => {

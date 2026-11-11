@@ -26,11 +26,13 @@ describe('AiAssistPromptModal', () => {
   it('splits a prompt too long for one chat message into parts, each copied on its own (GH #475)', () => {
     const writeText = vi.fn(async (_copiedText: string) => undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    const longPrompt = Array.from({ length: 500 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
     render(<AiAssistPromptModal onClose={vi.fn()} session={buildSession({ promptText: longPrompt })} />);
 
     expect(screen.getByText(/comes in 2 parts\. Paste them in order into the same chat/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Copy to Clipboard/ })).toBeNull();
+    // Far past AI Mode's 2,048-character box, so it is also offered as a file to attach (GH #499).
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Copy part 2 of 2/ }));
     expect(writeText.mock.calls[0][0]).toMatch(/^PART 2 OF 2 — the last part/);
     expect((screen.getByLabelText('Prompt part 1 of 2') as HTMLTextAreaElement).value).toMatch(/^PART 1 OF 2 — /);

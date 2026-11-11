@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { CanvasContainer } from '../overlay/overlayModel.ts';
@@ -93,6 +94,13 @@ describe('WorkReallocationPanel', () => {
     expect(useReallocationDetailsStore.getState().additionalDetails).toBe(constraint);
     // … and reflected verbatim in the regenerated prompt.
     expect(screen.getByLabelText<HTMLTextAreaElement>('Re-allocation prompt').value).toContain(constraint);
+  });
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+    renderPanel();
+    fireEvent.change(screen.getByLabelText('Additional details'), { target: { value: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) } });
+
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('copies the prompt without any ingest/apply step', () => {

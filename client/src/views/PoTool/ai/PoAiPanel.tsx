@@ -14,6 +14,7 @@
 import { useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore';
 import styles from './PoAiPanel.module.css';
 
@@ -28,9 +29,19 @@ export interface PoAiIngestOutcome {
 /** Characters that cannot appear in an element id — the panel title is turned into one. */
 const NON_ID_CHARACTER_PATTERN = /[^a-z0-9]+/g;
 
+/** The panel title in kebab case, e.g. "Propose a split" → "propose-a-split". */
+function buildTitleSlug(title: string): string {
+  return title.toLowerCase().replace(NON_ID_CHARACTER_PATTERN, '-').replace(/^-|-$/g, '');
+}
+
 /** A stable element id for this panel's follow-up box, so two panels on one page are told apart. */
 function buildFollowUpFieldId(title: string): string {
-  return `po-ai-follow-up-${title.toLowerCase().replace(NON_ID_CHARACTER_PATTERN, '-').replace(/^-|-$/g, '')}`;
+  return `po-ai-follow-up-${buildTitleSlug(title)}`;
+}
+
+/** The downloaded prompt file's name without its extension, e.g. "propose-a-split-prompt". */
+function buildPromptFileBaseName(title: string): string {
+  return `${buildTitleSlug(title)}-prompt`;
 }
 
 interface PoAiPanelProps {
@@ -106,6 +117,8 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
           <label className={styles.fieldLabel} htmlFor="po-ai-prompt">
             Prompt — read it, then copy it into your assistant
           </label>
+          {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+          <AiPromptFile promptText={promptText} fileBaseName={buildPromptFileBaseName(title)} />
           <textarea className={styles.promptArea} id="po-ai-prompt" readOnly value={promptText} />
           <button className={styles.secondaryButton} type="button" onClick={handleCopyPrompt}>
             {hasCopiedPrompt ? '✓ Copied' : '📋 Copy prompt'}

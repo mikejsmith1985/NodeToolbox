@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import { createEmptyOverlay } from '../overlay/overlayModel.ts';
@@ -43,6 +44,14 @@ describe('AiSuggestionPanel', () => {
     act(() => setAiAssistUnlocked(false)); // AI Assist is on by default now — lock it for the locked case.
     const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+    act(() => setAiAssistUnlocked(true));
+    const longSummaryNodes = [{ ...NODES[0], summary: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) }];
+    render(<AiSuggestionPanel canvasNodes={longSummaryNodes} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('renders when unlocked and reports a descriptive error on malformed input without applying anything', () => {

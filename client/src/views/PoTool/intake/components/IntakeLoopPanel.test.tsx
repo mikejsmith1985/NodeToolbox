@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiAssistStore } from '../../../../store/aiAssistStore';
 import type { CreateIssueRequest, JiraIssue } from '../../../../types/jira.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../../utils/promptFile.ts';
 import EpicIntakeWorkspace from '../EpicIntakeWorkspace.tsx';
 import type { IntakeJiraDeps } from './IntakeTurnPanel.tsx';
 
@@ -123,6 +124,18 @@ describe('the copy-and-paste loop', () => {
     const summary = screen.getByRole('region', { name: 'Summary' });
     expect(within(summary).getByRole('link', { name: 'DENP-632' })).toBeInTheDocument();
     expect(within(summary).getByRole('link', { name: 'DENP-901' })).toBeInTheDocument();
+  });
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+    render(<EpicIntakeWorkspace dashboardTeamProfileId="team-a" jiraDeps={createJiraDeps([])} nowIso={() => NOW_ISO} />);
+    await user.click(screen.getByLabelText('Pasted notes'));
+    await user.paste(NOTES);
+    await user.click(screen.getByRole('button', { name: 'Add pasted notes' }));
+    await user.click(screen.getByRole('button', { name: 'Start intake' }));
+
+    const promptText = (screen.getByLabelText('Prompt to copy') as HTMLTextAreaElement).value;
+    expect(promptText.length).toBeGreaterThan(AI_MODE_MESSAGE_CHARACTER_LIMIT);
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('asks again in the next prompt when an answer is unusable, instead of asking the PO', async () => {

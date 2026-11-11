@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { AiPromptFile } from '../../components/AiPromptFile/index.tsx'
 import { useSettingsStore } from '../../store/settingsStore.ts'
 import { loadConfiguredFeatureLinkFieldId } from '../../utils/featureLink.ts'
 import styles from './AdminHubView.module.css'
@@ -337,6 +338,8 @@ export function MonthlyDeliveryPanel() {
                 {teamOutcome.message ? ` — ${teamOutcome.message}` : ''}
               </p>
             ))}
+            {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+            <AiPromptFile promptText={lastRun.promptText || ''} fileBaseName="monthly-delivery-prompt" />
             <textarea
               aria-label="Generated prompt"
               readOnly

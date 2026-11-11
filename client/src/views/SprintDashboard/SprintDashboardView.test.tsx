@@ -205,6 +205,7 @@ import SprintDashboardView from './SprintDashboardView.tsx';
 import styles from './SprintDashboardView.module.css';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts';
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
@@ -1092,6 +1093,31 @@ describe('SprintDashboardView', () => {
     expect(await screen.findByLabelText('AI Assist release prompt')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Run via AI Assist \(auto\)/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Copy Prompt/i })).toBeInTheDocument();
+  });
+
+  it('offers a release prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([{ id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false }]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({
+          issues: [
+            { id: 'TBX-99', key: 'TBX-99', fields: { summary: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1), status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, assignee: { displayName: 'Alice Johnson' }, issuetype: { name: 'Story', iconUrl: 'story.png' }, priority: { name: 'High', iconUrl: 'priority.png' }, description: 'Release details', customfield_10200: 'Validation notes' } },
+          ],
+        });
+      }
+      return Promise.resolve({ values: [] });
+    });
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+    act(() => setAiAssistUnlocked(true));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
+
+    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('pointing AI modal offers copy + paste-back only — no automated exchange button', async () => {

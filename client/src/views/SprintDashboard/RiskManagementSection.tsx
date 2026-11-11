@@ -14,6 +14,7 @@ import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
 import { buildRiskReplyFormLines, parseRiskAiReply } from './aiReply/riskAiAssistReply.ts';
 import styles from './SprintDashboardView.module.css';
 
@@ -428,6 +429,8 @@ export default function RiskManagementSection({
                 <strong>Step 1</strong> — Copy this prompt into AI Assist. It includes all{' '}
                 {riskIssues.length} risk{riskIssues.length === 1 ? '' : 's'} for {normalizedPiName}.
               </p>
+              {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+              <AiPromptFile promptText={generatedAiAssistPromptText} fileBaseName="risk-refinement-prompt" />
               <textarea
                 aria-label="AI Assist risk refinement prompt"
                 className={styles.releasePromptTextArea}

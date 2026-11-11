@@ -37,11 +37,9 @@ describe('splitPromptIntoParts', () => {
     expect(parts[1]).not.toContain('READY FOR PART');
   });
 
-  it('splits a 50,000-character Risk Check into parts Google\'s AI Mode reads whole (GH #499)', () => {
-    const parts = splitPromptIntoParts(buildLongPrompt(700));
-    expect(parts.length).toBeGreaterThan(2);
-    parts.forEach((partText) => expect(partText.length).toBeLessThanOrEqual(ASSISTANT_PROMPT_CHARACTER_LIMIT));
-    expect(ASSISTANT_PROMPT_CHARACTER_LIMIT).toBeLessThanOrEqual(25_000);
+  it('keeps a 50,000-character prompt as one message — AI Mode gets it as a file, not in parts (GH #499)', () => {
+    expect(splitPromptIntoParts(buildLongPrompt(700))).toHaveLength(1);
+    expect(ASSISTANT_PROMPT_CHARACTER_LIMIT).toBe(128_000);
   });
 
   it('halves even one enormous line', () => {

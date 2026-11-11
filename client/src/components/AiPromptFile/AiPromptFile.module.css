@@ -1,0 +1,57 @@
+/* AiPromptFile.module.css — The "attach it as a file" steps shown for a prompt too long for AI Mode's message box. */
+
+.promptFile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning, #d29922);
+  border-radius: 6px;
+  background: var(--color-surface-1, #161b22);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text-primary, #e6edf3);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-secondary, #8b949e);
+  font-size: 0.8125rem;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding-left: 20px;
+  color: var(--color-text-primary, #e6edf3);
+  font-size: 0.8125rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #30363d);
+  background: var(--color-surface-2, #0d1117);
+  color: var(--color-text-primary, #e6edf3);
+  cursor: pointer;
+}
+
+.linkButton {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent, #58a6ff);
+  text-decoration: underline;
+  cursor: pointer;
+}

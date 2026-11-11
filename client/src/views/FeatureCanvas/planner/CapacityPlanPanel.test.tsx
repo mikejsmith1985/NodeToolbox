@@ -7,6 +7,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
 import type { PlanResult } from './capacityTypes.ts';
 import { CapacityPlanPanel, PlanProjectionView } from './CapacityPlanPanel.tsx';
 import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
@@ -83,6 +84,13 @@ describe('PlanProjectionView (presentational)', () => {
 
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText.mock.calls[0][0]).toContain(constraint);
+  });
+
+  it('offers an evaluation prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+    const longConstraint = 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1);
+    render(<PlanProjectionView result={buildFixtureResult()} piName="PI 26.3" todayIso="2026-07-08" additionalDetails={longConstraint} />);
+
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 });
 
