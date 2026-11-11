@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeFieldMappingOverride } from '../../../services/jiraFieldMapping.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
 import { ReleasePriorityPanel } from './ReleasePriorityPanel.tsx';
 import { RELEASE_PRIORITY_REPLY_KIND } from './releasePriorityRank.ts';
 
@@ -104,6 +105,25 @@ describe('ReleasePriorityPanel', () => {
     // The two reads: the issues' own fields, then their Features'.
     expect(mockJiraGet).toHaveBeenCalledTimes(2);
     expect(String(mockJiraGet.mock.calls[0][0])).toContain('customfield_10206');
+  });
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+    installContextFixtures();
+    const longSummaryIssue = { ...ISSUES[0], fields: { ...ISSUES[0].fields, summary: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) } } as JiraIssue;
+    render(
+      <ReleasePriorityPanel
+        featureKeyByIssueKey={FEATURE_KEY_BY_ISSUE_KEY}
+        featureSummaryByKey={FEATURE_SUMMARY_BY_KEY}
+        issues={[longSummaryIssue, ...ISSUES.slice(1)]}
+        onClose={vi.fn()}
+        projectKey="ENCUC"
+        releaseDate="2026-09-24"
+        todayIso={TODAY}
+        versionName="09/24/2026"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 
   it('still offers a prompt when the extra reads fail, and says what is missing', async () => {

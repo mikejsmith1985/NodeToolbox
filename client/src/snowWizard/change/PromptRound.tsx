@@ -8,6 +8,7 @@ import { useId, useState, type ClipboardEvent } from 'react';
 import CopyButton from '../shell/CopyButton.tsx';
 import styles from './ChangeWizard.module.css';
 import { describePromptParts, splitPromptIntoParts } from '../../views/SnowHub/chgFormula/promptParts.ts';
+import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
 
 /** What a reader says about a reply, and — when the reply strayed from the asked-for form — a follow-up to send. */
 export interface PromptRoundOutcome {
@@ -95,6 +96,7 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
 
   return (
     <div className={styles.card}>
+      <AiPromptFile promptText={promptText} fileBaseName="ai-prompt" />
       {promptParts.length === 1 ? (
         <>
           <label className={styles.fieldLabel} htmlFor={promptFieldId}>1. Copy this and paste it into your AI assistant</label>

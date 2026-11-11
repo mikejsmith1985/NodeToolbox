@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A long AI prompt can be attached to Google AI Mode as a file (GH #499).** AI Mode's message box takes 2,048
+  characters and quietly drops the rest, so the 24,000-character parts from v0.327.2 were cut too. Every AI prompt
+  and follow-up longer than 2,048 characters now has a panel with three steps:
+  1. Download the prompt as a PDF, or as a text file.
+  2. Attach it in AI Mode.
+  3. Copy a short message to send with it.
+
+  The PDF is plain Courier text with lines wrapped at word breaks; a PDF reader reads the whole 49,679-character
+  Risk Check back from it. Prompts split into parts again only past Copilot's 128,000 characters.
 - **Risk Check prompts now reach Google's AI Mode whole (GH #499).** A 49,679-character Risk Check was read only to
   about its first 2,000 characters, and AI Mode answered "your prompt was cut off". Two changes:
   - A prompt over 24,000 characters now comes in parts ("PART 1 OF 3…", same chat, the assistant waits for the last).

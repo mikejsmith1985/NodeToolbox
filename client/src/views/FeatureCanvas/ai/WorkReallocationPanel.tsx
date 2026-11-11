@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
@@ -147,7 +148,9 @@ export function WorkReallocationPanel({
             </p>
           ) : (
             <>
-              <textarea readOnly aria-label="Re-allocation prompt" value={prompt} rows={8} style={{ width: '100%', fontSize: 11 }} />
+              {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+              <AiPromptFile promptText={prompt} fileBaseName="work-reallocation-prompt" />
+              <textarea readOnly aria-label="Re-allocation prompt"value={prompt} rows={8} style={{ width: '100%', fontSize: 11 }} />
               <button type="button" className={controlStyles.btn} onClick={() => copyToClipboard(prompt)} style={{ margin: '6px 0' }}>
                 📋 Copy prompt
               </button>

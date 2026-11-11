@@ -11,6 +11,7 @@ import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { getComponentKind } from '../AdminHub/lib/componentClassificationStore.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
 import { parsePiDateRange } from '../FeatureCanvas/logic/piSchedule.ts';
 import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -35,6 +36,8 @@ const DEFAULT_SIZE_FIELD_ID = 'customfield_10002';
 const PI_SPRINT_COUNT = 5;
 const WORKING_CALENDAR = { weekendDays: [0, 6], holidayIsoDates: [] as string[] };
 const FEATURE_FIELDS = ['summary', 'description', 'priority', 'components', 'fixVersions', 'issuelinks'];
+// Joins a chunked delivery-plan prompt into the one text that is shown, copied, and offered as a file.
+const PROMPT_CHUNK_SEPARATOR = '\n\n=== NEXT CHUNK ===\n\n';
 
 interface PiDeliveryPlanTabProps {
   /** The PI selected in the ART header (source of the Feature query + sprint window). */
@@ -364,7 +367,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   async function handleCopyPrompt(): Promise<void> {
     if (prompts.length === 0) return;
     try {
-      await navigator.clipboard.writeText(prompts.join('\n\n=== NEXT CHUNK ===\n\n'));
+      await navigator.clipboard.writeText(prompts.join(PROMPT_CHUNK_SEPARATOR));
       setHasCopiedPrompt(true);
     } catch {
       setHasCopiedPrompt(false);
@@ -612,7 +615,9 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
                 {hasCopiedPrompt ? '✓ Copied' : '📋 Copy prompt'}
               </button>
             )}
-            {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join('\n\n=== NEXT CHUNK ===\n\n')} onFocus={(event) => event.currentTarget.select()} />}
+            {/* AI Mode drops whatever is pasted past 2,048 characters, so the whole prompt (every chunk) is also offered as a file (GH #499). */}
+            <AiPromptFile promptText={prompts.join(PROMPT_CHUNK_SEPARATOR)} fileBaseName="pi-delivery-plan-prompt" />
+            {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join(PROMPT_CHUNK_SEPARATOR)} onFocus={(event) => event.currentTarget.select()} />}
             <label className={styles.field} style={{ marginTop: '0.5rem' }}>Paste the AI&apos;s reply
               <textarea className={styles.replyArea} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Paste the filled-in tables (or JSON) here" />
             </label>

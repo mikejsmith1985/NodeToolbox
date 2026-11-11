@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import styles from '../SprintDashboardView.module.css';
@@ -223,6 +224,8 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
         {run.contextState === 'loading' && <p className={styles.releasePromptInstructions}>{CONTEXT_LOADING_MESSAGE}</p>}
         {run.contextState === 'failed' && <p className={styles.errorMessage}>{CONTEXT_FAILED_MESSAGE}</p>}
 
+        {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+        <AiPromptFile promptText={isPromptReady ? run.prompt : ''} fileBaseName="release-priority-prompt" />
         <textarea
           aria-label="Release priority prompt"
           className={`${styles.releasePromptTextArea} ${styles.releasePriorityTextArea}`}

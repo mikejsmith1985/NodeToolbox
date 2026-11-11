@@ -5,15 +5,14 @@
 // Owner, GH #475: a change's prompt came to 134,856 characters and Copilot refuses a message over 128,000. Nothing is
 // cut or dropped — the chat's own history holds all the parts; only one message at a time has to fit.
 //
-// GH #499: the team's only assistant is now Google's AI Mode, which publishes no limit and fails quietly. A 49,679-
-// character Risk Check was read only to its first ~2,000 characters ("your prompt was cut off"), while AI Draft prompts
-// of 22,000 characters and more were read whole. Gemini's own chat box is reported to take about 30,000, so parts are
-// held under that, with room to spare.
+// GH #499: Google's AI Mode box takes only 2,048 characters, so parts cannot help there — every part past the first
+// would be cut too. A prompt that long goes to AI Mode as an attached file instead (components/AiPromptFile); these
+// parts stay for chat boxes with Copilot's larger limit.
 
-/** The most one message is trusted to carry in Google's AI Mode — what its AI Draft prompts have been read whole at. */
-export const ASSISTANT_PROMPT_CHARACTER_LIMIT = 25_000;
+/** The most a large AI chat box takes in one message (Copilot's limit). */
+export const ASSISTANT_PROMPT_CHARACTER_LIMIT = 128_000;
 /** What each part is held to: under the limit, with room for the part's own heading and a line the user adds. */
-export const PROMPT_PART_CHARACTER_BUDGET = 24_000;
+export const PROMPT_PART_CHARACTER_BUDGET = 120_000;
 // Room kept in every part for its heading and closing line.
 const PART_FRAME_ALLOWANCE = 600;
 

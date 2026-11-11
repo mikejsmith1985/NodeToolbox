@@ -9,6 +9,7 @@
 import { useRef, useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../../../components/AiPromptFile/index.tsx';
 import { useCopyFeedback } from '../../../../hooks/useCopyFeedback.ts';
 import compositionStyles from '../../FeatureCompositionTab.module.css';
 import { buildClassifyRequests } from '../ai/intakeClassifyRound.ts';
@@ -128,7 +129,10 @@ function PromptStep({ prompt, promptNumber, onAnswer }: { prompt: LoopPrompt; pr
     <section className={compositionStyles.panel} aria-label={`Prompt ${promptNumber}`}>
       <h3 className={compositionStyles.panelTitle}>Prompt {promptNumber}{partNote}</h3>
       <p className={compositionStyles.panelSubtitle}>Copy this, paste it into your assistant, then paste the whole answer below.</p>
-      <textarea aria-label="Prompt to copy" className={compositionStyles.textAreaTall} readOnly value={prompt.text} />
+      {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499).
+          Each part here is its own self-contained request, answered on its own, so the on-screen part is the file. */}
+      <AiPromptFile promptText={prompt.text} fileBaseName={`epic-intake-prompt-${promptNumber}`} />
+      <textarea aria-label="Prompt to copy"className={compositionStyles.textAreaTall} readOnly value={prompt.text} />
       <div className={styles.intakeActions}>
         <button type="button" className={compositionStyles.primaryButton} onClick={() => confirmCopy(prompt.text)}>{hasCopied ? '✓ Copied' : 'Copy prompt'}</button>
       </div>

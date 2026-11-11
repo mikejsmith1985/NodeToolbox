@@ -7,9 +7,11 @@ import PromptRound from './PromptRound.tsx';
 
 describe('PromptRound', () => {
   it('splits a prompt too long for one chat message into parts, each with its own copy button (GH #475)', () => {
-    const longPrompt = Array.from({ length: 500 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
     render(<PromptRound promptText={longPrompt} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
     expect(screen.queryByRole('button', { name: 'Copy the prompt' })).toBeNull();
+    // Far past AI Mode's 2,048-character box, so it is also offered as a file to attach (GH #499).
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy part 1 of 2' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy part 2 of 2' })).toBeTruthy();
     expect((screen.getByLabelText('Part 2 of 2') as HTMLTextAreaElement).value).toMatch(/^PART 2 OF 2 — the last part/);

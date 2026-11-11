@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 
 // The panel snapshots Team Dashboard profiles from the settings store; the store is mocked so the
@@ -237,6 +238,22 @@ describe('MonthlyDeliveryPanel — Run Now, last-run display, Copy Prompt (US2)'
     expect(screen.getByText(/3 production, 1 external test/)).toBeInTheDocument()
     expect(screen.getByText(/Jira search failed: 401/)).toBeInTheDocument()
     expect(screen.getByLabelText('Generated prompt')).toHaveValue('THE PROMPT TEXT')
+  })
+
+  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+    installFetch({
+      'GET /api/monthly-delivery/config': () => savedConfig(),
+      'GET /api/monthly-delivery/status': () => noRunYet(),
+      'POST /api/monthly-delivery/run-now': () => ({
+        ok: true,
+        result: { ...completedRun(), promptText: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) },
+      }),
+    })
+
+    render(<MonthlyDeliveryPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /run now/i }))
+
+    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument()
   })
 
   it('shows what the run did about delivery — delivered, failed, or skipped', async () => {

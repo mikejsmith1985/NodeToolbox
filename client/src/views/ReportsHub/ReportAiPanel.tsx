@@ -17,6 +17,7 @@
 import { useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import styles from './ReportsHubView.module.css';
@@ -46,12 +47,23 @@ export interface ReportAiPanelProps {
   followUpPrompt?: string;
   /** The follow-up box's id — one per surface so two panels on a page are told apart. */
   followUpFieldId?: string;
+  /** The downloaded prompt file's name without its extension; defaults to one built from the title. */
+  promptFileBaseName?: string;
   /** The caller's results UI (verdict rows, coaching narrative), rendered under the ingest controls. */
   children?: React.ReactNode;
 }
 
 /** The wording used when a caller does not override it — true for every advisory, read-only consumer. */
 const DEFAULT_ADVISORY_HINT = 'optional · advisory only, writes nothing to Jira';
+
+/** Runs of characters that do not belong in a tidy file name — the title is turned into one. */
+const NON_FILE_NAME_CHARACTER_PATTERN = /[^a-z0-9]+/g;
+
+/** A kebab-case file name from the panel title, e.g. "AI cleanup triage" → "ai-cleanup-triage-prompt". */
+function buildPromptFileBaseName(title: string): string {
+  const titleSlug = title.toLowerCase().replace(NON_FILE_NAME_CHARACTER_PATTERN, '-').replace(/^-|-$/g, '');
+  return titleSlug === '' ? 'ai-prompt' : `${titleSlug}-prompt`;
+}
 
 /** Renders the gated copy/paste AI shell, or nothing when AI Assist is locked. */
 export function ReportAiPanel({
@@ -63,6 +75,7 @@ export function ReportAiPanel({
   hint = DEFAULT_ADVISORY_HINT,
   followUpPrompt = '',
   followUpFieldId,
+  promptFileBaseName,
   children,
 }: ReportAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
@@ -80,6 +93,8 @@ export function ReportAiPanel({
         ⚡ {title}
         <span className={styles.aiPanelHint}>{hint}</span>
       </div>
+      {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+      <AiPromptFile promptText={prompt} fileBaseName={promptFileBaseName ?? buildPromptFileBaseName(title)} />
       <textarea readOnly value={prompt} rows={5} className={styles.aiTextarea} aria-label={`${title} prompt`} />
       <div className={styles.aiPanelActions}>
         <button type="button" className={styles.actionButton} onClick={() => confirmPromptCopy(prompt)}>

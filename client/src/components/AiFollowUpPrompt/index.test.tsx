@@ -19,5 +19,11 @@ describe('AiFollowUpPrompt', () => {
     expect(screen.getByLabelText('Follow-up for the same AI chat')).toHaveValue('Your last reply was not in the form I need.');
     fireEvent.click(screen.getByRole('button', { name: /Copy the follow-up/ }));
     expect(writeText).toHaveBeenCalledWith('Your last reply was not in the form I need.');
+    expect(screen.queryByRole('button', { name: 'Download the prompt (PDF)' })).toBeNull();
+  });
+
+  it('offers a follow-up too long for AI Mode\'s box as a file to attach (GH #499)', () => {
+    render(<AiFollowUpPrompt followUpPrompt={'Row | ___ | ___\n'.repeat(200)} />);
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 });

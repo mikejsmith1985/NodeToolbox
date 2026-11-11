@@ -20,6 +20,7 @@ import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
 import { buildPlanIngestFollowUpPrompt, buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
+import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
 import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
@@ -110,6 +111,7 @@ function SprintCard({ sprint }: { sprint: ProjectedSprint }): React.JSX.Element 
  */
 export function PlanProjectionView({ result, piName, todayIso, additionalDetails }: PlanProjectionViewProps): React.JSX.Element {
   const { bottleneck, sprints, proposals, unschedulableItemKeys } = result;
+  const evaluationPromptText = buildPlanEvaluationPrompt(result, piName, todayIso, additionalDetails);
   return (
     <div>
       <section style={{ margin: '8px 0' }}>
@@ -164,6 +166,8 @@ export function PlanProjectionView({ result, piName, todayIso, additionalDetails
         </section>
       )}
 
+      {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
+      <AiPromptFile promptText={evaluationPromptText} fileBaseName="capacity-plan-evaluation-prompt" />
       <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -175,7 +179,7 @@ export function PlanProjectionView({ result, piName, todayIso, additionalDetails
         <button
           type="button"
           className={controlStyles.btnPrimary}
-          onClick={() => copyToClipboard(buildPlanEvaluationPrompt(result, piName, todayIso, additionalDetails))}
+          onClick={() => copyToClipboard(evaluationPromptText)}
           title="Copy a prompt (plan + context + instructions) to paste into Copilot to evaluate and improve this plan"
         >
           🤖 Copy prompt for Copilot
@@ -295,6 +299,7 @@ export function CapacityPlanPanel({
     [result],
   );
   const rosterNames = useMemo(() => rosterMembers.map((member) => member.displayName), [rosterMembers]);
+  const translatePromptText = buildTranslatePrompt(validSprintNames, rosterNames, { allowAssignee: includeReassignments });
 
   /**
    * Parses the assistant's plan table (or JSON) and stages it onto the canvas: each valid assignment moves its story (or
@@ -509,10 +514,11 @@ export function CapacityPlanPanel({
             />
             Include reassignments (writes assignees)
           </label>
+          <AiPromptFile promptText={translatePromptText} fileBaseName="capacity-plan-translate-prompt" />
           <button
             type="button"
             className={controlStyles.btn}
-            onClick={() => copyToClipboard(buildTranslatePrompt(validSprintNames, rosterNames, { allowAssignee: includeReassignments }))}
+            onClick={() => copyToClipboard(translatePromptText)}
           >
             📤 Copy translate prompt
           </button>

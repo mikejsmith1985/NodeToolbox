@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistStore';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
 import PoAiPanel from './PoAiPanel';
 
 function renderPanel(overrides: Partial<Parameters<typeof PoAiPanel>[0]> = {}) {
@@ -204,5 +205,16 @@ describe('PoAiPanel — the follow-up for a reply in the wrong shape (GH #499)',
     await userEvent.click(screen.getByRole('button', { name: /build the prompt/i }));
 
     expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('PoAiPanel — a prompt too long for AI Mode (GH #499)', () => {
+  it('offers the built prompt as a file to attach once it passes AI Mode\'s 2,048 characters', async () => {
+    setAiAssistUnlocked(true);
+    renderPanel({ buildPrompt: () => 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) });
+
+    await userEvent.click(screen.getByRole('button', { name: /build the prompt/i }));
+
+    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
   });
 });

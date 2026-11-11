@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { CheckIcon, ClipboardIcon } from '../../../components/AppIcons/index.tsx';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import { describePromptParts, splitPromptIntoParts } from '../chgFormula/promptParts.ts';
+import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
 import styles from './CreateChgTab.module.css';
 
 /**
@@ -65,6 +66,7 @@ export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalPro
     <div className={styles.passphraseOverlay}>
       <div className={styles.promptModal}>
         <p className={styles.promptInstructions}>{session.instructions}</p>
+        <AiPromptFile promptText={session.promptText} fileBaseName="ai-prompt" />
         {promptParts.length > 1 ? <p className={styles.promptInstructions}>{describePromptParts(promptParts.length)}</p> : null}
         {promptParts.map((partText, partIndex) => {
           const isPartCopied = hasCopied && copiedPartIndex === partIndex;
