@@ -6,7 +6,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 
-import { appendRoundReply } from '../../../views/SnowHub/chgFormula/riskCheckTable.ts';
+import { appendChgDraftReply } from '../../../views/SnowHub/hooks/useAiAssist.ts';
 import { buildAiDraftPrompt, readAiDraftReply, type AiDraftReply } from '../aiDraft.ts';
 import type { PromptRoundOutcome } from '../PromptRound.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -109,8 +109,8 @@ export default function AiDraftStep({ crg, purpose = 'write', buildPrompt = buil
   const pendingRepliesRef = useRef('');
 
   function handleReadReply(replyText: string): PromptRoundOutcome {
-    const readReply = readAiDraftReply(appendRoundReply(pendingRepliesRef.current, replyText), crg.state);
-    pendingRepliesRef.current = readReply.isUsable && readReply.followUpPrompt !== '' ? appendRoundReply(pendingRepliesRef.current, replyText) : '';
+    const readReply = readAiDraftReply(appendChgDraftReply(pendingRepliesRef.current, replyText), crg.state);
+    pendingRepliesRef.current = readReply.isUsable && readReply.followUpPrompt !== '' ? appendChgDraftReply(pendingRepliesRef.current, replyText) : '';
     setFilledCount(null);
     setDraftReply(readReply.isUsable ? readReply : null);
     return { message: readReply.message, followUpPrompt: readReply.followUpPrompt };

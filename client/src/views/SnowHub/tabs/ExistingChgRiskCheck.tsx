@@ -309,15 +309,26 @@ export function ExistingChgRiskCheck({
     setIsWriting(false);
   }, [misalignedTasks, changeConfigItem, writeTaskFixes, reloadCtasks, readRuleFindings]);
 
-  const handleOpenRiskCheck = useCallback(() => {
-    const checkPart = buildCtaskCheckPart(ctasks);
+  const handleOpenRiskCheck = useCallback(async () => {
+    // The tasks are read again as the prompt is built: a check opened before the first read finished, or just after a
+    // task was added, said "Change tasks: (none)" and the reviewer then rejected plans that name real tasks (GH #499).
+    // A failed read is reported and the tasks already read are used.
+    let checkedTasks = ctasks;
+    try {
+      checkedTasks = await fetchReviewedCtasks(changeSysId);
+      setCtasks(checkedTasks);
+    } catch (loadError) {
+      setErrorMessage(loadError instanceof Error ? loadError.message : 'Could not read the change tasks.');
+    }
+    const checkedRuleFindings = readRuleFindings(checkedTasks);
+    const checkPart = buildCtaskCheckPart(checkedTasks);
     const askedItems = listFullCheckItems(checkPart?.tableItems);
     // Every reply in this round is kept, so a follow-up's answers for the rows left blank add to the first (GH #499).
     let roundReplies = '';
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to check the change AND every CTASK against the Release Manager\'s '
         + 'rules, then paste the reply below — one review covers them all.',
-      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, checkPart),
+      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, checkedTasks, jiraStories, attachmentFileNames), fieldValues, checkPart),
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
         const { reviewText: pastedReview, revisedFieldsText } = splitRiskCheckReply(replyText);
@@ -328,7 +339,7 @@ export function ExistingChgRiskCheck({
           return { statusMessage: UNREADABLE_REVIEW_MESSAGE, wasApplied: false, followUpPrompt: buildRiskCheckFollowUp(replyText, askedItems) };
         }
         roundReplies = appendRoundReply(roundReplies, pastedReview);
-        setReviewText(applyTeamStandards(composeReviewWithRules(roundReplies, ruleFindings), readTaskDurationEstimates(ctasks), undefined, promptContext.changeOwnerLabel));
+        setReviewText(applyTeamStandards(composeReviewWithRules(roundReplies, checkedRuleFindings), readTaskDurationEstimates(checkedTasks), undefined, promptContext.changeOwnerLabel));
         const correctedCount = revisedFieldsText ? onApplyChangeFields(pickChangeFields(revisedFieldsText, resolveFixableFields([]))) : 0;
         setIsReviewOutOfDate(correctedCount > 0);
         const followUpPrompt = buildRiskCheckFollowUp(roundReplies, askedItems);
@@ -339,7 +350,7 @@ export function ExistingChgRiskCheck({
         };
       },
     });
-  }, [promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, ruleFindings, onApplyChangeFields]);
+  }, [promptContext, ctasks, changeSysId, readRuleFindings, jiraStories, attachmentFileNames, fieldValues, onApplyChangeFields]);
 
   const handleOpenFixRound = useCallback(() => {
     // The gaps, plus every question for the owner — the assistant asks those in its own chat, then writes them in.
@@ -476,7 +487,7 @@ export function ExistingChgRiskCheck({
             </button>
           ) : null}
           {isUnlocked ? (
-            <button className={styles.aiAssistButton} disabled={isWriting} onClick={handleOpenRiskCheck} type="button">
+            <button className={styles.aiAssistButton} disabled={isWriting} onClick={() => { void handleOpenRiskCheck(); }} type="button">
               Risk check CHG + CTASKs with AI Assist
             </button>
           ) : null}

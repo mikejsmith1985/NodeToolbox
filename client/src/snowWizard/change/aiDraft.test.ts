@@ -149,4 +149,12 @@ describe('readAiDraftReply with Google AI Mode (GH #499)', () => {
     const allTexts = 'SHORT_DESCRIPTION: a\nDESCRIPTION: b\nJUSTIFICATION: c\nRISK_AND_IMPACT: d\nIMPLEMENTATION_PLAN: e\nTEST_PLAN: f\nBACKOUT_PLAN: g';
     expect(readAiDraftReply(allTexts, buildDraft()).followUpPrompt).toBe('');
   });
+
+  it('reads only the first of a draft per environment, and says why it offers the follow-up', () => {
+    const splitReply = 'Short Description\n[REL] Release\nTest Plan\nTest in REL\n\n2. PRD (Production) Change Request\nShort Description\n[PRD] Release';
+    const draftReply = readAiDraftReply(splitReply, buildDraft());
+    expect(draftReply.suggestions.find((suggestion) => suggestion.fieldLabel === 'Test Plan')?.suggestedText).toBe('Test in REL');
+    expect(draftReply.message).toMatch(/separate draft for each environment/);
+    expect(draftReply.followUpPrompt).toMatch(/ONE set of texts/);
+  });
 });

@@ -7,7 +7,13 @@ import { useCallback } from 'react';
 import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
-import { buildSectionsFollowUpPrompt, listMissingSections, readReplySections } from '../../../utils/aiReplySections.ts';
+import {
+  buildSectionsFollowUpPrompt,
+  buildSingleDraftFollowUpPrompt,
+  isReplySplitIntoDrafts,
+  listMissingSections,
+  readReplySections,
+} from '../../../utils/aiReplySections.ts';
 import {
   CHG_FIELD_REPLY_MARKERS,
   CHG_FIELD_REPLY_SECTIONS,
@@ -203,11 +209,31 @@ export function parseAiAssistChgResponse(responseText: string): Partial<AiAssist
 export function buildChgFieldsFollowUp(responseText: string, askedFieldKeys: readonly ChgTextFieldKey[]): string {
   const parsedFields = parseAiAssistChgResponse(responseText);
   const askedSections = CHG_FIELD_REPLY_SECTIONS.filter((section) => askedFieldKeys.includes(section.key));
+  // A draft per environment (REL, then PRD): only the first was read, and its text is not true for the other change.
+  if (isChgReplySplitIntoDrafts(responseText)) {
+    return buildSingleDraftFollowUpPrompt(askedSections);
+  }
   const missingSections = listMissingSections(parsedFields, askedSections);
   if (missingSections.length === 0) {
     return '';
   }
   return buildSectionsFollowUpPrompt(missingSections, missingSections.length === askedSections.length);
+}
+
+/**
+ * Every CHG-draft reply pasted in one round, read together so a follow-up's texts add to the first reply's. When the
+ * earlier replies wrote a separate draft per environment, the follow-up asked for the whole set again, so its reply
+ * replaces them — otherwise the first draft would still be read ahead of it, and the follow-up offered forever.
+ */
+export function appendChgDraftReply(roundReplies: string, replyText: string): string {
+  if (roundReplies === '' || isChgReplySplitIntoDrafts(roundReplies)) return replyText;
+  return `${roundReplies}\n${replyText}`;
+}
+
+/** True when a CHG-draft reply wrote a separate draft per environment (REL, then PRD), so only its first was read. */
+export function isChgReplySplitIntoDrafts(responseText: string): boolean {
+  const restoredResponse = restoreMarkerLineBreaks(stripCodeFences(responseText), CHG_FIELD_REPLY_MARKERS);
+  return isReplySplitIntoDrafts(restoredResponse, CHG_FIELD_REPLY_SECTIONS);
 }
 
 /**

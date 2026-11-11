@@ -2,7 +2,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildSectionsFollowUpPrompt, listMissingSections, readReplySections, type ReplySection } from './aiReplySections.ts';
+import {
+  buildSectionsFollowUpPrompt,
+  isReplySplitIntoDrafts,
+  listMissingSections,
+  readReplySections,
+  type ReplySection,
+} from './aiReplySections.ts';
 
 const SECTIONS: readonly ReplySection<'summary' | 'plan' | 'backout'>[] = [
   { key: 'summary', marker: 'SUMMARY', headingPattern: /^summary$/i },
@@ -36,6 +42,41 @@ describe('readReplySections', () => {
     expect(sectionTexts.plan).toBe('• Backout Plan: owner decides\nSummary: see above');
     expect(sectionTexts.summary).toBe('ship it');
     expect(sectionTexts.backout).toBe('Revert');
+  });
+
+  it('reads only the first draft when the reply writes a second one for another environment (GH #499)', () => {
+    const replyText = [
+      '1. REL (Release) Change Request',
+      'Summary',
+      '[REL] Ship it',
+      'Backout Plan',
+      'Revert REL',
+      'Implementation Plan',
+      '1. Deploy to REL',
+      '',
+      '2. PRD (Production) Change Request',
+      '',
+      '• Category: Software',
+      'Summary',
+      '[PRD] Ship it',
+      'Backout Plan',
+      'Revert PRD',
+      'If your organization\'s template needs more, let me know.',
+    ].join('\n');
+    expect(readReplySections(replyText, SECTIONS)).toEqual({ summary: '[REL] Ship it', backout: 'Revert REL', plan: '1. Deploy to REL' });
+    expect(isReplySplitIntoDrafts(replyText, SECTIONS)).toBe(true);
+  });
+
+  it('stops at a section heading written a second time on its own line, but not at one quoted with its value', () => {
+    const replyText = 'Summary\nShip it\nPlan\nSummary: see above\n\nSummary\nShip it again';
+    expect(readReplySections(replyText, SECTIONS)).toEqual({ summary: 'Ship it', plan: 'Summary: see above' });
+    expect(isReplySplitIntoDrafts(replyText, SECTIONS)).toBe(true);
+    expect(isReplySplitIntoDrafts('Summary\nShip it\nPlan\nSummary: see above', SECTIONS)).toBe(false);
+  });
+
+  it('drops an "If your organization\'s…" closing offer', () => {
+    const replyText = 'Backout Plan\nRevert\nIf your organization\'s card needs other fields, I can update it.';
+    expect(readReplySections(replyText, SECTIONS).backout).toBe('Revert');
   });
 });
 

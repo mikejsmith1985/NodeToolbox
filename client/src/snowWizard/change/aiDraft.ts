@@ -6,7 +6,7 @@
 // value stays as the user (or their template) set it (owner's decision). Nothing is written until accepted.
 
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard.ts';
-import { buildAiAssistPromptText, buildChgFieldsFollowUp, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
+import { buildAiAssistPromptText, buildChgFieldsFollowUp, isChgReplySplitIntoDrafts, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
 import { applyChangeTextField, readChangeTextFields, readSelectedIssues, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
@@ -36,6 +36,9 @@ const NOT_A_DRAFT_MESSAGE = 'That reply does not look like the AI draft — past
 const NOTHING_NEW_MESSAGE = 'The reply is in, but everything it suggested is already written the same way.';
 // Added when the reply left some of the seven texts out; the follow-up asks the same chat for only those.
 const TEXTS_LEFT_OUT_NOTE = ' Some texts were left out — paste the follow-up below into the same AI chat.';
+// Added when the reply wrote a draft per environment: only the first was read, and the follow-up asks for one set.
+const DRAFT_PER_ENVIRONMENT_NOTE = ' The reply wrote a separate draft for each environment, so only the first was read — '
+  + 'paste the follow-up below into the same AI chat to get one set of texts for every change.';
 // Every text the drafting prompt asks for.
 const ASKED_FIELD_KEYS = Object.keys(CHG_TEXT_FIELD_LABELS) as ChgTextFieldKey[];
 // Overrides the shared [CONFIRM: ...] rule for the Wizard: a marker left in the text fails the Formula Card checks and
@@ -99,5 +102,6 @@ export function readAiDraftReply(replyText: string, draft: CrgDraftState): AiDra
     });
   const foundMessage = suggestions.length === 0 ? NOTHING_NEW_MESSAGE
     : `Found ${suggestions.length} ${suggestions.length === 1 ? 'field' : 'fields'} to fill in. Untick any you don't want, then fill them in.`;
-  return { isUsable: true, message: followUpPrompt ? `${foundMessage}${TEXTS_LEFT_OUT_NOTE}` : foundMessage, suggestions, followUpPrompt };
+  const followUpNote = isChgReplySplitIntoDrafts(replyText) ? DRAFT_PER_ENVIRONMENT_NOTE : TEXTS_LEFT_OUT_NOTE;
+  return { isUsable: true, message: followUpPrompt ? `${foundMessage}${followUpNote}` : foundMessage, suggestions, followUpPrompt };
 }

@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     somebody filled since the preview.
 
 ### Fixed
+- **AI Draft: a reply with a separate draft per environment no longer spills the second draft into the Test Plan
+  (GH #499).** Google's AI Mode answered one REL + PRD request with a whole REL draft, then a whole PRD draft. Toolbox
+  and the SNow Wizard read every PRD section into the REL Test Plan, along with the closing "If your organization's…"
+  offer. Now:
+  - Reading stops where a second draft begins: a title such as "2. PRD (Production) Change Request", or a section
+    heading written again on its own line.
+  - The closing offer is dropped.
+  - A follow-up for the same chat asks for ONE set of texts that is true for every change, with any differences
+    written per environment. Its reply replaces the split one.
+- **Risk Check reads the CHG's tasks again when it opens (GH #499).** A check opened before the first CTASK read
+  finished, or just after a task was added, told the reviewer "Change tasks: (none)". The reviewer then rejected
+  plans that name real tasks. A failed read is shown, and the tasks already read are used.
 - **Every AI Assist round now works with Google's AI Mode, not only Copilot (GH #499).** AI Mode is a search answer
   engine: it ignores reply formats and answers as a document or a table. Every round across SNow Hub, the SNow Wizard,
   PO Tool, Agile Hub, Feature Canvas, Hygiene, Reports and the Team Dashboard now works the way CTASK timing already does:

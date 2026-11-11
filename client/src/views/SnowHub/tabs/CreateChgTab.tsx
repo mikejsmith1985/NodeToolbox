@@ -21,7 +21,7 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import { buildCurrentTemplateData } from '../hooks/crgTemplateData.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
-import { buildChgFieldsFollowUp, buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { appendChgDraftReply, buildChgFieldsFollowUp, buildIssueDetailText, isChgReplySplitIntoDrafts, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION, isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
 import { buildChgGapFixPrompt, buildGapFixFollowUp, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import { appendRoundReply, buildRiskCheckFollowUp, listFullCheckItems } from '../chgFormula/riskCheckTable.ts';
@@ -2561,6 +2561,7 @@ const NO_RECOGNISABLE_FIELDS_MESSAGE =
   'No recognisable fields found — paste the follow-up below into the same AI chat, then paste its reply here.';
 // Added to a status when a reply left asked-for fields or review rows out; the follow-up asks for only those (GH #499).
 const FIELDS_LEFT_OUT_NOTE = ' Some fields were left out — paste the follow-up below into the same AI chat.';
+const DRAFT_PER_ENVIRONMENT_NOTE = ' The reply wrote a separate draft for each environment, so only the first was read — paste the follow-up below into the same AI chat for one set of texts.';
 const ROWS_LEFT_OUT_NOTE = ' Some rows were left unanswered — paste the follow-up below into the same AI chat.';
 // Shown when a pasted review or re-check holds no answer Toolbox can read; the follow-up beside it asks for the table.
 const UNREADABLE_REVIEW_MESSAGE = 'No answers could be read from the pasted reply — paste the follow-up below into the same AI chat.';
@@ -2743,7 +2744,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       appliedFieldCount: appliedFieldKeys.length,
       followUpPrompt,
       statusMessage: appliedFieldKeys.length > 0
-        ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.${followUpPrompt ? FIELDS_LEFT_OUT_NOTE : ''}`
+        ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.${followUpPrompt ? (isChgReplySplitIntoDrafts(replyText) ? DRAFT_PER_ENVIRONMENT_NOTE : FIELDS_LEFT_OUT_NOTE) : ''}`
         : NO_RECOGNISABLE_FIELDS_MESSAGE,
     };
   }, [actions]);
@@ -2753,7 +2754,7 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   const buildDraftingReplyHandler = useCallback((allowedFieldKeys: ReadonlyArray<keyof AiAssistGeneratedFields>) => {
     let roundReplies = '';
     return (replyText: string) => {
-      const nextRoundReplies = appendRoundReply(roundReplies, replyText);
+      const nextRoundReplies = appendChgDraftReply(roundReplies, replyText);
       const applyOutcome = applyParsedChgFields(replyText, allowedFieldKeys, nextRoundReplies);
       if (applyOutcome.wasApplied) roundReplies = nextRoundReplies;
       return applyOutcome;

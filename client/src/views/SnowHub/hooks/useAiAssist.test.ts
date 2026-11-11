@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { buildChgFieldsFollowUp, parseAiAssistChgResponse, useAiAssist } from './useAiAssist.ts';
+import { appendChgDraftReply, buildChgFieldsFollowUp, parseAiAssistChgResponse, useAiAssist } from './useAiAssist.ts';
 
 function createMockJiraIssue(issueKey: string, summary: string): JiraIssue {
   return {
@@ -400,5 +400,25 @@ describe('reading the document-shaped draft Google AI Mode writes (GH #499)', ()
     expect(followUp).toContain('did not include TEST_PLAN, BACKOUT_PLAN');
     expect(followUp).not.toContain('SHORT_DESCRIPTION: [text]');
     expect(buildChgFieldsFollowUp('Sure, happy to help!', ['testPlan'])).toMatch(/^Your last reply was not in the form I need/);
+  });
+
+  it('reads only the REL draft of a reply that wrote one per environment, and asks for one set for both (GH #499)', () => {
+    const replyText = [
+      'Short Description:', '[REL] Planned Software Release', 'Backout Plan:', 'Revert REL', 'Test Plan:', 'Validate in REL',
+      '', '2. PRD (Production) Change Request', '', '• Category: Software', 'Short Description', '[PRD] Planned Software Release',
+      'Test Plan', 'Validate in PRD',
+    ].join('\n');
+    expect(parseAiAssistChgResponse(replyText)).toEqual({
+      shortDescription: '[REL] Planned Software Release', backoutPlan: 'Revert REL', testPlan: 'Validate in REL',
+    });
+    const followUp = buildChgFieldsFollowUp(replyText, ['shortDescription', 'testPlan', 'backoutPlan']);
+    expect(followUp).toMatch(/^Your last reply wrote a separate draft for each environment/);
+    expect(followUp).toContain('SHORT_DESCRIPTION: [text]');
+    // The merged reply to that follow-up replaces the split one, so it is read and the follow-up stops.
+    const mergedReply = 'SHORT_DESCRIPTION: Planned Software Release (REL / PRD)\nTEST_PLAN: REL: … / PRD: …\nBACKOUT_PLAN: Revert';
+    const roundReplies = appendChgDraftReply(replyText, mergedReply);
+    expect(parseAiAssistChgResponse(roundReplies).shortDescription).toBe('Planned Software Release (REL / PRD)');
+    expect(buildChgFieldsFollowUp(roundReplies, ['shortDescription', 'testPlan', 'backoutPlan'])).toBe('');
+    expect(appendChgDraftReply('SHORT_DESCRIPTION: x', 'TEST_PLAN: y')).toBe('SHORT_DESCRIPTION: x\nTEST_PLAN: y');
   });
 });

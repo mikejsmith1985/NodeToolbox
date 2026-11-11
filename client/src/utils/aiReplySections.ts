@@ -30,7 +30,11 @@ const PARENTHETICAL_PATTERN = /\s*\([^)]*\)\s*/g;
 // A code fence line, which a code-block reply is wrapped in.
 const CODE_FENCE_LINE_PATTERN = /^\s*```[\w-]*\s*$/;
 // The closing offer an answer engine ends with: "If you provide the missing details…", "Let me know if…".
-const CLOSING_OFFER_PATTERN = /^(?:if you(?:'d| would)? (?:like|want|provide|share|can|need|send|give)|let me know|would you like|do you want|i can also|feel free|happy to|want me to)/i;
+const CLOSING_OFFER_PATTERN = /^(?:if you(?:'d| would)? (?:like|want|provide|share|can|need|send|give)|if your (?:organi[sz]ation|team|company)|let me know|would you like|do you want|i can also|feel free|happy to|want me to)/i;
+// A title opening a second draft for another environment: "2. PRD (Production) Change Request", "## [REL] Change".
+const DRAFT_DIVIDER_PATTERN = /^(?:#{1,6}\s*)?(?:\*\*)?(?:\d+[.)]\s*)?\[?(?:REL|PRD|PROD|PFIX|INT|DEV|Production|Release|Pre-?Production)\b.*\bchange(?:\s+request)?\s*(?:\*\*)?\s*:?$/i;
+/** A draft title longer than this is a sentence that happens to mention a change, not a title. */
+const MAXIMUM_DIVIDER_LENGTH = 80;
 
 // ── Reading a reply ──
 
@@ -74,34 +78,65 @@ function trimSectionText(sectionLines: readonly string[]): string {
   return keptLines.join('\n').trim();
 }
 
+/** True when a line titles a second draft for another environment ("2. PRD (Production) Change Request"). */
+function isDraftDivider(replyLine: string): boolean {
+  const trimmedLine = replyLine.trim();
+  return trimmedLine.length <= MAXIMUM_DIVIDER_LENGTH && DRAFT_DIVIDER_PATTERN.test(trimmedLine);
+}
+
 /**
- * Each section's text, found by its marker or its heading. A section runs to the next section's start; text before the
- * first section (an intro, a block of header facts) is dropped, and so is a closing offer to help further. A section
- * named a second time is read as text of the section it appears in.
+ * Each section's lines, read from the first draft only. An answer engine asked for one set of texts for several
+ * changes sometimes writes a whole draft per environment (GH #499); the second draft starts at a title naming another
+ * environment, or at a section heading written again on its own line. Reading stops there, so the second draft is never
+ * read into the first draft's last section.
  */
-export function readReplySections<TSectionKey extends string>(
+function collectSectionLines<TSectionKey extends string>(
   replyText: string,
   sections: readonly ReplySection<TSectionKey>[],
-): Partial<Record<TSectionKey, string>> {
+): { sectionLines: Map<TSectionKey, string[]>; isSplitIntoDrafts: boolean } {
   const sectionLines = new Map<TSectionKey, string[]>();
   let currentLines: string[] | null = null;
   for (const replyLine of replyText.split(/\r?\n/)) {
     if (CODE_FENCE_LINE_PATTERN.test(replyLine)) continue;
+    if (currentLines && isDraftDivider(replyLine)) return { sectionLines, isSplitIntoDrafts: true };
     const sectionStart = readSectionStart(replyLine, sections);
-    // A section named again is quoted inside another one ("Description: …" in a plan's step) — it stays that one's text.
     if (sectionStart && !sectionLines.has(sectionStart.section.key)) {
       currentLines = [sectionStart.firstText];
       sectionLines.set(sectionStart.section.key, currentLines);
       continue;
     }
+    // A heading written again alone on its line starts a second draft; one quoted with its value ("Description: …" in a
+    // plan's step) stays text of the section it is in.
+    if (sectionStart && sectionStart.firstText === '') return { sectionLines, isSplitIntoDrafts: true };
     currentLines?.push(replyLine);
   }
+  return { sectionLines, isSplitIntoDrafts: false };
+}
+
+/**
+ * Each section's text, found by its marker or its heading. A section runs to the next section's start; text before the
+ * first section (an intro, a block of header facts) is dropped, and so is a closing offer to help further. A section
+ * named again with its value is read as text of the section it appears in; a second draft is not read at all.
+ */
+export function readReplySections<TSectionKey extends string>(
+  replyText: string,
+  sections: readonly ReplySection<TSectionKey>[],
+): Partial<Record<TSectionKey, string>> {
+  const { sectionLines } = collectSectionLines(replyText, sections);
   const sectionTexts: Partial<Record<TSectionKey, string>> = {};
   for (const [sectionKey, linesOfSection] of sectionLines) {
     const sectionText = trimSectionText(linesOfSection);
     if (sectionText !== '') sectionTexts[sectionKey] = sectionText;
   }
   return sectionTexts;
+}
+
+/** True when the reply wrote more than one draft (one per environment), so only its first draft was read. */
+export function isReplySplitIntoDrafts<TSectionKey extends string>(
+  replyText: string,
+  sections: readonly ReplySection<TSectionKey>[],
+): boolean {
+  return collectSectionLines(replyText, sections).isSplitIntoDrafts;
 }
 
 /** The sections a reply left out, in the round's own order. */
@@ -126,5 +161,21 @@ export function buildSectionsFollowUpPrompt(missingSections: readonly ReplySecti
       + 'nothing before the first label or after the last one, and ask no questions — give your best judgement.',
     '',
     ...missingSections.map((section) => `${section.marker}: [text]`),
+  ].join('\n');
+}
+
+/**
+ * The follow-up for a reply that wrote a separate draft per environment. The same texts go on every change raised
+ * together, so it asks for ONE set, true for all of them, with any difference stated per environment inside the text.
+ */
+export function buildSingleDraftFollowUpPrompt(sections: readonly ReplySection[]): string {
+  return [
+    'Your last reply wrote a separate draft for each environment. These texts go on every change at once, so I need ONE '
+      + 'set of texts that is true for all of them. Where a fact differs (configuration item, window, the testing done '
+      + 'there), state it per environment inside the text, for example "REL: … / PRD: …".',
+    'Start each one on its own line with its label exactly as written below, followed by a colon and its text. Write '
+      + 'nothing before the first label or after the last one, and ask no questions — give your best judgement.',
+    '',
+    ...sections.map((section) => `${section.marker}: [text]`),
   ].join('\n');
 }

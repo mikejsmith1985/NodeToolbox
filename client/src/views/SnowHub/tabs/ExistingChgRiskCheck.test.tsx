@@ -72,10 +72,16 @@ function renderPanel(onApplyChangeFields = vi.fn(() => 1), fieldValues = FIELD_V
   return onApplyChangeFields;
 }
 
+/** Opens the Risk Check round and waits for it: the tasks are read again from ServiceNow before its prompt is built. */
+async function openRiskCheck() {
+  fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+  await waitFor(() => expect(screen.queryByText(/^Inline round:/) ?? screen.queryByLabelText(/Paste the assistant/)).not.toBeNull());
+}
+
 /** Opens the AI round behind a button, pastes a reply into the modal and uses it. */
-function pasteReply(buttonName: RegExp, replyText: string, useButtonName: RegExp) {
+async function pasteReply(buttonName: RegExp, replyText: string, useButtonName: RegExp) {
   fireEvent.click(screen.getByRole('button', { name: buttonName }));
-  fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: replyText } });
+  fireEvent.change(await screen.findByLabelText(/Paste the assistant/), { target: { value: replyText } });
   fireEvent.click(screen.getByRole('button', { name: useButtonName }));
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 }
@@ -108,7 +114,7 @@ describe('ExistingChgRiskCheck', () => {
     expect(await screen.findByText(/Read 1 Jira story named in the change: ENCUC-77/)).toBeInTheDocument();
     expect(fetchChangeJiraStories).toHaveBeenCalledWith(['ENCUC-77']);
 
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     expect(screen.getByDisplayValue(/Jira work this change delivers[\s\S]*Description: Affects 300 enrolled members\./))
       .toBeInTheDocument();
   });
@@ -123,7 +129,7 @@ describe('ExistingChgRiskCheck', () => {
     await screen.findByText(/CTASK0012345 · Configuration item/);
     await waitFor(() => expect(fetchChangeAttachmentFileNames).toHaveBeenCalledWith('chg-1'));
 
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
 
     expect(screen.getByDisplayValue(/Files attached to the change:\s+CHG0012345-test-evidence\.zip/)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/CTASK0012345 — [^\n]*implementation 30 min, validation 20 min, backout \? min/))
@@ -139,11 +145,11 @@ describe('ExistingChgRiskCheck', () => {
     renderPanel();
     await screen.findByText(/CTASK checks pass/);
 
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     expect(screen.getByDisplayValue(/Team standards[\s\S]*Estimated durations \(the CTASK estimates added up\): implementation 30 min/))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    pasteReply(/Risk check CHG \+ CTASKs/, [
+    await pasteReply(/Risk check CHG \+ CTASKs/, [
       'INFO | Bridge or Command Center — What bridge will be used?',
       'INFO | Implementation Duration — How long will it take?',
       'INFO | Business Validation — Who validates?',
@@ -165,11 +171,22 @@ describe('ExistingChgRiskCheck', () => {
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalledTimes(2));
   });
 
+  it('reads the tasks again when the check opens, so a task added since the first read is in the prompt (GH #499)', async () => {
+    vi.mocked(fetchReviewedCtasks).mockResolvedValueOnce([]).mockResolvedValueOnce([MISALIGNED_TASK]);
+    renderPanel();
+    await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalledTimes(1));
+
+    await openRiskCheck();
+
+    expect(fetchReviewedCtasks).toHaveBeenCalledTimes(2);
+    expect(screen.getByDisplayValue(/Change tasks:\s+CTASK0012345 — /)).toBeInTheDocument();
+  });
+
   it('checks the change and its tasks in one prompt and shows one review with the CI rule folded in', async () => {
     renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
 
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service/)).toBeInTheDocument();
     // The task's own instructions are the deployment facts a plan is built from — given in full (GH #415).
     expect(screen.getByDisplayValue(/Change task instructions[^\n]*:\s+CTASK0012345: Run the pipeline\./)).toBeInTheDocument();
@@ -177,7 +194,7 @@ describe('ExistingChgRiskCheck', () => {
     expect(screen.getByDisplayValue(/CTASK0012345 — Deploy recon service \(Implementation\) — assigned to Jane Smith \(group: Platform Team\)/))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nGAP | CTASK0012345 · Backout plan — only says Revert. — Fix: name the steps.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nGAP | CTASK0012345 · Backout plan — only says Revert. — Fix: name the steps.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
 
     expect(await screen.findByText(/NOT READY — 2 gap/)).toBeInTheDocument();
   });
@@ -192,7 +209,7 @@ describe('ExistingChgRiskCheck', () => {
         renderPromptSession={(session) => <p>{`Inline round: ${session.applyButtonLabel}`}</p>} />,
     );
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     expect(screen.getByText(/^Inline round:/)).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -200,9 +217,9 @@ describe('ExistingChgRiskCheck', () => {
   it('applies a fix round to the change fields and stages the task\'s new backout plan to write', async () => {
     const onApplyChangeFields = renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nGAP | CTASK0012345 · Backout plan — only says Revert.\nVERDICT: NOT READY — 2 gap(s).', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nGAP | CTASK0012345 · Backout plan — only says Revert.\nVERDICT: NOT READY — 2 gap(s).', /Use this review/);
 
-    pasteReply(/Fix these gaps/, 'BACKOUT_PLAN:\nRedeploy v1.4 within 15 minutes.\nCTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
+    await pasteReply(/Fix these gaps/, 'BACKOUT_PLAN:\nRedeploy v1.4 within 15 minutes.\nCTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
 
     expect(onApplyChangeFields).toHaveBeenCalledWith({ backoutPlan: 'Redeploy v1.4 within 15 minutes.' });
     fireEvent.click(await screen.findByRole('button', { name: /Write 1 CTASK fix to ServiceNow/ }));
@@ -220,7 +237,7 @@ describe('ExistingChgRiskCheck — questions for the owner', () => {
   it('re-checks a question on Check again, beside the fix round that would ask it', async () => {
     renderPanel();
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
-    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Short Description — Clear.\nINFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — 0 gap(s).', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Short Description — Clear.\nINFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — 0 gap(s).', /Use this review/);
 
     expect(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
@@ -231,7 +248,7 @@ describe('ExistingChgRiskCheck — questions for the owner', () => {
   it('sends the questions to the fix round for the assistant to ask in its chat', async () => {
     renderPanel();
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
-    pasteReply(/Risk check CHG \+ CTASKs/, 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'INFO | Support Coverage — Who is on call?\nVERDICT: NOT READY — no text gaps; 1 fact needed from you.', /Use this review/);
 
     fireEvent.click(screen.getByRole('button', { name: /Fix with AI Assist — it will ask you 1 question/ }));
 
@@ -253,8 +270,8 @@ describe('ExistingChgRiskCheck — staged CTASK fixes reach ServiceNow (GH #415)
   async function stageBackoutPlan() {
     renderPanel();
     await screen.findByText(/CTASK0012345 · Backout plan/);
-    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
-    pasteReply(/Fix these gaps/, 'CTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+    await pasteReply(/Fix these gaps/, 'CTASK0012345_BACKOUT_PLAN:\n1. Stop the job.\n2. Redeploy v1.4.', /Apply/);
     await screen.findByRole('button', { name: /Write 1 CTASK fix to ServiceNow/ });
   }
 
@@ -296,7 +313,7 @@ describe('ExistingChgRiskCheck — a pasted question is not a reply (GH #415)', 
   it('says to answer the assistant in its chat when its question is pasted in place of the fields', async () => {
     renderPanel();
     await waitFor(() => expect(fetchReviewedCtasks).toHaveBeenCalled());
-    pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'GAP | Backout Plan — no timing. — Fix: add timing.\nVERDICT: NOT READY — 1 gap(s).', /Use this review/);
 
     fireEvent.click(screen.getByRole('button', { name: /Fix these gaps/ }));
     fireEvent.change(screen.getByLabelText(/Paste the assistant/), {
@@ -322,7 +339,7 @@ describe('ExistingChgRiskCheck — the outage record (a Production change was re
     renderPanel(undefined, FIELD_VALUES, true);
     await waitFor(() => expect(fetchChangeOutages).toHaveBeenCalledWith('chg-1'));
 
-    pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: READY FOR APPROVAL', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'PASS | Backout Plan — clear.\nVERDICT: READY FOR APPROVAL', /Use this review/);
 
     const formFieldList = await screen.findByRole('list', { name: 'Fix in the change form' });
     expect(within(formFieldList).getByText('Outage Record')).toBeInTheDocument();
@@ -343,7 +360,7 @@ describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
   it('asks for the review as a table ending the prompt, with a row for each implementation task', async () => {
     renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
 
     const promptText = (screen.getByLabelText('Prompt') as HTMLTextAreaElement).value;
     expect(promptText.trim().endsWith('CTASK0012345 · Backout plan | ___ | ___ | ___')).toBe(true);
@@ -352,7 +369,7 @@ describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
   it('reads a markdown-table review, and offers a follow-up for the rows it left blank', async () => {
     renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     const tableReply = [
       'Here is the review.',
       '| Item | Answer | Finding | Fix |',
@@ -374,7 +391,7 @@ describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
   it('offers the table again, instead of a dead end, when the review could not be read', async () => {
     renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    await openRiskCheck();
     fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'Overall the change looks reasonable.' } });
     fireEvent.click(screen.getByRole('button', { name: /Use this review/ }));
 
@@ -385,7 +402,7 @@ describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
   it('applies a fix written under headings, and offers the labelled form when nothing could be read', async () => {
     const onApplyChangeFields = renderPanel();
     await screen.findByText(/CTASK0012345 · Configuration item/);
-    pasteReply(/Risk check CHG \+ CTASKs/, 'Item | Answer | Finding | Fix\nBackout Plan | GAP | No timing. | Add timing.', /Use this review/);
+    await pasteReply(/Risk check CHG \+ CTASKs/, 'Item | Answer | Finding | Fix\nBackout Plan | GAP | No timing. | Add timing.', /Use this review/);
 
     fireEvent.click(screen.getByRole('button', { name: /Fix these gaps/ }));
     fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'I think the plan is mostly fine as written.' } });
