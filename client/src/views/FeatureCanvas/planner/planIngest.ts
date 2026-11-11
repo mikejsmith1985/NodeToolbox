@@ -1,17 +1,36 @@
 // planIngest.ts — The capacity-plan write-back round-trip: a copy-out "translate" prompt plus the
 // strict ingest of the JSON reply that re-sprints canvas work.
 //
-// After the operator discusses and finalises a projected plan with Copilot in an ordinary chat,
-// they paste the prompt from `buildTranslatePrompt` to have the assistant restate the agreed plan
-// as exact JSON — using only the sprint names and roster names Toolbox knows. `parsePlanIngest`
-// then validates that reply into well-formed assignments plus human-readable errors. Both functions
-// are pure and deterministic: no clock, no DOM, no network.
+// After the operator discusses and finalises a projected plan with the assistant in an ordinary
+// chat, they paste the prompt from `buildTranslatePrompt` to have it restate the agreed plan as a
+// table — using only the sprint names and roster names Toolbox knows. Google's AI Mode, the team's
+// only assistant (GH #499), ignores JSON but fills in a table reliably; the shared record reader
+// turns that table back into the same {kind, items} payload, and a JSON reply is still read.
+// `parsePlanIngest` then validates it into well-formed assignments plus human-readable errors. All
+// functions are pure and deterministic: no clock, no DOM, no network.
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
-import { extractJsonPayload } from '../ai/canvasAiAssist.ts';
+import {
+  buildRecordFillInTable,
+  extractRecordReplyPayload,
+  isUnreadableRecordReply,
+  type ReplyRecordColumn,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
 
 /** The fixed discriminator the assistant must echo so a stray JSON blob is never misread as a plan. */
 const INGEST_KIND = 'capacityPlanIngest';
+/** The line the reply's table follows, so the reader can skip any intro the assistant writes first. */
+const PLAN_REPLY_MARKER = 'PLAN_TABLE:';
+const ASSIGNEE_COLUMN: ReplyRecordColumn = { field: 'assignee', header: 'Assignee' };
+/** The table the prompt asks for without reassignments: which issue moves to which sprint. */
+const PLAN_REPLY_SPEC: ReplyRecordSpec = {
+  kind: INGEST_KIND,
+  replyMarker: PLAN_REPLY_MARKER,
+  columns: [{ field: 'issueKey', header: 'Issue key' }, { field: 'sprint', header: 'Sprint' }],
+};
+/** The table with the optional Assignee column — also what the reader accepts, so a stray assignee is seen and dropped. */
+const PLAN_REPLY_SPEC_WITH_ASSIGNEE: ReplyRecordSpec = { ...PLAN_REPLY_SPEC, columns: [...PLAN_REPLY_SPEC.columns, ASSIGNEE_COLUMN] };
 
 /** One re-sprint instruction: move an issue to a known sprint, optionally reassigning its owner. */
 export interface IngestAssignment {
@@ -42,57 +61,91 @@ interface ParseOptions {
 // ── Prompt building ──
 
 /**
- * Builds the copy-out prompt the operator pastes into their EXISTING Copilot chat once the plan is
- * agreed. It restates the plan as exact JSON, constrains sprint (and optionally assignee) values to
- * the names Toolbox recognises, and forbids invented issues, sprints, or names. Pure and deterministic.
+ * Builds the copy-out prompt the operator pastes into their EXISTING assistant chat once the plan is
+ * agreed. It restates the plan as a table, constrains sprint (and optionally assignee) values to the
+ * names Toolbox recognises, and forbids invented issues, sprints, or names. Pure and deterministic.
  */
 export function buildTranslatePrompt(
   validSprintNames: readonly string[],
   rosterNames: readonly string[],
   options: { allowAssignee: boolean },
 ): string {
-  const jsonShape = buildJsonShape(options.allowAssignee);
-  const sprintList = validSprintNames.map((sprintName) => `  - ${sprintName}`).join('\n');
-  const sections: string[] = [
-    'Convert the capacity plan we just agreed on in this conversation into the exact JSON below. Output ONLY the JSON, no prose.',
+  return [
+    'Convert the capacity plan we just agreed on in this conversation into the table below.',
     '',
-    'JSON shape:',
-    jsonShape,
-    '',
-    'The "sprint" value MUST be exactly one of these sprint names (copy them verbatim):',
-    sprintList,
-    '',
-    buildAssigneeSection(rosterNames, options.allowAssignee),
-    'Include one entry per story/task that moves, using the exact issue keys from the plan. Do not invent issues, sprints, or names.',
-  ];
-  return sections.join('\n');
+    buildPlanTableInstructions(validSprintNames, rosterNames, options.allowAssignee),
+  ].join('\n');
 }
 
-/** Returns the single-line JSON schema example, including the assignee field only when allowed. */
-function buildJsonShape(allowAssignee: boolean): string {
-  const assigneeField = allowAssignee ? ',"assignee":"NAME"' : '';
-  return `{"kind":"${INGEST_KIND}","assignments":[{"issueKey":"KEY","sprint":"SPRINT"${assigneeField}}]}`;
+/**
+ * The rules, name lists and empty table a translate prompt (and its follow-up) ends with. The rows
+ * are not known in advance — only the assistant knows which stories the agreed plan moves — so the
+ * table is the header alone and the assistant adds one row per moving story.
+ */
+function buildPlanTableInstructions(validSprintNames: readonly string[], rosterNames: readonly string[], allowAssignee: boolean): string {
+  const replySpec = allowAssignee ? PLAN_REPLY_SPEC_WITH_ASSIGNEE : PLAN_REPLY_SPEC;
+  const sprintList = validSprintNames.map((sprintName) => `  - ${sprintName}`).join('\n');
+  return [
+    `Answer ONLY with the table, starting with the line ${PLAN_REPLY_MARKER}. Copy its header row exactly, then add one `
+      + 'row per story/task that moves, using the exact issue keys from the plan. Write nothing before or after the '
+      + 'table, do not answer in JSON or bullet points, never put a "|" inside a cell, and ask no questions.',
+    '',
+    'The Sprint cell MUST be exactly one of these sprint names (copy them verbatim):',
+    sprintList,
+    '',
+    buildAssigneeSection(rosterNames, allowAssignee),
+    'Do not invent issues, sprints, or names.',
+    '',
+    PLAN_REPLY_MARKER,
+    ...buildRecordFillInTable(replySpec, []),
+  ].join('\n');
 }
 
 /** Returns the assignee guidance: a roster whitelist when allowed, or an explicit exclusion when not. */
 function buildAssigneeSection(rosterNames: readonly string[], allowAssignee: boolean): string {
   if (!allowAssignee) {
-    return 'Do NOT include an "assignee" field on any entry.\n';
+    return 'Do NOT include an Assignee column.\n';
   }
   const rosterList = rosterNames.map((rosterName) => `  - ${rosterName}`).join('\n');
   return [
-    'The "assignee" field is optional. When present it MUST be exactly one of these roster names:',
+    'The Assignee cell is optional (leave it ___ to keep the owner). When filled it MUST be exactly one of these roster names:',
     rosterList,
     '',
+  ].join('\n');
+}
+
+/**
+ * The follow-up to paste into the same assistant chat, or '' when the reply needs none. An
+ * unreadable reply gets the table instructions again; a reply with rejected rows (an unknown sprint,
+ * a missing key) gets the reasons and a request to restate only those rows. Nothing is guessed.
+ */
+export function buildPlanIngestFollowUpPrompt(
+  replyText: string,
+  ingestResult: PlanIngestResult,
+  validSprintNames: readonly string[],
+  rosterNames: readonly string[],
+  options: { allowAssignee: boolean },
+): string {
+  const tableInstructions = buildPlanTableInstructions(validSprintNames, rosterNames, options.allowAssignee);
+  if (isUnreadableRecordReply(replyText, PLAN_REPLY_SPEC_WITH_ASSIGNEE)) {
+    return ['Your last reply was not in the form I need, so it could not be read. Keep the plan you gave, but put it in this table.', tableInstructions].join('\n');
+  }
+  if (ingestResult.errors.length === 0) {
+    return '';
+  }
+  return [
+    `Some rows of your last reply could not be used: ${ingestResult.errors.join(' ')} Restate only those rows now.`,
+    tableInstructions,
   ].join('\n');
 }
 
 // ── Reply ingest ──
 
 /**
- * Validates a translate reply into well-formed assignments plus descriptive errors. Tolerant of
- * fences and prose via `extractJsonPayload`; never throws on business-invalid content — every bad
- * entry becomes an error message while the good entries are kept. Pure and deterministic.
+ * Validates a translate reply — its filled-in table, or JSON — into well-formed assignments plus
+ * descriptive errors. Tolerant of an intro, fences and a closing offer; never throws on
+ * business-invalid content — every bad entry becomes an error message while the good entries are
+ * kept. Pure and deterministic.
  */
 export function parsePlanIngest(responseText: string, options: ParseOptions): PlanIngestResult {
   const parsed = readPayloadObject(responseText);
@@ -104,18 +157,20 @@ export function parsePlanIngest(responseText: string, options: ParseOptions): Pl
   if (payload.kind !== INGEST_KIND) {
     return { assignments: [], errors: [`Response kind "${String(payload.kind)}" is not ${INGEST_KIND}`] };
   }
-  if (!Array.isArray(payload.assignments)) {
+  // A table reply arrives as {kind, items}; a JSON reply carries "assignments" as before.
+  const rawAssignments = Array.isArray(payload.assignments) ? payload.assignments : payload.items;
+  if (!Array.isArray(rawAssignments)) {
     return { assignments: [], errors: ['The "assignments" field is missing or is not an array.'] };
   }
 
-  return validateAssignments(payload.assignments, options);
+  return validateAssignments(rawAssignments, options);
 }
 
 /** Extracts and JSON-parses the payload, returning a tolerant error message rather than throwing. */
 function readPayloadObject(responseText: string): { value: unknown; errorMessage: string | null } {
   let jsonText: string;
   try {
-    jsonText = extractJsonPayload(responseText);
+    jsonText = extractRecordReplyPayload(responseText, PLAN_REPLY_SPEC_WITH_ASSIGNEE);
   } catch {
     return { value: null, errorMessage: 'No JSON object found in the assistant response.' };
   }

@@ -123,3 +123,51 @@ describe('parseCtaskBackoutReply', () => {
     expect([...backoutPlansByNumber.entries()]).toEqual([['CTASK0012345', 'Stop the job.']]);
   });
 });
+
+describe('the change tasks with Google AI Mode (GH #499)', () => {
+  it('lists each implementation task as its own row of the check\'s fill-in table', () => {
+    const prompt = buildChgRiskCheckPrompt(CONTEXT, FIELDS, buildCtaskCheckPart([buildCtask()]));
+
+    expect(prompt.trim().endsWith('CTASK0012345 · Backout plan | ___ | ___ | ___')).toBe(true);
+  });
+
+  it('lists each re-checked task gap as a row of the re-check\'s table', () => {
+    const prompt = buildGapRecheckPrompt(CONTEXT, FIELDS, [], buildCtaskRecheckPart([buildCtask()], [BACKOUT_GAP]));
+
+    expect(prompt.trim().endsWith('CTASK0012345 · Backout plan | ___ | ___ | ___')).toBe(true);
+  });
+
+  it('ends the fix round with each task\'s label, so the reply\'s shape is the last thing read', () => {
+    const prompt = buildChgGapFixPrompt(CONTEXT, FIELDS, [], buildCtaskFixPart([buildCtask()], [BACKOUT_GAP]));
+
+    expect(prompt.trim().endsWith('CTASK0012345_BACKOUT_PLAN: [the task\'s complete backout plan as it should now read]')).toBe(true);
+  });
+
+  it('reads a task\'s plan under a heading, ends it at a change field\'s heading, and drops the closing offer', () => {
+    const reply = [
+      'Here are the rewritten plans.',
+      '### Backout Plan',
+      'Redeploy v1.4 through the pipeline.',
+      '### CTASK0012345 Backout Plan',
+      '1. Stop the job.',
+      '2. Redeploy v1.4.',
+      '## Test Plan',
+      'Smoke test in PROD.',
+      '**CTASK0099999 — Backout plan:** Not asked about.',
+      '',
+      'If you would like, I can also tighten the implementation plan.',
+    ].join('\n');
+
+    const { backoutPlansByNumber, changeReplyText } = parseCtaskBackoutReply(reply, ['CTASK0012345']);
+
+    expect([...backoutPlansByNumber.entries()]).toEqual([['CTASK0012345', '1. Stop the job.\n2. Redeploy v1.4.']]);
+    expect(changeReplyText).toContain('### Backout Plan\nRedeploy v1.4 through the pipeline.');
+    expect(changeReplyText).toContain('## Test Plan\nSmoke test in PROD.');
+  });
+
+  it('reads a bold heading with the plan on the same line', () => {
+    const { backoutPlansByNumber } = parseCtaskBackoutReply('**CTASK0012345 Backout Plan:** Stop the job, then redeploy v1.4.', ['CTASK0012345']);
+
+    expect(backoutPlansByNumber.get('CTASK0012345')).toBe('Stop the job, then redeploy v1.4.');
+  });
+});

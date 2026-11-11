@@ -159,6 +159,31 @@ describe('CabPrepSection', () => {
     expect(screen.getByText(/Cannot be answered from what is recorded/)).toBeInTheDocument();
   });
 
+  it('offers a follow-up for the questions an AI Mode table left out, and adds its answers to the pack (GH #499)', async () => {
+    render(<CabPrepSection loadedChange={change()} styles={STYLES} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare for CAB review' }));
+
+    fireEvent.change(await screen.findByLabelText(/Paste the assistant/), {
+      target: { value: 'Here are the answers.\n| Question ID | Answer | Unanswerable |\n|---|---|---|\n| why-now | The contract lapses on the 30th. | No |' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Build the CAB pack' }));
+
+    const followUpField = await screen.findByLabelText(/Follow-up for the same AI chat/) as HTMLTextAreaElement;
+    expect(followUpField.value).toContain('backout-tested |');
+    expect(followUpField.value).not.toContain('why-now |');
+    expect(screen.getByText(/CAB preparation pack/)).toBeInTheDocument();
+  });
+
+  it('offers the table again when a reply could not be read at all', async () => {
+    render(<CabPrepSection loadedChange={change()} styles={STYLES} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare for CAB review' }));
+
+    fireEvent.change(await screen.findByLabelText(/Paste the assistant/), { target: { value: 'The change looks well prepared.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Build the CAB pack' }));
+
+    expect((await screen.findByLabelText(/Follow-up for the same AI chat/) as HTMLTextAreaElement).value).toMatch(/could not be read/);
+  });
+
   it('refuses a reply meant for a different prompt', async () => {
     render(<CabPrepSection loadedChange={change()} styles={STYLES} />);
     fireEvent.click(screen.getByRole('button', { name: 'Prepare for CAB review' }));

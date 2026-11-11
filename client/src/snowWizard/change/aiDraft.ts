@@ -6,7 +6,7 @@
 // value stays as the user (or their template) set it (owner's decision). Nothing is written until accepted.
 
 import { CHG_TEXT_FIELD_LABELS, type ChgTextFieldKey } from '../../views/SnowHub/chgFormula/formulaCard.ts';
-import { buildAiAssistPromptText, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
+import { buildAiAssistPromptText, buildChgFieldsFollowUp, parseAiAssistChgResponse } from '../../views/SnowHub/hooks/useAiAssist.ts';
 import { buildMultiChangeNote, buildWizardPromptContext } from './aiRounds.ts';
 import { applyChangeTextField, readChangeTextFields, readSelectedIssues, type CrgDraftState, type CrgHook } from './changeDraft.ts';
 import type { JiraEvidenceAttachment } from './jiraEvidence.ts';
@@ -28,10 +28,16 @@ export interface AiDraftReply {
   isUsable: boolean;
   message: string;
   suggestions: AiDraftSuggestion[];
+  /** For the same AI chat: the form again, or only the texts the reply left out; '' when nothing is missing (GH #499). */
+  followUpPrompt: string;
 }
 
-const NOT_A_DRAFT_MESSAGE = 'That reply does not look like the AI draft. Copy the whole reply from the assistant and paste it again.';
+const NOT_A_DRAFT_MESSAGE = 'That reply does not look like the AI draft — paste the follow-up below into the same AI chat, then paste its reply here.';
 const NOTHING_NEW_MESSAGE = 'The reply is in, but everything it suggested is already written the same way.';
+// Added when the reply left some of the seven texts out; the follow-up asks the same chat for only those.
+const TEXTS_LEFT_OUT_NOTE = ' Some texts were left out — paste the follow-up below into the same AI chat.';
+// Every text the drafting prompt asks for.
+const ASKED_FIELD_KEYS = Object.keys(CHG_TEXT_FIELD_LABELS) as ChgTextFieldKey[];
 // Overrides the shared [CONFIRM: ...] rule for the Wizard: a marker left in the text fails the Formula Card checks and
 // sends the user hunting through steps to delete it (GH #468), so missing facts are asked for in the AI's own chat.
 const BEST_GUESS_INSTRUCTION = 'Make your best guess for every field from the facts above. Do not write [CONFIRM: ...] '
@@ -71,11 +77,16 @@ export function buildAiDraftPrompt(draft: CrgDraftState, jiraEvidence: readonly 
   ].join('\n');
 }
 
-/** Reads a pasted reply into one suggestion per text, skipping any that already say the same thing. */
+/**
+ * Reads a pasted reply into one suggestion per text, skipping any that already say the same thing. Each text is found
+ * by its label or by the heading Google's AI Mode writes instead. A reply that left texts out, or could not be read,
+ * carries a follow-up for the same chat asking for just those — a missing text is never guessed (GH #499).
+ */
 export function readAiDraftReply(replyText: string, draft: CrgDraftState): AiDraftReply {
   const parsedFields = parseAiAssistChgResponse(replyText);
-  const parsedFieldKeys = (Object.keys(CHG_TEXT_FIELD_LABELS) as ChgTextFieldKey[]).filter((fieldKey) => Boolean(parsedFields[fieldKey]));
-  if (parsedFieldKeys.length === 0) return { isUsable: false, message: NOT_A_DRAFT_MESSAGE, suggestions: [] };
+  const parsedFieldKeys = ASKED_FIELD_KEYS.filter((fieldKey) => Boolean(parsedFields[fieldKey]));
+  const followUpPrompt = buildChgFieldsFollowUp(replyText, ASKED_FIELD_KEYS);
+  if (parsedFieldKeys.length === 0) return { isUsable: false, message: NOT_A_DRAFT_MESSAGE, suggestions: [], followUpPrompt };
   const currentFields = readChangeTextFields(draft);
   const suggestions = parsedFieldKeys
     .filter((fieldKey) => parsedFields[fieldKey] !== currentFields[fieldKey].trim())
@@ -86,7 +97,7 @@ export function readAiDraftReply(replyText: string, draft: CrgDraftState): AiDra
         apply: (writers) => applyChangeTextField(writers, fieldKey, suggestedText),
       };
     });
-  const message = suggestions.length === 0 ? NOTHING_NEW_MESSAGE
+  const foundMessage = suggestions.length === 0 ? NOTHING_NEW_MESSAGE
     : `Found ${suggestions.length} ${suggestions.length === 1 ? 'field' : 'fields'} to fill in. Untick any you don't want, then fill them in.`;
-  return { isUsable: true, message, suggestions };
+  return { isUsable: true, message: followUpPrompt ? `${foundMessage}${TEXTS_LEFT_OUT_NOTE}` : foundMessage, suggestions, followUpPrompt };
 }

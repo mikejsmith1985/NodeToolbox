@@ -19,13 +19,37 @@
 //     document will happily return two hundred of them, and a two-hundred-item extract has simply
 //     moved the original problem one step down the pipeline.
 //
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a request for JSON, so the prompt asks for the
+// shape it does follow: five labelled headings with one entry per line under each. A JSON reply is still read.
+//
 // Pure: no fetch, no storage, no clock — the extraction time is passed in.
 
-import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
+import {
+  buildSectionsFollowUpPrompt,
+  listMissingSections,
+  readReplySections,
+  type ReplySection,
+} from '../../../../utils/aiReplySections.ts';
 import { describeSourceOrigin, describeSourceTitle, readSourceText } from '../../sources/sourceModel.ts';
 import type { ReferencedSource } from '../../sources/sourceModel.ts';
+import { readKindedJsonReply, readListEntries } from './replyListSections.ts';
 
 export const DOCUMENT_EXTRACT_REPLY_KIND = 'documentExtract';
+
+/** The five parts of an extract, as the reply's headings name them. */
+type ExtractSectionKey = 'summary' | 'decisions' | 'requirements' | 'openQuestions' | 'facts';
+
+/** Each heading the prompt asks for, and the headings an answer engine writes for it instead. */
+const EXTRACT_SECTIONS: readonly ReplySection<ExtractSectionKey>[] = [
+  { key: 'summary', marker: 'SUMMARY', headingPattern: /^(?:document |short )?summary$|^what (?:this|the) document is$/i },
+  { key: 'decisions', marker: 'DECISIONS', headingPattern: /^(?:key )?decisions?(?: made)?$/i },
+  { key: 'requirements', marker: 'REQUIREMENTS', headingPattern: /^(?:key )?requirements$/i },
+  { key: 'openQuestions', marker: 'OPEN_QUESTIONS', headingPattern: /^open (?:questions|issues)$|^unresolved questions$/i },
+  { key: 'facts', marker: 'FACTS', headingPattern: /^(?:key )?facts(?: and figures)?$/i },
+];
+
+/** The error shown when a reply is neither the headed lists nor JSON — the wording every round already uses. */
+const UNREADABLE_REPLY_MESSAGE = 'No JSON object found in the assistant response.';
 
 /**
  * How much of a document one extract prompt carries.
@@ -102,10 +126,22 @@ function buildExtractShell(source: ReferencedSource, partText: string, partIndex
     `Keep each list to at most ${MAX_ITEMS_PER_LIST} entries, chosen for what carries the most weight.`,
     partCount === 1 ? '' : 'This is one part of a longer document; cover only what is in this part.',
     '',
-    'Reply with ONLY this JSON:',
-    `{"kind":"${DOCUMENT_EXTRACT_REPLY_KIND}","summary":"...","decisions":["..."],`
-      + '"requirements":["..."],"openQuestions":["..."],"facts":["..."]}',
+    ...describeExtractReplyForm(),
   ].filter((line) => line !== '').join('\n');
+}
+
+/**
+ * The reply form: five labelled headings, one entry per line. An answer engine follows headings and bullet lists; it
+ * does not follow a JSON template. "None" under a heading says a list is empty without the heading going missing.
+ */
+function describeExtractReplyForm(): string[] {
+  return [
+    'Answer with exactly these five labels, each on its own line and in this order, and put the entries under each',
+    'one, one per line starting with "- ". Under a label with nothing to record, write "- None". The summary is one or',
+    'two sentences. Do not answer in JSON or a table, write nothing before the first label or after the last, and ask',
+    'no questions.',
+    ...EXTRACT_SECTIONS.map((section) => `${section.marker}:`),
+  ];
 }
 
 /**
@@ -156,11 +192,7 @@ export function parseDocumentExtractReply(
   source: ReferencedSource,
   extractedAtIso: string,
 ): DocumentExtract {
-  const parsed = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>;
-  if (parsed.kind !== DOCUMENT_EXTRACT_REPLY_KIND) {
-    throw new Error(`Expected an AI reply with {"kind":"${DOCUMENT_EXTRACT_REPLY_KIND}"}, got "${String(parsed.kind)}".`);
-  }
-
+  const parsed = readExtractReplyFields(replyText);
   return {
     sourceId: source.id,
     sourceTitle: describeSourceTitle(source),
@@ -172,6 +204,52 @@ export function parseDocumentExtractReply(
     facts: readStringList(parsed.facts),
     extractedAtIso,
   };
+}
+
+/**
+ * The reply as the same field object the JSON form carried: a JSON reply is checked for its kind, a headed-list reply
+ * is read section by section. Throws when the reply is neither, so the panel says it could not be read.
+ */
+function readExtractReplyFields(replyText: string): Record<string, unknown> {
+  const jsonPayload = readKindedJsonReply(replyText);
+  if (jsonPayload !== null) {
+    if (jsonPayload.kind !== DOCUMENT_EXTRACT_REPLY_KIND) {
+      throw new Error(`Expected an AI reply with {"kind":"${DOCUMENT_EXTRACT_REPLY_KIND}"}, got "${String(jsonPayload.kind)}".`);
+    }
+    return jsonPayload;
+  }
+  const sectionTexts = readReplySections(replyText, EXTRACT_SECTIONS);
+  if (Object.keys(sectionTexts).length === 0) {
+    throw new Error(UNREADABLE_REPLY_MESSAGE);
+  }
+  return {
+    // The summary is prose: its lines are joined back into one paragraph, list marks and all removed.
+    summary: readListEntries(sectionTexts.summary).join(' '),
+    decisions: readListEntries(sectionTexts.decisions),
+    requirements: readListEntries(sectionTexts.requirements),
+    openQuestions: readListEntries(sectionTexts.openQuestions),
+    facts: readListEntries(sectionTexts.facts),
+  };
+}
+
+/**
+ * The follow-up for the same AI chat after an extract reply, or '' when none is needed.
+ *
+ * An unreadable reply gets the whole form again; a reply that left headings out gets only those. A heading that is
+ * absent is never read as "nothing to record" — the follow-up asks, so no list is assumed empty. The answer can be
+ * pasted on its own: an extract part merges onto what is already there.
+ */
+export function buildDocumentExtractFollowUpPrompt(replyText: string): string {
+  if (readKindedJsonReply(replyText) !== null) return '';
+  const sectionTexts = readReplySections(replyText, EXTRACT_SECTIONS);
+  const wasReplyUnreadable = Object.keys(sectionTexts).length === 0;
+  // A heading with "- None" under it was answered. One left out — or left with nothing under it — is asked for again.
+  const missingSections = wasReplyUnreadable ? [...EXTRACT_SECTIONS] : listMissingSections(sectionTexts, EXTRACT_SECTIONS);
+  if (missingSections.length === 0) return '';
+  return [
+    buildSectionsFollowUpPrompt(missingSections, wasReplyUnreadable),
+    'Under each label put one entry per line starting with "- ", or "- None" when there is nothing to record.',
+  ].join('\n');
 }
 
 /** Joins two lists, keeping order, dropping repeats, and holding to the cap. */

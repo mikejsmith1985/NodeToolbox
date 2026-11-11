@@ -8,17 +8,18 @@
 
 import { useRef, useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../../components/AiFollowUpPrompt/index.tsx';
 import { useCopyFeedback } from '../../../../hooks/useCopyFeedback.ts';
 import compositionStyles from '../../FeatureCompositionTab.module.css';
-import { applyClassifyOutcome } from '../ai/intakeClassifyApply.ts';
-import { buildClassifyRequests, parseClassifyReply } from '../ai/intakeClassifyRound.ts';
-import { applyResolveOutcome, buildResolveRequests, parseResolveReply } from '../ai/intakeResolveRound.ts';
+import { buildClassifyRequests } from '../ai/intakeClassifyRound.ts';
+import { buildResolveRequests } from '../ai/intakeResolveRound.ts';
 import { runDuplicateSearch } from '../duplicateSearch.ts';
 import { DECISION_SLOTS, type EpicIntake, type IngestRejection } from '../epicIntakeModel.ts';
 import { listAvailableActions } from '../intakeChecklist.ts';
 import { applySafeDefaults } from '../intakeDefaults.ts';
 import styles from '../EpicIntakeWorkspace.module.css';
 import IntakeCreatePanel from './IntakeCreatePanel.tsx';
+import { readStepAnswer } from '../ai/intakeStepAnswer.ts';
 import type { IntakeJiraDeps } from './IntakeTurnPanel.tsx';
 
 interface IntakeLoopPanelProps {
@@ -77,14 +78,11 @@ function listFieldProblems(before: EpicIntake, after: EpicIntake, askedItemIds: 
 }
 
 /** Applies one pasted answer to the prompt it answered, then fills anything exhausted with a safe default. */
-function applyAnswer(intake: EpicIntake, prompt: LoopPrompt, answerText: string, nowIso: string): { updated: EpicIntake; problems: string[] } {
-  const position = { partIndex: prompt.partIndex, partCount: prompt.partCount };
-  const applied = prompt.isSorting
-    ? applyClassifyOutcome(intake, parseClassifyReply(answerText, intake, prompt.itemIds), prompt.itemIds, position, nowIso)
-    : applyResolveOutcome(intake, parseResolveReply(answerText, intake, prompt.itemIds), prompt.itemIds, position, nowIso);
+function applyAnswer(intake: EpicIntake, prompt: LoopPrompt, answerText: string, nowIso: string): { updated: EpicIntake; problems: string[]; followUpPrompt: string } {
+  const { updated: applied, followUpPrompt } = readStepAnswer(intake, answerText, prompt, prompt.isSorting, nowIso);
   const roundRecord = applied.roundHistory[applied.roundHistory.length - 1];
   const problems = [...describeProblems(roundRecord?.rejected ?? []), ...listFieldProblems(intake, applied, prompt.itemIds)];
-  return { updated: applySafeDefaults(applied, true), problems: [...new Set(problems)] };
+  return { updated: applySafeDefaults(applied, true), problems: [...new Set(problems)], followUpPrompt };
 }
 
 /**
@@ -148,6 +146,7 @@ function PromptStep({ prompt, promptNumber, onAnswer }: { prompt: LoopPrompt; pr
 export default function IntakeLoopPanel(props: IntakeLoopPanelProps) {
   const { intake, onChange, jiraDeps, nowIso } = props;
   const [problems, setProblems] = useState<string[]>([]);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const prompt = readNextPrompt(intake);
   const { checkedCount, runError, runCheck } = useDuplicateCheck(props);
   const actions = listAvailableActions(intake, true);
@@ -156,8 +155,9 @@ export default function IntakeLoopPanel(props: IntakeLoopPanelProps) {
 
   function handleAnswer(answerText: string): void {
     if (prompt === null) return;
-    const { updated, problems: answerProblems } = applyAnswer(intake, prompt, answerText, nowIso());
+    const { updated, problems: answerProblems, followUpPrompt: answerFollowUp } = applyAnswer(intake, prompt, answerText, nowIso());
     setProblems(answerProblems);
+    setFollowUpPrompt(answerFollowUp);
     onChange(updated);
     // Sorting done and items waiting for DENP: check straight away, so the next prompt already knows what exists.
     if (readNextPrompt(updated)?.isSorting !== true && hasUncheckedItems(updated)) {
@@ -184,6 +184,8 @@ export default function IntakeLoopPanel(props: IntakeLoopPanelProps) {
           <ul>{problems.map((problem, index) => <li key={`${index}-${problem}`}>{problem}</li>)}</ul>
         </div>
       ) : null}
+      {/* AI Mode answers in its own shape: rather than wait for the next prompt, the same chat is asked for the form. */}
+      <AiFollowUpPrompt followUpPrompt={followUpPrompt} fieldId="intake-loop-follow-up" />
       {hasFailedCheck ? (
         <div className={compositionStyles.errorBanner} role="status">
           The {intake.targetProjectKey} check could not finish{runError ? `: ${runError}` : ''}.

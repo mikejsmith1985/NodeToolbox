@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildDocumentExtractFollowUpPrompt,
   buildDocumentExtractPrompts,
   isDocumentExtractEmpty,
   MAX_DOCUMENT_CHARS_PER_PROMPT,
@@ -51,8 +52,10 @@ describe('buildDocumentExtractPrompts', () => {
   it('asks for the reply shape it will actually parse', () => {
     const [prompt] = buildDocumentExtractPrompts(pasteSource('anything'));
 
-    expect(prompt).toContain('"kind":"documentExtract"');
-    expect(prompt).toContain('openQuestions');
+    // AI Mode follows labelled headings and bullet lists, not a JSON template (GH #499).
+    expect(prompt).toContain('OPEN_QUESTIONS:');
+    expect(prompt).toContain('- None');
+    expect(prompt).not.toContain('"kind"');
   });
 
   it('builds one prompt for a document that fits', () => {
@@ -240,5 +243,89 @@ describe('isDocumentExtractEmpty', () => {
 
   it('is false when it yielded even one fact', () => {
     expect(isDocumentExtractEmpty(extract({ facts: ['Cutover 2026-10-01'] }))).toBe(false);
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ──
+
+/** How AI Mode answers: an intro, markdown headings, bullet lists, and a closing offer. */
+const AI_MODE_EXTRACT_REPLY = [
+  'Here is a concise extract of the Billing Grid document, focused on what affects the re-write.',
+  '',
+  '## Summary',
+  'A comparison of billing options for LIS members.',
+  '',
+  '## Decisions',
+  '* **Consolidated statements**',
+  '* Paper invoices retire in Q4',
+  '',
+  '## Requirements',
+  '- Must support LIS-to-Subscriber',
+  '',
+  '## Open Questions',
+  '1. Who owns runout?',
+  '',
+  '## Facts',
+  '- None stated in this document.',
+  '',
+  'If you would like, I can also compare this with the cutover email.',
+].join('\n');
+
+describe('parseDocumentExtractReply — an AI Mode document', () => {
+  it('reads each headed list into the same extract a JSON reply gave', () => {
+    const parsed = parseDocumentExtractReply(AI_MODE_EXTRACT_REPLY, pasteSource('x'), 'now');
+
+    expect(parsed.summary).toBe('A comparison of billing options for LIS members.');
+    expect(parsed.decisions).toEqual(['Consolidated statements', 'Paper invoices retire in Q4']);
+    expect(parsed.requirements).toEqual(['Must support LIS-to-Subscriber']);
+    expect(parsed.openQuestions).toEqual(['Who owns runout?']);
+  });
+
+  it('reads "None" as an empty list and drops the closing offer', () => {
+    const parsed = parseDocumentExtractReply(AI_MODE_EXTRACT_REPLY, pasteSource('x'), 'now');
+
+    expect(parsed.facts).toEqual([]);
+    expect(renderDocumentExtract(parsed)).not.toContain('If you would like');
+  });
+
+  it('reads the asked-for LABEL: form too', () => {
+    const parsed = parseDocumentExtractReply('SUMMARY: A note.\nDECISIONS:\n- Ship it\nFACTS:\n- None', pasteSource('x'), 'now');
+
+    expect(parsed.summary).toBe('A note.');
+    expect(parsed.decisions).toEqual(['Ship it']);
+  });
+
+  it('still caps a list read from headings', () => {
+    const manyLines = Array.from({ length: 30 }, (_unused, index) => `- requirement ${index}`);
+    const parsed = parseDocumentExtractReply(['REQUIREMENTS:', ...manyLines].join('\n'), pasteSource('x'), 'now');
+
+    expect(parsed.requirements).toHaveLength(MAX_ITEMS_PER_LIST);
+  });
+});
+
+describe('buildDocumentExtractFollowUpPrompt', () => {
+  it('asks for nothing when every heading came back', () => {
+    expect(buildDocumentExtractFollowUpPrompt(AI_MODE_EXTRACT_REPLY)).toBe('');
+  });
+
+  it('asks for nothing after a JSON reply, which is read as before', () => {
+    expect(buildDocumentExtractFollowUpPrompt(reply({ summary: 'x' }))).toBe('');
+  });
+
+  it('asks only for the headings a reply left out — never assumes they were empty', () => {
+    const followUp = buildDocumentExtractFollowUpPrompt('## Summary\nA note.\n\n## Decisions\n- Ship it');
+
+    expect(followUp).toContain('REQUIREMENTS: [text]');
+    expect(followUp).toContain('OPEN_QUESTIONS: [text]');
+    expect(followUp).toContain('FACTS: [text]');
+    expect(followUp).not.toContain('SUMMARY: [text]');
+  });
+
+  it('asks for the whole form again when the reply could not be read', () => {
+    const followUp = buildDocumentExtractFollowUpPrompt('I could not read that document.');
+
+    expect(followUp).toContain('could not be read');
+    expect(followUp).toContain('SUMMARY: [text]');
+    expect(followUp).toContain('FACTS: [text]');
   });
 });

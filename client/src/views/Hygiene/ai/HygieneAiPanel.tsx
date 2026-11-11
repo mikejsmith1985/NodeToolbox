@@ -6,8 +6,8 @@
 // Jira through the same helpers the inline Fix controls use, then asks the page to rescan so the
 // cleared flag visibly disappears. Nothing is ever written without a per-item click.
 //
-// Reuse (Article VII): ReportAiPanel is the copy/paste shell, extractJsonPayload/{kind,items[]}
-// is the shared envelope (via hygieneAiAssist), and featureReviewFixes are the writes (via
+// Reuse (Article VII): ReportAiPanel is the copy/paste shell, the shared fill-in table read into the
+// {kind,items[]} envelope is the reply format (via hygieneAiAssist), and featureReviewFixes are the writes (via
 // hygieneAiApply). Only the review list here is new.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { HygieneFieldConfig, HygieneFinding } from '../checks/hygieneChecks.ts'
 import {
+  buildHygieneAiFormatFixPrompt,
   buildHygieneAiPromptPlan,
   hasAiFixableFlags,
   parseHygieneAiReply,
@@ -84,6 +85,8 @@ export function HygieneAiPanel({
   const [unparsedCount, setUnparsedCount] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  // A follow-up for the same AI chat when the reply was unreadable or left fixes out (GH #499).
+  const [followUpPrompt, setFollowUpPrompt] = useState('')
 
   const fixableFindings = useMemo(
     () => findings.filter((finding) => hasAiFixableFlags(finding, restrictToCheckIds)),
@@ -144,8 +147,9 @@ export function HygieneAiPanel({
   // Both paths land here. Auto is a shortcut past the paste box, never a second pipeline.
   const applyResponse = useCallback((responseText: string) => {
     try {
-      const runResult = parseHygieneAiReply(responseText, promptPlan.includedIssueKeys)
+      const runResult = parseHygieneAiReply(responseText, promptPlan.includedIssueKeys, promptPlan.askedFixRows)
       setProposals(runResult.proposals)
+      setFollowUpPrompt(runResult.followUpPrompt)
       setStatusByProposal({})
       setUnknownKeys(runResult.unknownKeys)
       setUnparsedCount(runResult.unparsedCount)
@@ -153,8 +157,9 @@ export function HygieneAiPanel({
       setStatusMessage(runResult.proposals.length === 0 ? 'No usable proposals in that reply.' : null)
     } catch (parseError) {
       setErrorMessage(parseError instanceof Error ? parseError.message : 'Could not read the response.')
+      setFollowUpPrompt(buildHygieneAiFormatFixPrompt(promptPlan.askedFixRows))
     }
-  }, [promptPlan.includedIssueKeys])
+  }, [promptPlan.includedIssueKeys, promptPlan.askedFixRows])
 
   function proposalKey(proposal: HygieneAiProposal): string {
     return `${proposal.issueKey}:${proposal.checkId}`
@@ -191,6 +196,8 @@ export function HygieneAiPanel({
   return (
     <ReportAiPanel
       error={errorMessage}
+      followUpFieldId="hygiene-ai-follow-up"
+      followUpPrompt={followUpPrompt}
       hint={JIRA_WRITE_DISCLOSURE}
       ingestLabel="Review proposals"
       onIngest={applyResponse}

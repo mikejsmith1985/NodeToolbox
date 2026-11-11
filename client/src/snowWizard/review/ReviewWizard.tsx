@@ -15,7 +15,8 @@ import { AUTHOR_ONLY_ITEM_IDS, runChangeReview, type ChangeReviewResult } from '
 import { buildCoachingMailto, buildCoachingNote, renderCoachingNoteText } from './coachingNote.ts';
 import { installReadOnlySnowTransport } from './readOnlyTransport.ts';
 import PromptRound from '../change/PromptRound.tsx';
-import { buildReviewDiscussionPrompt, NOTE_END_MARKER, NOTE_START_MARKER, readCopilotCoachingNote, WRITE_NOTE_COMMAND } from './reviewDiscussionPrompt.ts';
+import type { PromptRoundOutcome } from '../change/PromptRound.tsx';
+import { buildCoachingNoteFollowUp, buildReviewDiscussionPrompt, readAssistantCoachingNote, WRITE_NOTE_COMMAND } from './reviewDiscussionPrompt.ts';
 import ReviewRulesGuide from './ReviewRulesGuide.tsx';
 import styles from './ReviewWizard.module.css';
 
@@ -84,9 +85,9 @@ function useReviewJob() {
   const [changeNumberText, setChangeNumberText] = useState('');
   const [review, setReview] = useState<ChangeReviewResult | null>(null);
   const [noteText, setNoteText] = useState('');
-  /** The note the Wizard wrote from the checks, kept so a note from Copilot can be undone. */
+  /** The note the Wizard wrote from the checks, kept so a note from the AI assistant can be undone. */
   const [wizardNoteText, setWizardNoteText] = useState('');
-  const [isCopilotNote, setIsCopilotNote] = useState(false);
+  const [isAssistantNote, setIsAssistantNote] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [problemText, setProblemText] = useState<string | null>(null);
 
@@ -106,33 +107,33 @@ function useReviewJob() {
     const builtNoteText = renderCoachingNoteText(buildCoachingNote(lookup.review.items, lookup.review.coachingChange));
     setNoteText(builtNoteText);
     setWizardNoteText(builtNoteText);
-    setIsCopilotNote(false);
+    setIsAssistantNote(false);
     setStepId('checks');
   }
 
-  /** The note agreed with Copilot becomes the coaching note; the Wizard's own stays one click away. */
-  function applyCopilotNote(copilotNoteText: string) {
-    setNoteText(copilotNoteText);
-    setIsCopilotNote(true);
+  /** The note agreed with the AI assistant becomes the coaching note; the Wizard's own stays one click away. */
+  function applyAssistantNote(assistantNoteText: string) {
+    setNoteText(assistantNoteText);
+    setIsAssistantNote(true);
   }
 
   function restoreWizardNote() {
     setNoteText(wizardNoteText);
-    setIsCopilotNote(false);
+    setIsAssistantNote(false);
   }
 
   function startOver() {
     setReview(null);
     setNoteText('');
     setWizardNoteText('');
-    setIsCopilotNote(false);
+    setIsAssistantNote(false);
     setChangeNumberText('');
     setProblemText(null);
     setStepId('number');
   }
 
   return {
-    stepId, setStepId, changeNumberText, setChangeNumberText, review, noteText, setNoteText, isCopilotNote, applyCopilotNote, restoreWizardNote,
+    stepId, setStepId, changeNumberText, setChangeNumberText, review, noteText, setNoteText, isAssistantNote, applyAssistantNote, restoreWizardNote,
     isLoading, problemText, findChange, startOver,
   };
 }
@@ -165,7 +166,7 @@ function NumberStep({ job }: { job: ReviewJob }) {
   );
 }
 
-const NO_NOTE_TEXT = `That reply has no note between "${NOTE_START_MARKER}" and "${NOTE_END_MARKER}". Finish the discussion, type "${WRITE_NOTE_COMMAND}" in Copilot's chat, then paste its whole reply here.`;
+const NO_NOTE_TEXT = `That reply holds no coaching note. Finish the discussion, then paste the follow-up below into your AI assistant's chat (or type "${WRITE_NOTE_COMMAND}") and paste its whole reply here.`;
 
 /**
  * "Talk it through with your AI assistant": one prompt carrying the change, every verdict and the rules, so the
@@ -175,17 +176,20 @@ const NO_NOTE_TEXT = `That reply has no note between "${NOTE_START_MARKER}" and 
 function DiscussionCard({ job, review }: { job: ReviewJob; review: ChangeReviewResult }) {
   const promptText = buildReviewDiscussionPrompt(review, listReadinessRuleGuide(AUTHOR_ONLY_ITEM_IDS));
   const creatorName = review.coachingChange.creatorName.trim() || 'the creator';
-  function readReply(replyText: string): string {
-    const copilotNoteText = readCopilotCoachingNote(replyText);
-    if (copilotNoteText === null) return NO_NOTE_TEXT;
-    job.applyCopilotNote(copilotNoteText);
-    return `✓ The note for ${creatorName} now holds what you agreed with Copilot. Read it and send it on the next step.`;
+  function readReply(replyText: string): PromptRoundOutcome {
+    const assistantNoteText = readAssistantCoachingNote(replyText);
+    if (assistantNoteText === null) return { message: NO_NOTE_TEXT, followUpPrompt: buildCoachingNoteFollowUp() };
+    job.applyAssistantNote(assistantNoteText);
+    return {
+      message: `✓ The note for ${creatorName} now holds what you agreed with your AI assistant. Read it and send it on the next step.`,
+      followUpPrompt: '',
+    };
   }
   return (
     <div className={shellStyles.card}>
       <h3 className={shellStyles.cardTitle}>Talk it through with your AI assistant (optional)</h3>
-      <p className={shellStyles.hint}>{`Copy this into Copilot to question the change and test these findings — it has the change's text, every check above and the rules behind them, and it will ask you what it cannot tell from the record. When you agree, type "${WRITE_NOTE_COMMAND}" in its chat and paste its reply below: that becomes the note for ${creatorName}.`}</p>
-      <PromptRound promptText={promptText} copyLabel="Copy the prompt" readButtonLabel="Use Copilot's note" onReadReply={readReply} />
+      <p className={shellStyles.hint}>{`Copy this into your AI assistant to question the change and test these findings — it has the change's text, every check above and the rules behind them, and it will ask you what it cannot tell from the record. When you agree, type "${WRITE_NOTE_COMMAND}" in its chat and paste its reply below: that becomes the note for ${creatorName}.`}</p>
+      <PromptRound promptText={promptText} copyLabel="Copy the prompt" readButtonLabel="Use the assistant's note" onReadReply={readReply} />
     </div>
   );
 }
@@ -224,9 +228,9 @@ function NoteStep({ job, review }: { job: ReviewJob; review: ChangeReviewResult 
   return (
     <div className={shellStyles.card}>
       <p className={shellStyles.hint}>Change anything you like, then copy it or open it as an email. You send it — nothing is posted to ServiceNow.</p>
-      {job.isCopilotNote ? (
+      {job.isAssistantNote ? (
         <div className={shellStyles.actions}>
-          <p className={shellStyles.hint}>This is the note you agreed with Copilot.</p>
+          <p className={shellStyles.hint}>This is the note you agreed with your AI assistant.</p>
           <button type="button" className={shellStyles.secondaryButton} onClick={job.restoreWizardNote}>Use the Wizard&apos;s own note instead</button>
         </div>
       ) : null}

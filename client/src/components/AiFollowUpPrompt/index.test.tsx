@@ -1,0 +1,23 @@
+// index.test.tsx — The shared follow-up box an AI round shows when a reply strayed (GH #499).
+
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { AiFollowUpPrompt } from './index.tsx';
+
+describe('AiFollowUpPrompt', () => {
+  it('shows nothing when there is no follow-up', () => {
+    const { container } = render(<AiFollowUpPrompt followUpPrompt="" />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows the follow-up and copies it', () => {
+    const writeText = vi.fn(async (_copiedText: string) => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<AiFollowUpPrompt followUpPrompt="Your last reply was not in the form I need." />);
+
+    expect(screen.getByLabelText('Follow-up for the same AI chat')).toHaveValue('Your last reply was not in the form I need.');
+    fireEvent.click(screen.getByRole('button', { name: /Copy the follow-up/ }));
+    expect(writeText).toHaveBeenCalledWith('Your last reply was not in the form I need.');
+  });
+});

@@ -8,10 +8,12 @@
 
 import { useMemo, useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../../components/AiFollowUpPrompt/index.tsx';
 import { useAiAssistStore } from '../../../../store/aiAssistStore.ts';
 import { saveFeatureReviewSimpleField } from '../../../SprintDashboard/featureReviewFixes.ts';
 import type { ReadinessLens, ReadinessWriteFieldIds } from '../readinessScan.ts';
 import {
+  buildReadinessAiFollowUpPrompt,
   buildReadinessAiPrompt,
   parseReadinessAiReply,
   type ReadinessAiProposal,
@@ -41,6 +43,8 @@ export function ReadinessAiPanel({ lens, writeFieldIds, onProposalWritten }: Rea
   const [proposals, setProposals] = useState<ReadinessAiProposal[]>([]);
   const [writtenKeys, setWrittenKeys] = useState<Record<string, boolean>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // The follow-up for the same AI chat when a reply strayed from the table or left Features out ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
 
   const prompt = useMemo(() => buildReadinessAiPrompt(lens.features), [lens.features]);
   const knownKeys = useMemo(() => lens.features.map((feature) => feature.key), [lens.features]);
@@ -53,9 +57,11 @@ export function ReadinessAiPanel({ lens, writeFieldIds, onProposalWritten }: Rea
       const result = parseReadinessAiReply(replyText, knownKeys);
       setProposals(result.proposals);
       setWrittenKeys({});
+      setFollowUpPrompt(buildReadinessAiFollowUpPrompt(lens.features, result));
     } catch (parseError) {
       setErrorMessage(parseError instanceof Error ? parseError.message : 'Could not read the AI reply.');
       setProposals([]);
+      setFollowUpPrompt(buildReadinessAiFollowUpPrompt(lens.features, null));
     }
   }
 
@@ -133,6 +139,7 @@ export function ReadinessAiPanel({ lens, writeFieldIds, onProposalWritten }: Rea
       </button>
 
       {errorMessage && <p className={styles.error} role="alert">⚠ {errorMessage}</p>}
+      <AiFollowUpPrompt fieldId="readiness-ai-follow-up" followUpPrompt={followUpPrompt} />
 
       {proposals.map((proposal) => (
         <article key={proposal.issueKey} className={styles.proposal}>

@@ -1,0 +1,120 @@
+Here are the drafted ServiceNow Change Request fields written to pass the Release Manager's Change Request Formula Card review on the first pass. Every statement traces directly to your supplied facts, Jira stories, CTASK timelines, and team standards, with [CONFIRM: ...] placeholders where unprovided details are required.
+
+Change Header & Ownership
+
+• Category: Software
+• Change Type: Standard
+• Expedited: No
+• Assignment Group: MA Growth IT - Enrollment Integration Delivery
+• Assigned To (Change Owner): Smith, Michael
+• Configuration Item (REL Change): DMOM Enrollment - EAM Facets Integration - AWS  - Release
+• Configuration Item (PRD Change): DMOM Enrollment - EAM Facets Integration - AWS - Production
+• REL Change Window: 2026-11-12 13:00 to 2026-11-13 13:00 (24 hours, Etc/GMT+5)
+• PRD Change Window: 2026-11-20 19:00 to 2026-11-21 06:00 (11 hours, Etc/GMT+5)
+
+Short Description
+
+ENFCT - Team - 11/20/2026
+
+Description
+
+Planned software release for the DMOM Enrollment - EAM Facets Integration AWS application delivering 3 Jira issues:
+• [ENFCT-2098]: Send ADMN as the ERSN reason code (MEPR.MEPR_MCTR_ERSN) for PPO plan PCP or Default PCP Assignments across EAM Transformer, SFHC PCP flow (including overlapping current PRNL and future ADMN records), and MASSPCP flow.
+• [ENFCT-2196]: Move the trigger date configuration list to an S3 file in the Elements Integration repository for TC51 and letters so trigger dates can be updated via RITM during code freeze without a code push.
+• [ENFCT-2165] (INC0303885 | PRB0041664): Update the EAM Transformer so it stops sending two SL records to Facets in the same KWD file when TC61/TRC011 and TC77/TRC140 (Segment change) are received on the same TRR batch, ensuring the correct plan ID is sent to Facets.
+Additionally, per the Prod Support Awareness task, this release includes enrollment automation updates, defect fixes within the enrollment workflow, and an AWS Glue job upgrade ([CONFIRM: Glue job name and version numbers, replacing vX to vX]).
+
+Justification (Why it is needed)
+
+Planned release of ENFCT 11/20/2026 containing 3 Jira issues (ENFCT-2098, ENFCT-2196, ENFCT-2165) to:
+• Prevent unnecessary PCP assignment letters from being generated when PCP term dates are removed and reduce unnecessary PCP letter fallout (ENFCT-2098).
+• Allow trigger date configuration updates in S3 via RITM without requiring a code deployment during code freeze (ENFCT-2196).
+• Prevent duplicate SL records in Facets during segment changes so member eligibility and the correct plan ID are assigned per SLA (ENFCT-2165).
+• Improve processing efficiency via the AWS Glue job upgrade.
+
+Risk and Impact Analysis
+
+• Impact: 1-High
+• System Availability Implication: Core Functionality (c_func) — [CONFIRM: whether there is any user-facing outage or processing pause during the AWS deployment, or if processing remains online].
+• Impacted Persons Aware: Users and Teams Validated (userteamval) — Impacted users and support teams have been notified and validated.
+• Has Been Tested: Yes — Tested in lower environments prior to promotion, with test evidence attached to the change.
+• Has Been Performed Previously: Successful — Standard deployment risk following the standard runbook.
+• Success Probability: Very Confident (vcon).
+• Can Be Backed Out: Yes — A rollback plan is in place and can be executed by the delivery team if required.
+• Bridge / Command Center: Smith, Michael (Change Owner) will schedule the bridge after the change is approved.
+• Escalation Path: Escalation starts with the CI Director ([CONFIRM: CI Director name]) and progresses as required. Smith, Michael is the decision-maker and technical escalation contact.
+
+Implementation Plan
+
+
+Aggregate Durations (All CTASKs)
+
+• Total Implementation Duration: 110 minutes
+• Total Validation Duration: 65 minutes
+• Total Backout Duration: 70 minutes
+• Estimated Recovery Time: 70 minutes
+
+REL Implementation Sequence (2026-11-12 13:00 → 2026-11-13 13:00, Etc/GMT+5)
+
+1. Prod Support Awareness - Enrollment Release (13:00 → 2026-11-13 13:00 | Whole Window / Standby):
+	• Owner: Smith, Michael (MA Growth IT - Enrollment Integration Delivery) | Estimates: 5 min implementation, 5 min validation, 5 min backout.
+	• Actions: Situational awareness only for the entire 24-hour window (other tasks do not wait on this step). Monitor for increased Glue job runtimes or failures, enrollment processing delays or backlog, and elevated error rates or downstream alerts tied to enrollment integrations. No action required unless unexpected degradation or alerts are observed.
+2. Enrollment - AWS - REL (13:00 → 13:45 | 45 min total):
+	• Owner: Unassigned (USGov  ST - SCM) | Estimates: 30 min implementation, 15 min validation, 20 min backout.
+	• Actions: Execute the standard runbook to deploy the EAM Transformer updates (ENFCT-2098, ENFCT-2165), S3 trigger date config file changes (ENFCT-2196), and AWS Glue job upgrade to DMOM Enrollment - EAM Facets Integration - AWS  - Release ([CONFIRM: specific AWS deployment steps/pipeline runbook details]).
+3. Technical Checkout - Transformers (13:45 → 14:15 | 30 min total):
+	• Owner: Sabne, Sidhant (MA Growth IT - Enrollment Integration Delivery) | Estimates: 15 min implementation, 15 min validation, 10 min backout.
+	• Actions: Execute technical verification in REL (see Test Plan for exact verification steps).
+
+PRD Implementation Sequence (2026-11-20 19:00 → 2026-11-21 06:00, Etc/GMT+5)
+
+1. Prod Support Awareness - Enrollment Release (19:00 → 2026-11-21 06:00 | Whole Window / Standby):
+	• Owner: Smith, Michael (MA Growth IT - Enrollment Integration Delivery) | Estimates: 5 min implementation, 5 min validation, 5 min backout.
+	• Actions: Situational awareness only for the entire 11-hour window (other tasks do not wait on this step). Monitor for increased Glue job runtimes or failures, enrollment processing delays or backlog, and elevated error rates or downstream alerts tied to enrollment integrations.
+2. Enrollment - AWS - PRD (19:00 → 19:45 | 45 min total):
+	• Owner: Unassigned (USGov  ST - SCM) | Estimates: 30 min implementation, 15 min validation, 20 min backout.
+	• Actions: Execute the standard runbook to deploy the EAM Transformer updates (ENFCT-2098, ENFCT-2165), S3 trigger date config file changes (ENFCT-2196), and AWS Glue job upgrade to DMOM Enrollment - EAM Facets Integration - AWS - Production ([CONFIRM: specific AWS deployment steps/pipeline runbook details]).
+3. Technical Checkout - Transformers (19:45 → 20:15 | 30 min total):
+	• Owner: Sabne, Sidhant (MA Growth IT - Enrollment Integration Delivery) | Estimates: 15 min implementation, 15 min validation, 10 min backout.
+	• Actions: Execute technical verification in PRD (see Test Plan for exact verification steps).
+4. Business Checkout - Transformers (20:15 → 21:00 | 45 min total):
+	• Owner: Watkins, Jennifer (MA Growth IT - Enrollment Integration Delivery) | Estimates: 30 min implementation, 15 min validation, 15 min backout.
+	• Actions: Execute business-layer validation of production data in PRD (see Test Plan for exact verification steps).
+
+Test & Validation Plan
+
+• Validation Owner: Smith, Michael (MA Growth IT - Enrollment Integration Delivery).
+• Prior Environment Testing:
+	• DEV & INT: Deployed and tested in DEV and INT prior to release; test evidence is attached to the change ([CONFIRM: DEV and INT test execution dates / sign-off references]).
+	• REL (Prerequisite for PRD): Deployed to REL during the 2026-11-12 13:00 → 2026-11-13 13:00 window and validated prior to PRD promotion ([CONFIRM: REL Change Request number and REL test pass confirmation]).
+• Technical Checkout - Transformers (Executed by Sabne, Sidhant in REL at 13:45–14:15 and PRD at 19:45–20:15):
+	• Objective: Validate the technical integrity and health of the live environment following a code promotion using CLI tools and GitHub deployment history.
+	• Version Verification: Confirm the active environment is running the correct build by checking GitHub deployment tags or querying a /version endpoint.
+	• Service Health Checks: Use console tools or cURL to probe production endpoints and verify core services return 200 OK.
+	• Database Write Validation: Verify migration scripts executed successfully and that new records are being written correctly.
+	• Log & Error Monitoring: Review real-time application logs for anomalies, exceptions, or connection timeouts immediately following traffic shift.
+	• Success Criteria: Deployment is technically verified when the system version is confirmed, database connectivity is stable, and logs show zero critical errors post-launch.
+• Business Checkout - Transformers (Executed by Watkins, Jennifer in PRD at 20:15–21:00):
+	• Objective: Perform a final business-layer validation of production data to ensure the Change Ticket has been implemented successfully and is producing accurate results in the live environment.
+	• Production Data Monitoring: Access live dashboards or reporting tools to monitor real-time data flow. Confirm that volume, velocity, and basic metrics align with expected post-change behavior.
+	• Selective Spot Checks: Perform unannounced spot checks on a random sample of new records or modified fields. Cross-reference specific values against source documentation or pre-calculated expectations to verify data integrity.
+	• Business Logic Confirmation: Verify that the primary business intent of the change—sending ADMN as the ERSN reason code for PPO plan PCP / Default PCP assignments (ENFCT-2098), reading trigger dates from the S3 config file (ENFCT-2196), and preventing duplicate SL records in Facets for same-batch TC61/TC77 segment changes (ENFCT-2165)—is reflected correctly in the production output.
+	• Issue Reporting: Document any discrepancies or unexpected data patterns immediately. If critical anomalies are found, escalate per the Standard Business Verification protocol to trigger a rollback or hotfix.
+	• Success Criteria: The task is complete when a representative sample of production data is manually verified and no critical business logic failures are identified.
+
+Backout Plan
+
+• Backout Decision-Maker: Smith, Michael (MA Growth IT - Enrollment Integration Delivery).
+• Trigger Conditions: Unexpected degradation or alerts observed during or after the deployment window (increased Glue job runtimes or failures, enrollment processing delays or backlog, elevated error rates or downstream alerts), failure of Technical Checkout health/log checks, or critical business logic anomalies identified during Business Checkout.
+• Estimated Backout / Recovery Time:
+	• REL Backout Window: Up to 35 minutes active backout (20 min Enrollment - AWS - REL + 10 min Technical Checkout - Transformers + 5 min Prod Support Awareness).
+	• PRD Backout Window: Up to 50 minutes active backout (20 min Enrollment - AWS - PRD + 10 min Technical Checkout - Transformers + 15 min Business Checkout - Transformers + 5 min Prod Support Awareness).
+	• Total Aggregate Backout / Recovery Time: 70 minutes.
+• Backout Steps:
+	1. Smith, Michael authorizes rollback and escalates to the CI Director ([CONFIRM: CI Director name]) if required.
+	2. USGov  ST - SCM ([CONFIRM: specific SCM engineer/group contact]) reverts the EAM Transformer code deployment, restores the prior S3 trigger date configuration state, and rolls back the AWS Glue job version in the target environment (REL or PRD) ([CONFIRM: exact rollback commands/pipeline revert steps]).
+	3. Sabne, Sidhant (MA Growth IT - Enrollment Integration Delivery) re-runs Technical Checkout - Transformers (version verification, 200 OK service health checks, database write validation, and log monitoring) to confirm the prior release state is restored.
+	4. In PRD, Watkins, Jennifer (MA Growth IT - Enrollment Integration Delivery) re-runs Business Checkout - Transformers spot checks to confirm normal production data flow.
+	5. Smith, Michael verifies with Prod Support Awareness that Glue job runtimes, enrollment processing queues, and error rates have returned to normal baseline.
+If you provide the missing details for the [CONFIRM: ...] placeholders (such as the CI Director's name, AWS Glue job version numbers, REL Change Request number for the PRD ticket, and specific SCM deployment/rollback commands), I can drop them straight into a clean, copy-paste-ready final draft.
+

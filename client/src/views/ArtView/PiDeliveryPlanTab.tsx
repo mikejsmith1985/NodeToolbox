@@ -10,6 +10,7 @@ import { jiraGet } from '../../services/jiraApi.ts';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { getComponentKind } from '../AdminHub/lib/componentClassificationStore.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
 import { parsePiDateRange } from '../FeatureCanvas/logic/piSchedule.ts';
 import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -18,7 +19,7 @@ import { importCommittedPiReviewFeatureKeys } from '../PoTool/rewrite/importPiRe
 import { resolvePiPlanFieldIds, resolveDeliveryIssueTypeIds } from './piPlan/piPlanFields.ts';
 import { assembleFactSheet } from './piPlan/piPlanFactSheet.ts';
 import { buildDeliveryPlanPrompt } from './piPlan/ai/deliveryPlanPrompt.ts';
-import { parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
+import { buildDeliveryPlanFollowUpPrompt, parseDeliveryPlanReply } from './piPlan/ai/deliveryPlanIngest.ts';
 import { buildDeliveryPlan, type AcceptedStory, type CarryoverWipItem, type DeliveryPlan, type PlannedStory } from './piPlan/piDeliveryEngine.ts';
 import { detectBottlenecks, attachMitigations } from './piPlan/piPlanBottlenecks.ts';
 import { applyDeliveryStory, applyCarryoverGaps, type DeliveryWriteContext } from './piPlan/piDeliveryJira.ts';
@@ -98,6 +99,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   const [prompts, setPrompts] = useState<string[]>([]);
   const [hasCopiedPrompt, setHasCopiedPrompt] = useState(false);
   const [replyText, setReplyText] = useState('');
+  // The follow-up for the same AI chat when a reply strayed from the tables or left items out ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [plan, setPlan] = useState<DeliveryPlan | null>(null);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
   // Carryover reconciliation: in-flight Stories and the sub-tasks they are missing (gap-fill, never duplicated).
@@ -372,6 +375,8 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
   function handleIngest() {
     if (factSheet === null) return;
     const parsed = parseDeliveryPlanReply(replyText, factSheet, bottlenecks);
+    // Built against the bottlenecks the prompt carried, before this ingest re-detects them.
+    setFollowUpPrompt(buildDeliveryPlanFollowUpPrompt(factSheet, bottlenecks, parsed));
     if (parsed.error) {
       setStatusMessage(parsed.error);
       return;
@@ -608,10 +613,11 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
               </button>
             )}
             {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join('\n\n=== NEXT CHUNK ===\n\n')} onFocus={(event) => event.currentTarget.select()} />}
-            <label className={styles.field} style={{ marginTop: '0.5rem' }}>Paste the AI&apos;s JSON reply
-              <textarea className={styles.replyArea} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder='{"kind":"piDeliveryPlan","stories":[ ... ]}' />
+            <label className={styles.field} style={{ marginTop: '0.5rem' }}>Paste the AI&apos;s reply
+              <textarea className={styles.replyArea} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Paste the filled-in tables (or JSON) here" />
             </label>
             <button className={`${styles.actionButton} ${styles.primaryButton}`} disabled={factSheet === null || replyText.trim() === ''} onClick={handleIngest} type="button">Ingest & build plan</button>
+            <AiFollowUpPrompt fieldId="pi-delivery-plan-follow-up" followUpPrompt={followUpPrompt} />
           </>
         </section>
       )}

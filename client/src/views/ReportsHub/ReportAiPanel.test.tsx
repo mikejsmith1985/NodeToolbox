@@ -109,4 +109,25 @@ describe('ReportAiPanel', () => {
     expect(screen.getByText(/an accepted estimate can update the jira issue/i)).toBeInTheDocument();
     expect(screen.queryByText(/writes nothing to jira/i)).not.toBeInTheDocument();
   });
+  it('shows a follow-up for the same AI chat only when the caller passes one', () => {
+    // An AI Mode reply that strayed from the table gets a follow-up rather than a dead end (GH #499).
+    act(() => setAiAssistUnlocked(true));
+    const { rerender } = render(
+      <ReportAiPanel error={null} ingestLabel="Ingest" onIngest={vi.fn()} prompt="P" title="AI triage" />,
+    );
+    expect(screen.queryByText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+
+    rerender(
+      <ReportAiPanel
+        error="No JSON object found in the assistant response."
+        followUpFieldId="triage-follow-up"
+        followUpPrompt="Put your answers in this table"
+        ingestLabel="Ingest"
+        onIngest={vi.fn()}
+        prompt="P"
+        title="AI triage"
+      />,
+    );
+    expect(screen.getByLabelText(/follow-up for the same ai chat/i)).toHaveValue('Put your answers in this table');
+  });
 });

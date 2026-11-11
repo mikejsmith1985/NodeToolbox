@@ -134,6 +134,19 @@ describe('EpicChecklistTab', () => {
     expect(screen.getByText('Partly satisfied')).toBeInTheDocument();
   });
 
+  it('offers a follow-up for the same chat when the reply is not in the table (GH #499)', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<EpicChecklistTab />);
+    await loadEpic(user);
+
+    await pasteReply(user, 'This Epic is mostly ready. If you share the stories I can say more.');
+
+    const followUp = (await screen.findByLabelText(/follow-up for the same ai chat/i)) as HTMLTextAreaElement;
+    expect(followUp.value).toContain('could not be read');
+    expect(followUp.value).toContain('READINESS_REVIEW_TABLE:');
+  });
+
   it('writes nothing to Jira from reading a reply', async () => {
     installJira();
     const user = userEvent.setup();

@@ -172,3 +172,37 @@ describe('PoAiPanel — what it says about a bad reply (SC-009)', () => {
     expect(screen.getByLabelText(/paste the assistant/i)).toHaveValue('garbage');
   });
 });
+
+describe('PoAiPanel — the follow-up for a reply in the wrong shape (GH #499)', () => {
+  beforeEach(() => {
+    setAiAssistUnlocked(true);
+  });
+
+  async function readReply(): Promise<void> {
+    await userEvent.click(screen.getByRole('button', { name: /build the prompt/i }));
+    await userEvent.type(screen.getByLabelText(/paste the assistant/i), 'an answer engine reply');
+    await userEvent.click(screen.getByRole('button', { name: /read the reply/i }));
+  }
+
+  it('shows the follow-up for the same chat when the round hands one back', async () => {
+    renderPanel({ onIngest: vi.fn().mockReturnValue({ acceptedCount: 0, errors: ['No JSON object found.'], followUpPrompt: 'PUT IT IN THE TABLE' }) });
+    await readReply();
+
+    expect(screen.getByLabelText(/follow-up for the same ai chat/i)).toHaveValue('PUT IT IN THE TABLE');
+  });
+
+  it('shows no follow-up when the reply was read in full', async () => {
+    renderPanel();
+    await readReply();
+
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('drops an old follow-up once a fresh prompt is built', async () => {
+    renderPanel({ onIngest: vi.fn().mockReturnValue({ acceptedCount: 1, errors: [], followUpPrompt: 'ONLY THE MISSING ROWS' }) });
+    await readReply();
+    await userEvent.click(screen.getByRole('button', { name: /build the prompt/i }));
+
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+});

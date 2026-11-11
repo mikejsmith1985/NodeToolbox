@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildDeliveryHealthFollowUpPrompt,
   buildDeliveryHealthPrompt,
   DELIVERY_HEALTH_REPLY_KIND,
   DELIVERY_HEALTH_TOPICS,
@@ -124,8 +125,12 @@ describe('buildDeliveryHealthPrompt', () => {
 
     const prompt = buildDeliveryHealthPrompt(queue, rework, '');
 
-    expect(prompt).toContain(`"kind":"${DELIVERY_HEALTH_REPLY_KIND}"`);
-    expect(prompt).toContain('questionsToAsk');
+    // A labelled document with two tables — Google AI Mode writes these, and ignores a JSON shape (GH #499).
+    expect(prompt).toContain('DIAGNOSIS:');
+    expect(prompt).toContain('Observation | Evidence | Confidence | Topic');
+    expect(prompt).toContain('Action | Rationale | Effort | Who decides | Topic');
+    expect(prompt).toContain('QUESTIONS_TO_ASK:');
+    expect(prompt).not.toContain(`"kind":"${DELIVERY_HEALTH_REPLY_KIND}"`);
   });
 });
 
@@ -245,5 +250,90 @@ describe('buildDeliveryHealthPrompt — topics', () => {
     const { queue, rework } = buildScans();
 
     expect(buildDeliveryHealthPrompt(queue, rework, '')).toContain('next to the wrong evidence');
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ────────────────────────────────────────
+
+describe('parseDeliveryHealthReply — Google AI Mode replies', () => {
+  const AI_MODE_REPLY = [
+    'Based on the delivery-health figures you provided, here is a reading of the team.',
+    '',
+    '## Diagnosis',
+    'Testing is the constraint. Work piles up in Ready for Testing',
+    'while development keeps starting new items.',
+    '',
+    '## Findings',
+    '| Observation | Evidence | Confidence | Topic |',
+    '|---|---|---|---|',
+    '| Testing is the constraint | 75 waiting days in Ready for Testing | High | constraint |',
+    '| Rework is rare | 1 return | ___ | rework |',
+    '',
+    '## Recommended Actions',
+    '| Action | Rationale | Effort | Who decides | Topic |',
+    '|---|---|---|---|---|',
+    '| Pair a developer with the tester | Doubles test capacity | Small | Scrum Master | constraint |',
+    '',
+    '## Questions to Ask',
+    '- Why does testing wait on environments?',
+    '- Who sets the WIP limit?',
+    '',
+    'If you can share sprint dates, I can also estimate the release impact.',
+  ].join('\n');
+
+  it('reads a markdown document with headings, an intro and a closing offer into the same plan', () => {
+    const plan = parseDeliveryHealthReply(AI_MODE_REPLY);
+
+    expect(plan.diagnosis).toBe('Testing is the constraint. Work piles up in Ready for Testing while development keeps starting new items.');
+    expect(plan.findings).toEqual([
+      { topic: 'constraint', observation: 'Testing is the constraint', evidence: '75 waiting days in Ready for Testing', confidence: 'high' },
+      // An unstated confidence still reads as medium — the table goes through the same reader as JSON.
+      { topic: 'rework', observation: 'Rework is rare', evidence: '1 return', confidence: 'medium' },
+    ]);
+    expect(plan.actions).toEqual([
+      { topic: 'constraint', action: 'Pair a developer with the tester', rationale: 'Doubles test capacity', effort: 'small', whoDecides: 'Scrum Master' },
+    ]);
+    expect(plan.questionsToAsk).toEqual(['Why does testing wait on environments?', 'Who sets the WIP limit?']);
+    expect(buildDeliveryHealthFollowUpPrompt(plan)).toBe('');
+  });
+
+  it('reads labelled parts with tab-separated tables copied from the AI Mode page', () => {
+    const replyText = [
+      'DIAGNOSIS: Testing is the constraint.',
+      'FINDINGS:',
+      'Observation\tEvidence\tConfidence\tTopic',
+      'Testing is the constraint\t75 waiting days\tlow\tconstraint',
+      'ACTIONS:',
+      'Action\tRationale\tEffort\tWho decides\tTopic',
+      'Pair up\tMore capacity\tlarge\t\tbacklog',
+    ].join('\n');
+
+    const plan = parseDeliveryHealthReply(replyText);
+
+    expect(plan.findings[0]).toEqual({ topic: 'constraint', observation: 'Testing is the constraint', evidence: '75 waiting days', confidence: 'low' });
+    // An unowned action still says so rather than showing a blank.
+    expect(plan.actions[0]).toMatchObject({ action: 'Pair up', effort: 'large', whoDecides: 'Not stated', topic: 'backlog' });
+    expect(plan.questionsToAsk).toEqual([]);
+  });
+
+  it('asks a follow-up for only the parts a reply left out — and fills none of them in', () => {
+    const plan = parseDeliveryHealthReply('## Diagnosis\nTesting is the constraint.\n\nLet me know if you want more.');
+
+    const followUpPrompt = buildDeliveryHealthFollowUpPrompt(plan);
+
+    expect(plan.findings).toEqual([]);
+    expect(plan.actions).toEqual([]);
+    expect(followUpPrompt).toContain('did not include FINDINGS, ACTIONS');
+    expect(followUpPrompt).toContain('Observation | Evidence | Confidence | Topic');
+    expect(followUpPrompt).not.toContain('DIAGNOSIS:');
+  });
+
+  it('refuses prose that follows no part of the form, and the format fix asks for the whole form', () => {
+    expect(() => parseDeliveryHealthReply('The team looks a bit slow overall.')).toThrow(/No JSON object found/);
+
+    const followUpPrompt = buildDeliveryHealthFollowUpPrompt(null);
+    expect(followUpPrompt).toContain('could not be read');
+    expect(followUpPrompt).toContain('DIAGNOSIS:');
+    expect(followUpPrompt).toContain('QUESTIONS_TO_ASK:');
   });
 });

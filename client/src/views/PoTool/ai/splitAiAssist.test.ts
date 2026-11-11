@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SPLIT_HEURISTICS } from '../coaching/splitHeuristics';
 import type { SourceFeatureSnapshot } from '../drafts/draftModel';
-import { buildSplitPrompt, parseSplitIngest } from './splitAiAssist';
+import { buildSplitFollowUp, buildSplitPrompt, MAX_SPLIT_TABLE_ROWS, parseSplitIngest } from './splitAiAssist';
 
 const SOURCE: SourceFeatureSnapshot = {
   key: 'ABC-1',
@@ -56,11 +56,14 @@ describe('buildSplitPrompt', () => {
     expect(prompt).toMatch(/Do not propose issue types, projects, or/i);
   });
 
-  it('embeds its own response schema and demands JSON only', () => {
+  it('ends with a fill-in table of numbered rows instead of a JSON schema (GH #499)', () => {
     const prompt = buildSplitPrompt(SOURCE, SPLIT_HEURISTICS);
 
-    expect(prompt).toContain('Respond ONLY with valid JSON:');
-    expect(prompt).toContain('"kind":"featureSplitIngest"');
+    expect(prompt).toContain('SPLIT_TABLE:');
+    expect(prompt).toContain('Increment | Summary | Description | Acceptance criteria | Rationale');
+    expect(prompt).toContain('1 | ___ | ___ | ___ | ___');
+    expect(prompt).toContain(`${MAX_SPLIT_TABLE_ROWS} | ___ | ___ | ___ | ___`);
+    expect(prompt).not.toContain('Respond ONLY with valid JSON:');
   });
 
   it('carries NO credential of any kind (Article IX, INV-J7)', () => {
@@ -206,5 +209,72 @@ describe('parseSplitIngest — the PO decides (FR-020)', () => {
     const result = parseSplitIngest(buildReply([{ summary: 'One' }]), []);
 
     expect(result.items[0].createdJiraKey).toBeNull();
+  });
+});
+
+// An AI Mode reply: an intro sentence, the table as markdown with unused rows left blank, and a closing offer.
+const AI_MODE_SPLIT_REPLY = [
+  'Here is a proposed split of ABC-1 into smaller Features:',
+  '',
+  'SPLIT_TABLE:',
+  '| Increment | Summary | Description | Acceptance criteria | Rationale |',
+  '|---|---|---|---|---|',
+  '| 1 | Submit a claim online | Claimants file a claim without paper. | Claim saved; reference shown | Happy path first |',
+  '| 2 | Attach documents | Claimants add files to a claim. | PDF accepted; 10 MB limit | By workflow step |',
+  '| 3 | ___ | ___ | ___ | ___ |',
+  '',
+  'If you would like, I can also estimate each increment.',
+].join('\n');
+
+// The same table pasted from the web page: tab-separated cells.
+const TAB_SPLIT_REPLY = [
+  'Increment\tSummary\tDescription\tAcceptance criteria\tRationale',
+  '1\tSubmit a claim online\tClaimants file a claim without paper.\tClaim saved\tHappy path first',
+  '2\tAttach documents\tClaimants add files.\tPDF accepted\tBy workflow step',
+].join('\n');
+
+describe('parseSplitIngest — Google AI Mode replies (GH #499)', () => {
+  it('reads a markdown table with an intro and a closing offer, ignoring the unused rows', () => {
+    const result = parseSplitIngest(AI_MODE_SPLIT_REPLY, []);
+
+    expect(result.errors).toEqual([]);
+    expect(result.items.map((item) => item.summary)).toEqual(['Submit a claim online', 'Attach documents']);
+    expect(result.items[1].acceptanceCriteria).toBe('PDF accepted; 10 MB limit');
+    expect(result.items[0].rationale).toBe('Happy path first');
+    expect(result.items.every((item) => item.isAccepted === false && item.origin === 'ai')).toBe(true);
+  });
+
+  it('reads a tab-separated table pasted from the web page the same way', () => {
+    const result = parseSplitIngest(TAB_SPLIT_REPLY, []);
+
+    expect(result.items.map((item) => item.summary)).toEqual(['Submit a claim online', 'Attach documents']);
+  });
+});
+
+describe('buildSplitFollowUp', () => {
+  it('offers nothing when every filled row named its increment', () => {
+    expect(buildSplitFollowUp(AI_MODE_SPLIT_REPLY)).toBe('');
+  });
+
+  it('asks for the table again when the reply could not be read', () => {
+    const followUp = buildSplitFollowUp('You could split this by user role and by workflow step.');
+
+    expect(followUp).toMatch(/not in the form I need/);
+    expect(followUp).toContain('1 | ___ | ___ | ___ | ___');
+  });
+
+  it('asks for the table again when every row came back blank', () => {
+    expect(buildSplitFollowUp(AI_MODE_SPLIT_REPLY.replace(/\| [12] \| [^\n]*\n/g, ''))).toMatch(/not in the form I need/);
+  });
+
+  it('asks only for the rows that described an increment without naming it — never inventing a name', () => {
+    const partialReply = AI_MODE_SPLIT_REPLY.replace('| 2 | Attach documents |', '| 2 | ___ |');
+
+    const followUp = buildSplitFollowUp(partialReply);
+
+    expect(followUp).toMatch(/no summary for increment 2/);
+    expect(followUp).toContain('2 | ___ | ___ | ___ | ___');
+    expect(followUp).not.toContain('1 | ___');
+    expect(parseSplitIngest(partialReply, []).errors[0]).toMatch(/missing a summary/);
   });
 });

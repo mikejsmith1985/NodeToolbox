@@ -1,4 +1,4 @@
-// reviewDiscussionPrompt.ts — Builds the prompt a reviewer pastes into their AI assistant (Copilot) to talk a change
+// reviewDiscussionPrompt.ts — Builds the prompt a reviewer pastes into their AI assistant to talk a change
 // through: the change as ServiceNow holds it, every check's verdict, and the rules behind them, with instructions to
 // test the Wizard's findings and look further — in a conversation with the reviewer, never by guessing facts.
 //
@@ -105,16 +105,59 @@ function buildMarkerLinePattern(marker: string): RegExp {
 // A code-fence line the assistant wrapped around the note; it is not part of the note.
 const CODE_FENCE_LINE_PATTERN = /^\s*```[a-z]*\s*$/gim;
 
+// ── Reading the note back ──
+
+// Google's AI Mode — the team's only assistant since 2026-11 (GH #499) — often drops marker lines and writes the note as
+// a document instead: a "Coaching Note" heading or straight to the greeting, after an intro, and ending with an offer to
+// help further. These find where such a note starts and where its closing offer begins.
+// A heading naming the note: "Coaching note", "## Coaching Note for Jane", "**Note to Jane Smith:**".
+const NOTE_HEADING_LINE_PATTERN = /^[\s#*>_`]*(?:coaching\s+note|note\s+(?:to|for))\b[^\n]{0,60}$/i;
+// The note's greeting, which the prompt asks it to open with: "Hi Jane,", "Hello Jane Smith —".
+const GREETING_LINE_PATTERN = /^[\s*_]*(?:hi|hello|hey|dear|good\s+(?:morning|afternoon))\b/i;
+// An answer engine's closing offer, addressed to the reviewer and promising more work — never a line of the note.
+// One numbered point of the note: "1. Attach the test evidence."
+const NUMBERED_POINT_PATTERN = /^\s*\d+[.)]\s+\S/m;
+const CLOSING_OFFER_LINE_PATTERN =/^[\s*_]*(?:if you(?:'d| would)? (?:like|want|prefer)|would you like|do you want|want me to|let me know if you(?:'d| would) like me|i can also)\b/i;
+
+/** The note's text from where it starts: the line after its heading, or its greeting line. -1 when neither is there. */
+function findUnmarkedNoteStart(replyLines: readonly string[]): number {
+  const headingIndex = replyLines.findIndex((replyLine) => NOTE_HEADING_LINE_PATTERN.test(replyLine));
+  if (headingIndex !== -1) return headingIndex + 1;
+  return replyLines.findIndex((replyLine) => GREETING_LINE_PATTERN.test(replyLine));
+}
+
+/** A note written without the marker lines, found by its heading or its greeting, without the closing offer. */
+function readUnmarkedNote(replyText: string): string | null {
+  const replyLines = replyText.replace(CODE_FENCE_LINE_PATTERN, '').split(/\r?\n/);
+  const noteStart = findUnmarkedNoteStart(replyLines);
+  if (noteStart === -1) return null;
+  const noteLines = replyLines.slice(noteStart);
+  const offerIndex = noteLines.findIndex((noteLine) => CLOSING_OFFER_LINE_PATTERN.test(noteLine));
+  const noteText = (offerIndex === -1 ? noteLines : noteLines.slice(0, offerIndex)).join('\n').replace(/\n\s*-{3,}\s*$/, '').trim();
+  // The note is a numbered list of points; a greeting with none is the assistant talking, not the note.
+  return NUMBERED_POINT_PATTERN.test(noteText) ? noteText : null;
+}
+
 /**
- * The coaching note out of the assistant's reply: the text between the marker lines, trimmed. Null when the reply has
- * no complete note (the assistant asked a question, or the note was not requested yet).
+ * The coaching note out of the assistant's reply: the text between the marker lines, trimmed — or, when the assistant
+ * dropped the markers, the note under its heading or from its greeting, without an intro or closing offer. Null when
+ * the reply has no note (the assistant asked a question, or the note was not requested yet).
  */
-export function readCopilotCoachingNote(replyText: string): string | null {
+export function readAssistantCoachingNote(replyText: string): string | null {
   const startMatch = buildMarkerLinePattern(NOTE_START_MARKER).exec(replyText);
-  if (!startMatch) return null;
+  if (!startMatch) return readUnmarkedNote(replyText);
   const afterStart = replyText.slice(startMatch.index + startMatch[0].length);
   const endMatch = buildMarkerLinePattern(NOTE_END_MARKER).exec(afterStart);
-  if (!endMatch) return null;
-  const noteText = afterStart.slice(0, endMatch.index).replace(CODE_FENCE_LINE_PATTERN, '').trim();
+  const noteText = (endMatch ? afterStart.slice(0, endMatch.index) : '').replace(CODE_FENCE_LINE_PATTERN, '').trim();
   return noteText === '' ? null : noteText;
+}
+
+/** The follow-up for the same AI chat when a pasted reply holds no note: write the agreed note now, between the markers. */
+export function buildCoachingNoteFollowUp(): string {
+  return [
+    'That reply did not hold the coaching note in the form I need.',
+    'Write the coaching note now, covering only the findings we agreed on, exactly as described earlier. Put the note, '
+      + `and nothing else, between a line "${NOTE_START_MARKER}" and a line "${NOTE_END_MARKER}". Write nothing before `
+      + 'or after them.',
+  ].join('\n');
 }

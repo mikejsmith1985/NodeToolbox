@@ -88,11 +88,12 @@ describe('buildGapRecheckPrompt', () => {
     expect(prompt).toMatch(/PASS it if anything given here meets the minimum/i);
   });
 
-  it('asks for one verdict line per gap and a verdict, in a code block', () => {
-    const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [backoutTriggerGap]);
+  it('ends with a fill-in table holding one row per re-checked gap, so the reply cannot drop or rename one (GH #499)', () => {
+    const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [backoutTriggerGap, blastRadiusGap]);
 
-    expect(prompt).toContain('PASS |');
-    expect(prompt).toContain('VERDICT:');
+    expect(prompt.trim().endsWith(['RISK_CHECK_TABLE:', 'Item | Answer | Finding | Fix',
+      'Backout Trigger | ___ | ___ | ___', 'Blast Radius | ___ | ___ | ___'].join('\n'))).toBe(true);
+    expect(prompt).not.toContain('VERDICT:');
     expect(prompt).toContain('```text');
   });
 });
@@ -157,8 +158,9 @@ describe('the re-check holds the same bar as the full check', () => {
     const prompt = buildGapRecheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, [{ status: 'GAP', field: 'Backout Plan', detail: '', fix: '' }]);
 
     expect(prompt).toMatch(/PASS when .*Minimum acceptable/i);
-    expect(prompt).toContain('INFO |');
-    expect(prompt).toContain('RECORD |');
+    expect(prompt).toMatch(/INFO only when/);
+    expect(prompt).toMatch(/RECORD when/);
+    expect(prompt).toContain('PASS, GAP, N/A, INFO or RECORD');
     expect(prompt).not.toMatch(/placeholder as a GAP/i);
   });
 });

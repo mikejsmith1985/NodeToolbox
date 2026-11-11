@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AI_FIXABLE_CHECK_INSTRUCTIONS,
+  buildHygieneAiFormatFixPrompt,
   buildHygieneAiPrompt,
   buildHygieneAiPromptPlan,
   hasAiFixableFlags,
@@ -50,7 +51,10 @@ describe('buildHygieneAiPrompt', () => {
     expect(promptText).toContain('missing-sp: propose a story-point estimate')
     expect(promptText).toContain('stale: propose a short, polite nudge comment')
     expect(promptText).toContain('Issue keys you may use: TBX-1')
-    expect(promptText).toContain('"kind": "hygiene"')
+    // The reply form is a pre-filled table, one row per asked fix (GH #499 — AI Mode ignores JSON).
+    expect(promptText).toContain('HYGIENE_FIXES:')
+    expect(promptText).toContain('TBX-1 | missing-sp | ___ | ___')
+    expect(promptText).not.toContain('"kind": "hygiene"')
   })
 
   it('omits issues whose flags are all outside the AI remit', () => {
@@ -489,5 +493,98 @@ describe('buildHygieneAiPromptPlan — descriptions carry text, not markup', () 
 
     expect(plan.promptText).not.toContain('&nbsp;')
     expect(plan.promptText).toContain('Blocked due to Letter Queue')
+  })
+})
+
+describe('parseHygieneAiReply — Google AI Mode replies (GH #499)', () => {
+  const KNOWN_KEYS = ['TBX-1', 'TBX-2']
+  const ASKED_ROWS = [['TBX-1', 'missing-sp'], ['TBX-2', 'stale']] as const
+  const EXPECTED_PROPOSALS = [
+    { issueKey: 'TBX-1', checkId: 'missing-sp', proposedValue: '5', rationale: 'Two integrations.' },
+    { issueKey: 'TBX-2', checkId: 'stale', proposedValue: 'Any update on this one?', rationale: 'Silent for weeks.' },
+  ]
+
+  it('reads a markdown table wrapped in an intro and a closing offer into the same proposals', () => {
+    const replyText = [
+      'Here are the proposed hygiene fixes for the issues you listed.',
+      '',
+      '| Issue key | Fix | Proposed value | Rationale |',
+      '|---|---|---|---|',
+      '| **TBX-1** | missing-sp | 5 | Two integrations. |',
+      '| TBX-2 | stale | Any update on this one? | Silent for weeks. |',
+      '',
+      'If you provide the sprint dates I can also suggest target dates.',
+    ].join('\n')
+
+    const result = parseHygieneAiReply(replyText, KNOWN_KEYS, ASKED_ROWS)
+
+    expect(result.proposals).toEqual(EXPECTED_PROPOSALS)
+    expect(result.unparsedCount).toBe(0)
+    expect(result.followUpPrompt).toBe('')
+  })
+
+  it('reads a tab-separated table copied from the AI Mode page', () => {
+    const replyText = [
+      'Issue key\tFix\tProposed value\tRationale',
+      'TBX-1\tmissing-sp\t5\tTwo integrations.',
+      'TBX-2\tstale\tAny update on this one?\tSilent for weeks.',
+    ].join('\n')
+
+    expect(parseHygieneAiReply(replyText, KNOWN_KEYS, ASKED_ROWS).proposals).toEqual(EXPECTED_PROPOSALS)
+  })
+
+  it('treats a row left blank as "propose nothing" — skipped, never unreadable, never chased', () => {
+    const replyText = [
+      'Issue key | Fix | Proposed value | Rationale',
+      'TBX-1 | missing-sp | 5 | Two integrations.',
+      'TBX-2 | stale | ___ | ___',
+    ].join('\n')
+
+    const result = parseHygieneAiReply(replyText, KNOWN_KEYS, ASKED_ROWS)
+
+    expect(result.proposals).toHaveLength(1)
+    expect(result.unparsedCount).toBe(0)
+    expect(result.followUpPrompt).toBe('')
+  })
+
+  it('asks a follow-up for only the rows a table left out — and guesses nothing for them', () => {
+    const replyText = ['Issue key | Fix | Proposed value | Rationale', 'TBX-1 | missing-sp | 5 | Two integrations.'].join('\n')
+
+    const result = parseHygieneAiReply(replyText, KNOWN_KEYS, ASKED_ROWS)
+
+    expect(result.proposals).toHaveLength(1)
+    expect(result.missingFixRows).toEqual([['TBX-2', 'stale']])
+    expect(result.followUpPrompt).toContain('TBX-2 | stale | ___ | ___')
+    expect(result.followUpPrompt).not.toContain('TBX-1 | missing-sp')
+  })
+
+  it('never chases a JSON reply for fixes it omitted — the JSON form allowed omission', () => {
+    const replyText = JSON.stringify({ kind: 'hygiene', items: [{ issueKey: 'TBX-1', fixes: [{ checkId: 'missing-sp', value: 5 }] }] })
+
+    expect(parseHygieneAiReply(replyText, KNOWN_KEYS, ASKED_ROWS).followUpPrompt).toBe('')
+  })
+
+  it('throws for prose with no table and no JSON, and the format fix re-asks every row', () => {
+    expect(() => parseHygieneAiReply('TBX-1 should be 5 points, I think.', KNOWN_KEYS, ASKED_ROWS)).toThrow(/No JSON object found/)
+
+    const formatFixPrompt = buildHygieneAiFormatFixPrompt(ASKED_ROWS)
+    expect(formatFixPrompt).toContain('could not be read')
+    expect(formatFixPrompt).toContain('TBX-1 | missing-sp | ___ | ___')
+    expect(formatFixPrompt).toContain('TBX-2 | stale | ___ | ___')
+  })
+
+  it('still drops a table row naming an issue that is not on the page', () => {
+    const replyText = ['Issue key | Fix | Proposed value | Rationale', 'TBX-9 | missing-sp | 3 | Made up.'].join('\n')
+
+    expect(parseHygieneAiReply(replyText, KNOWN_KEYS).unknownKeys).toEqual(['TBX-9'])
+  })
+})
+
+describe('buildHygieneAiPromptPlan — the fill-in table', () => {
+  it('lists exactly the asked [issue, fix] rows it puts in the table', () => {
+    const plan = buildHygieneAiPromptPlan([finding('TBX-1', ['missing-sp', 'stale']), finding('TBX-2', ['no-ac'])])
+
+    expect(plan.askedFixRows).toEqual([['TBX-1', 'missing-sp'], ['TBX-1', 'stale'], ['TBX-2', 'no-ac']])
+    expect(plan.promptText).toContain('TBX-2 | no-ac | ___ | ___')
   })
 })

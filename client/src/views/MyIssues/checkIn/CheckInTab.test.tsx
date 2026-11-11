@@ -153,6 +153,9 @@ describe('CheckInTab', () => {
     // not be handed a message drafted from a reply that was never read.
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     expect(screen.queryByLabelText('Message to send')).not.toBeInTheDocument();
+    // ...and is offered a follow-up for the same AI chat asking for the table, rather than a dead end (GH #499).
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('ENCUC-1 |');
   });
 
   it('lets the sender edit the message, because their own wording beats a drafted one', async () => {

@@ -53,6 +53,20 @@ describe('AiDraftStep', () => {
     expect(screen.getByText(/Filled in 2 fields/)).toBeTruthy();
   });
 
+  it('offers a follow-up for the texts an AI Mode reply left out, and reads its answer with the first reply (GH #499)', () => {
+    const crg = buildCrg();
+    renderStep(crg);
+    pasteReply('Here are the fields.\n\nShort Description\nPortal login fix\n\nIf you want, I can refine these.');
+
+    const followUpText = (screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value;
+    expect(followUpText).toContain('DESCRIPTION, JUSTIFICATION, RISK_AND_IMPACT, IMPLEMENTATION_PLAN, TEST_PLAN, BACKOUT_PLAN');
+
+    pasteReply('DESCRIPTION: a\nJUSTIFICATION: b\nRISK_AND_IMPACT: c\nIMPLEMENTATION_PLAN: d\nTEST_PLAN: e\nBACKOUT_PLAN: f');
+    expect(screen.queryByLabelText('Follow-up for the same AI chat')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Fill in 7 fields' }));
+    expect(crg.actions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Portal login fix');
+  });
+
   it('says plainly when the paste is not the reply, and fills nothing', () => {
     const crg = buildCrg();
     renderStep(crg);

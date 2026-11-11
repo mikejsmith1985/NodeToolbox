@@ -77,7 +77,7 @@ describe('ReadinessAiPanel', () => {
 
     const prompt = screen.getByLabelText(/ai prompt/i) as HTMLTextAreaElement;
     expect(prompt.value).toContain('F-1');
-    expect(prompt.value).toContain('featureReadiness');
+    expect(prompt.value).toContain('READINESS_TABLE:');
   });
 
   it('writes only the accepted estimate through the shared writer, never ownership', async () => {
@@ -114,5 +114,27 @@ describe('ReadinessAiPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /decline/i }));
 
     expect(saveFeatureReviewSimpleField).not.toHaveBeenCalled();
+  });
+
+  it('reads an AI Mode table reply into proposals with no follow-up (GH #499)', () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    renderPanel();
+
+    const reply = 'Here is the readiness table.\n| Issue key | Feature | Estimate | Insight |\n|---|---|---|---|\n| F-1 | Feature one | 8 | At risk |\nIf you share more, I can refine it.';
+    fireEvent.change(screen.getByLabelText(/paste ai reply/i), { target: { value: reply } });
+    fireEvent.click(screen.getByRole('button', { name: /load proposals/i }));
+
+    expect(screen.getByRole('button', { name: /accept estimate/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a follow-up for the same AI chat when the reply could not be read', () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText(/paste ai reply/i), { target: { value: 'F-1 looks at risk.' } });
+    fireEvent.click(screen.getByRole('button', { name: /load proposals/i }));
+
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*F-1 \| Feature one/);
   });
 });

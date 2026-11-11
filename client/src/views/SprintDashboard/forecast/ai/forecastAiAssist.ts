@@ -11,8 +11,20 @@
 //
 // Propose-only throughout: nothing here writes to Jira, and no call leaves the browser. The operator
 // carries the text out and the reply back.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format, so each prompt
+// ends with a fill-in table whose rows are the sections wanted (one per id). The reader turns the table
+// back into the same {kind, items[]} envelope, so every rule below still applies; JSON is still read. A
+// table has only the asked-for columns, so a figure an assistant adds in a column of its own is never
+// read. A reply that is neither, or that leaves a required section blank, gets a follow-up instead.
 
-import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  readRecordTableItems,
+  type ReplyRecordSpec,
+} from '../../../../utils/aiReplyRecords.ts';
 import type { ScopeCutPlan } from '../scopeCut.ts';
 import type { CapacityAssessment, ForecastResult, IssueForecast } from '../forecastTypes.ts';
 
@@ -33,6 +45,55 @@ export interface ForecastAiIngest {
   kind: ForecastAiKind;
   items: ForecastAiItem[];
   rejectedItems: Array<{ id: string; reason: string }>;
+  /** Required sections a TABLE reply left out or left blank — never filled in by guessing. */
+  missingSectionIds: string[];
+  /** A follow-up for the same chat asking only for those sections, or '' when none are missing. */
+  followUpPrompt: string;
+}
+
+/** One row of a narrative's fill-in table: the section's id, and whether the reply must fill it. */
+interface ForecastSectionRow {
+  id: string;
+  isRequired: boolean;
+}
+
+/**
+ * The sections each narrative's table lists, in the order the prompt asks for them. The scope-cut plan
+ * has as many steps as the shortfall needs, so only its first step is required and the rest may be left
+ * blank; the daily and test-capacity narratives need every section they list.
+ */
+const SECTION_ROWS_BY_KIND: Record<ForecastAiKind, readonly ForecastSectionRow[]> = {
+  forecastDaily: [
+    { id: 'where-we-are', isRequired: true },
+    { id: 'who-is-overloaded', isRequired: true },
+    { id: 'who-has-room', isRequired: true },
+    { id: 'back-on-track', isRequired: true },
+  ],
+  forecastScopeCut: ['step-1', 'step-2', 'step-3', 'step-4', 'step-5', 'step-6']
+    .map((stepId, stepIndex) => ({ id: stepId, isRequired: stepIndex === 0 })),
+  forecastTestCapacity: [
+    { id: 'reduce-scope', isRequired: true },
+    { id: 'add-test-resource', isRequired: true },
+    { id: 'recommendation', isRequired: true },
+  ],
+};
+
+/** People are written "Lastname, Firstname (CTR)", so a comma cannot separate them — a semicolon does. */
+const PERSON_LIST_SEPARATOR = /\s*;\s*/;
+
+/** The fill-in table for one narrative. People are read as text and split on ";" by the parser. */
+function buildForecastReplySpec(kind: ForecastAiKind): ReplyRecordSpec {
+  return {
+    kind,
+    replyMarker: 'FORECAST_NARRATIVE:',
+    columns: [
+      { field: 'id', header: 'Section' },
+      { field: 'headline', header: 'Headline', answerHint: 'one short line' },
+      { field: 'narrative', header: 'Narrative', answerHint: 'the prose, on one line, using only the figures given above' },
+      { field: 'issueKeys', header: 'Issue keys', valueKind: 'list', answerHint: 'keys from the prompt, separated by ";"' },
+      { field: 'personKeys', header: 'People', answerHint: 'names exactly as written above, separated by ";"' },
+    ],
+  };
 }
 
 /** The only properties an item may carry. Anything else is a model inventing a field. */
@@ -59,15 +120,21 @@ const PROMPT_PREAMBLE = [
   '',
 ].join('\n');
 
-/** Spells out the reply shape, including that there is nowhere to put a number. */
+/** Spells out the reply table, including that there is nowhere to put a number. */
 function buildReplyInstruction(kind: ForecastAiKind): string {
   return [
     '',
-    'Reply with JSON only, in exactly this shape:',
-    `{"kind":"${kind}","items":[{"id":"...","headline":"...","narrative":"...",`
-      + '"issueKeys":["..."],"personKeys":["..."]}]}',
-    'No other properties are permitted on an item.',
+    'Fill in one row per section. No other columns are permitted — there is no column for a figure.',
+    buildRecordReplyInstructions(buildForecastReplySpec(kind), SECTION_ROWS_BY_KIND[kind].map((sectionRow) => [sectionRow.id])),
   ].join('\n');
+}
+
+/**
+ * The follow-up for a reply that could not be read at all: the same table again, asking for the form
+ * only so what the assistant already wrote is kept.
+ */
+export function buildForecastFormatFixPrompt(kind: ForecastAiKind): string {
+  return buildRecordFormatFixPrompt(buildForecastReplySpec(kind), SECTION_ROWS_BY_KIND[kind].map((sectionRow) => [sectionRow.id]));
 }
 
 /** One issue, written out with every figure the engine produced for it. */
@@ -256,6 +323,37 @@ export function stripAiAttribution(narrative: string): string {
   return narrative.replace(AI_ATTRIBUTION_PATTERN, '').trim();
 }
 
+/** A table's People cell arrives as text; it becomes the list the item validator expects. */
+function splitTablePersonCell(rawItem: unknown): unknown {
+  const candidate = rawItem as Record<string, unknown> | null;
+  if (typeof candidate?.personKeys !== 'string') return rawItem;
+  return { ...candidate, personKeys: candidate.personKeys.split(PERSON_LIST_SEPARATOR).filter((personName) => personName !== '') };
+}
+
+/** True for a table row whose answer cells were all left blank — a section the reply chose not to fill. */
+function isBlankTableRow(rawItem: unknown): boolean {
+  const candidate = rawItem as Record<string, unknown> | null;
+  return candidate !== null && typeof candidate === 'object' && Object.keys(candidate).every((propertyName) => propertyName === 'id');
+}
+
+/**
+ * The required sections a TABLE reply did not fill (left out, or blank), and the follow-up asking for
+ * just those. A JSON reply chose its own items, so it is never chased.
+ */
+function findMissingSections(replyText: string, kind: ForecastAiKind, items: readonly ForecastAiItem[]): { missingSectionIds: string[]; followUpPrompt: string } {
+  const tableItems = readRecordTableItems(replyText, buildForecastReplySpec(kind));
+  if (!tableItems || tableItems.length === 0) return { missingSectionIds: [], followUpPrompt: '' };
+  const answeredIds = new Set(items.map((item) => item.id.toLowerCase()));
+  const missingSectionIds = SECTION_ROWS_BY_KIND[kind]
+    .filter((sectionRow) => sectionRow.isRequired && !answeredIds.has(sectionRow.id))
+    .map((sectionRow) => sectionRow.id);
+  const followUpPrompt = missingSectionIds.length === 0 ? '' : [
+    `Your last reply did not fill in ${missingSectionIds.join(', ')}. Fill in only these sections now, in the same table.`,
+    buildRecordReplyInstructions(buildForecastReplySpec(kind), missingSectionIds.map((sectionId) => [sectionId])),
+  ].join('\n');
+  return { missingSectionIds, followUpPrompt };
+}
+
 /** Reads one item, or explains why it cannot be trusted. */
 function readItem(
   rawItem: unknown,
@@ -309,7 +407,7 @@ export function parseForecastAiReply(
   allowedIssueKeys: readonly string[],
   allowedPersonKeys: readonly string[],
 ): ForecastAiIngest {
-  const payload = JSON.parse(extractJsonPayload(replyText)) as { kind?: unknown; items?: unknown };
+  const payload = JSON.parse(extractRecordReplyPayload(replyText, buildForecastReplySpec(expectedKind))) as { kind?: unknown; items?: unknown };
 
   if (payload.kind !== expectedKind) {
     throw new Error(`This reply is for "${String(payload.kind)}", not "${expectedKind}".`);
@@ -323,8 +421,9 @@ export function parseForecastAiReply(
   const items: ForecastAiItem[] = [];
   const rejectedItems: Array<{ id: string; reason: string }> = [];
 
-  payload.items.forEach((rawItem, index) => {
-    const outcome = readItem(rawItem, index, issueKeySet, personKeySet);
+  // A section left blank in the table is the reply saying nothing there — not an item to reject.
+  payload.items.filter((rawItem) => !isBlankTableRow(rawItem)).forEach((rawItem, index) => {
+    const outcome = readItem(splitTablePersonCell(rawItem), index, issueKeySet, personKeySet);
     if ('item' in outcome) {
       items.push(outcome.item);
       return;
@@ -332,5 +431,5 @@ export function parseForecastAiReply(
     rejectedItems.push(outcome.rejection);
   });
 
-  return { kind: expectedKind, items, rejectedItems };
+  return { kind: expectedKind, items, rejectedItems, ...findMissingSections(replyText, expectedKind, items) };
 }

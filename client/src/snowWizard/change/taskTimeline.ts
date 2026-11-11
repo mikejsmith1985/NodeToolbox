@@ -12,7 +12,7 @@
 import { stripCodeFences, CODE_BLOCK_REPLY_INSTRUCTION } from '../../views/SnowHub/chgFormula/assistantReplyText.ts';
 import {
   buildFillInTable, buildFormatFixPrompt, describeFillInRules, findHeaderColumns, readDurationCellMinutes, splitReplyCells,
-} from '../../views/SnowHub/chgFormula/replyTable.ts';
+} from '../../utils/aiReplyTable.ts';
 import { rankCtaskStage } from '../../views/SnowHub/chgFormula/ctaskTimeline.ts';
 import {
   formatMinutes, listMissingEstimateLabels, normalizeEstimates, readEstimateMinutes, readPlannedWindowMinutes, type DurationEstimates,

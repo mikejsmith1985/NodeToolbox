@@ -16,7 +16,12 @@ const { roundClosed } = vi.hoisted(() => ({ roundClosed: vi.fn() }));
 /** A round as Toolbox's Risk Check hands it over: a reply saying USE is used, any other is refused. */
 const FAKE_SESSION = {
   instructions: 'Fix the gaps.', promptText: 'PROMPT', applyButtonLabel: 'Apply the fixes',
-  applyReply: (replyText: string) => (replyText === 'USE' ? { statusMessage: 'Applied 2 fixes.', wasApplied: true } : { statusMessage: 'Nothing usable.', wasApplied: false }),
+  applyReply: (replyText: string) => {
+    if (replyText === 'USE') return { statusMessage: 'Applied 2 fixes.', wasApplied: true };
+    // A reply that left rows out: used, but with a follow-up for the same AI chat (GH #499).
+    if (replyText === 'PARTIAL') return { statusMessage: 'Captured, rows left out.', wasApplied: true, followUpPrompt: 'Answer only these rows now.' };
+    return { statusMessage: 'Nothing usable.', wasApplied: false };
+  },
 };
 // Toolbox's own component is proven by Toolbox's tests; here only what the Wizard hands it is checked.
 vi.mock('../../../views/SnowHub/tabs/ExistingChgRiskCheck.tsx', () => ({
@@ -83,6 +88,15 @@ describe('RiskCheckSection', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Apply the fixes' }));
       expect(roundClosed).toHaveBeenCalledTimes(1);
       expect(screen.getAllByText('Applied 2 fixes.').length).toBeGreaterThan(0);
+    });
+
+    it('stays open with the follow-up when a used reply left rows out, so its answer is read here too (GH #499)', () => {
+      roundClosed.mockClear();
+      openOnModify();
+      fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'PARTIAL' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply the fixes' }));
+      expect(roundClosed).not.toHaveBeenCalled();
+      expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toBe('Answer only these rows now.');
     });
 
     it('stays open with the reason when the reply cannot be used, and closes on request', () => {

@@ -18,9 +18,13 @@ import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import PoAiPanel from './ai/PoAiPanel';
+import PoAiPanel, { type PoAiIngestOutcome } from './ai/PoAiPanel';
 import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
-import { buildComponentMappingPrompt, parseComponentMappingIngest } from './ai/componentMappingAiAssist';
+import {
+  buildComponentMappingFollowUp,
+  buildComponentMappingPrompt,
+  parseComponentMappingIngest,
+} from './ai/componentMappingAiAssist';
 import { repoAllowlist } from '../AdminHub/lib/componentClassificationStore.ts';
 import { TeamDomainRulePanel } from './domain/TeamDomainRulePanel.tsx';
 import { buildCompositionPrefill } from './ai/compositionFieldPrefill';
@@ -345,10 +349,10 @@ export default function FeatureCompositionTab({
   const [prefillFlags, setPrefillFlags] = useState<string[]>([]);
 
   /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-032, INV-J1). */
-  function handleIngestCompositionProposal(responseText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngestCompositionProposal(responseText: string): PoAiIngestOutcome {
     // Enriching an existing Feature merges into what it already says; a new Feature has nothing to preserve.
     const descriptionToPreserve = draft.existingIssueKey === null ? '' : draft.description;
-    const { items, errors } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById), descriptionToPreserve);
+    const { items, errors, followUpPrompt } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById), descriptionToPreserve);
     const proposal = items[0];
     if (proposal) {
       // Merge the AI's fields, then deterministically prefill PI / PO / Application — only where still empty,
@@ -375,7 +379,7 @@ export default function FeatureCompositionTab({
       });
       setPrefillFlags(prefill.flags);
     }
-    return { acceptedCount: items.length, errors };
+    return { acceptedCount: items.length, errors, followUpPrompt };
   }
 
   // Whether the components field is offered by this issue's create/edit screen (M2). When it is not, the
@@ -402,10 +406,13 @@ export default function FeatureCompositionTab({
    * Applies an accepted repo-component mapping to the draft (spec 031, US2). Nothing here touches Jira —
    * the existing Commit writes it.
    */
-  function handleIngestComponentMapping(responseText: string): { acceptedCount: number; errors: string[] } {
-    const { items, errors } = parseComponentMappingIngest(responseText, repoAllowlist());
+  function handleIngestComponentMapping(responseText: string): PoAiIngestOutcome {
+    const allowlistNames = repoAllowlist();
+    const { items, errors } = parseComponentMappingIngest(responseText, allowlistNames);
     applyComponentNamesToDraft(items.map((item) => item.componentName));
-    return { acceptedCount: items.length, errors };
+    // Repos left unanswered are asked about again, never assumed — the merge above is a union, so the follow-up's
+    // reply can be read on its own.
+    return { acceptedCount: items.length, errors, followUpPrompt: buildComponentMappingFollowUp(responseText, allowlistNames) };
   }
 
   const commitDiff = useMemo(

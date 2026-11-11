@@ -6,8 +6,19 @@
 // be safely canceled), "review" (a human should look before deciding), or "must-remain" (keep it) —
 // each with a plain-English rationale. It is advisory only: nothing here writes to Jira, and no AI
 // service is called from here. The report is fully usable without ever unlocking this feature.
+//
+// The reply form is a fill-in table with every issue pre-listed, because Google's AI Mode — the team's only
+// assistant (GH #499) — ignores a JSON reply format but completes a table. The table is read back into the same
+// {kind, items[]} JSON, so every validation rule below still applies; a JSON reply is still read. A reply that is
+// neither, or that leaves issues out, gets a follow-up for the same chat — a missing verdict is never guessed.
 
-import { extractJsonPayload } from '../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  readRecordTableItems,
+  type ReplyRecordSpec,
+} from '../../utils/aiReplyRecords.ts';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -21,6 +32,22 @@ export type AgingTriageVerdict = 'cancel-safe' | 'review' | 'must-remain';
 
 /** The verdicts the parser will accept, in the natural cancel → keep order. */
 const AGING_TRIAGE_VERDICTS: readonly AgingTriageVerdict[] = ['cancel-safe', 'review', 'must-remain'];
+
+/** The fill-in table the prompt ends with: each issue by key and summary, its verdict and rationale blank. */
+export const AGING_TRIAGE_REPLY_SPEC: ReplyRecordSpec = {
+  kind: 'agingTriage',
+  replyMarker: 'TRIAGE_TABLE:',
+  columns: [
+    { field: 'issueKey', header: 'Issue key' },
+    { field: 'summary', header: 'Summary', isNamingOnly: true },
+    { field: 'verdict', header: 'Verdict', answerHint: AGING_TRIAGE_VERDICTS.join(', ') },
+    { field: 'rationale', header: 'Rationale', answerHint: 'one plain-English line on why' },
+  ],
+};
+// A table cell must stay on one line and never hold the "|" that separates cells.
+const TABLE_CELL_BREAK_PATTERN = /\s*[|\r\n]+\s*/g;
+// Spaces or underscores an assistant writes inside a verdict: "Cancel safe", "must_remain".
+const VERDICT_SEPARATOR_PATTERN = /[\s_]+/g;
 
 /**
  * One open backlog issue with every real signal the triage decision leans on: how old it is, how long it
@@ -68,7 +95,7 @@ export interface AgingTriageSuggestion {
 // ── Prompt construction ────────────────────────────────────────────────────────
 
 // The task instruction embedded at the top of every generated prompt. It defines each verdict and the
-// signals to weigh, then pins the reply to a single strict JSON shape so ingestion can validate it.
+// signals to weigh; the prompt then ends with the fill-in table the reply is read from.
 //
 // Posture: AGGRESSIVE. The point of this report is to CLEAN UP a bloated backlog, so the assistant must
 // actively look for cancellation candidates instead of defaulting to "keep". "must-remain" has to be
@@ -94,8 +121,7 @@ const AGING_TRIAGE_INSTRUCTION =
   + 'is, whether it is even defined at all (no description and no acceptance criteria → cancel), and its '
   + 'parent feature\'s status (Done/abandoned → cancel). Use ONLY the data shown for each issue; do NOT '
   + 'invent values, and when a signal is missing treat its absence as the (cancel-leaning) signal it is '
-  + 'rather than guessing a value. Respond ONLY with '
-  + 'valid JSON: {"kind":"agingTriage","items":[{"issueKey":"KEY","verdict":"cancel-safe","rationale":"..."}]}';
+  + 'rather than guessing a value.';
 
 /** Builds one issue's data line, including only the signals that are actually present. */
 function buildTriageIssueLine(issue: AgingTriageIssue): string {
@@ -147,7 +173,40 @@ function formatDays(days: number): string {
  */
 export function buildAgingTriagePrompt(issues: readonly AgingTriageIssue[]): string {
   const issueLines = issues.map(buildTriageIssueLine).join('\n');
-  return `${AGING_TRIAGE_INSTRUCTION}\n\nIssues:\n${issueLines}`;
+  const replyForm = buildRecordReplyInstructions(AGING_TRIAGE_REPLY_SPEC, buildTriageRowNamingCells(issues));
+  return `${AGING_TRIAGE_INSTRUCTION}\n\nIssues:\n${issueLines}\n\n${replyForm}`;
+}
+
+/** Each issue's pre-filled cells: its key and its summary kept to one line without a "|". */
+function buildTriageRowNamingCells(issues: readonly AgingTriageIssue[]): string[][] {
+  return issues.map((issue) => [issue.issueKey, issue.summary.replace(TABLE_CELL_BREAK_PATTERN, ' / ').trim()]);
+}
+
+/** The shown issues a reply gave no verdict for — what a follow-up asks about, never filled in by guessing. */
+export function findMissingTriageKeys(
+  issues: readonly AgingTriageIssue[],
+  suggestions: readonly AgingTriageSuggestion[],
+): string[] {
+  const answeredKeys = new Set(suggestions.map((suggestion) => suggestion.issueKey));
+  return issues.map((issue) => issue.issueKey).filter((issueKey) => !answeredKeys.has(issueKey));
+}
+
+/**
+ * The follow-up for the same AI chat: the whole table again when the reply could not be read, or only the
+ * rows for the issues it left without a verdict. '' when nothing is missing.
+ */
+export function buildAgingTriageFollowUpPrompt(
+  issues: readonly AgingTriageIssue[],
+  missingIssueKeys: readonly string[],
+  wasReplyUnreadable: boolean,
+): string {
+  if (wasReplyUnreadable) return buildRecordFormatFixPrompt(AGING_TRIAGE_REPLY_SPEC, buildTriageRowNamingCells(issues));
+  const missingIssues = issues.filter((issue) => missingIssueKeys.includes(issue.issueKey));
+  if (missingIssues.length === 0) return '';
+  return [
+    `Your last reply gave no verdict for ${missingIssues.map((issue) => issue.issueKey).join(', ')}. Answer only these now, in the same table.`,
+    buildRecordReplyInstructions(AGING_TRIAGE_REPLY_SPEC, buildTriageRowNamingCells(missingIssues)),
+  ].join('\n');
 }
 
 // ── Reply ingestion ──────────────────────────────────────────────────────────
@@ -164,7 +223,8 @@ function readRequiredString(source: Record<string, unknown>, fieldName: string):
 /** Validates one raw reply item into a suggestion, enforcing a known verdict. */
 function readTriageItem(rawItem: Record<string, unknown>): AgingTriageSuggestion {
   const issueKey = readRequiredString(rawItem, 'issueKey');
-  const verdict = readRequiredString(rawItem, 'verdict') as AgingTriageVerdict;
+  // "Cancel safe" / "Must_Remain" are the same verdicts written loosely; anything else is still refused.
+  const verdict = readRequiredString(rawItem, 'verdict').toLowerCase().replace(VERDICT_SEPARATOR_PATTERN, '-') as AgingTriageVerdict;
   if (!AGING_TRIAGE_VERDICTS.includes(verdict)) {
     throw new Error(`Invalid verdict "${verdict}" for ${issueKey}; expected ${AGING_TRIAGE_VERDICTS.join('/')}.`);
   }
@@ -179,10 +239,14 @@ function readTriageItem(rawItem: Record<string, unknown>): AgingTriageSuggestion
  * issue keys are filtered by the caller against the issues that were actually shown.
  */
 export function parseAgingTriageResponse(responseText: string): AgingTriageSuggestion[] {
-  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  const parsed = JSON.parse(extractRecordReplyPayload(responseText, AGING_TRIAGE_REPLY_SPEC)) as Record<string, unknown>;
   if (parsed.kind !== 'agingTriage') {
     throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "agingTriage".`);
   }
-  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-  return rawItems.map((rawItem) => readTriageItem(rawItem as Record<string, unknown>));
+  const rawItems = (Array.isArray(parsed.items) ? parsed.items : []) as Record<string, unknown>[];
+  // A table row left at ___ has no verdict: the issue was not answered, so it becomes a follow-up row rather
+  // than failing the whole reply. A JSON item without a verdict is still refused, exactly as before.
+  const isTableReply = (readRecordTableItems(responseText, AGING_TRIAGE_REPLY_SPEC)?.length ?? 0) > 0;
+  const answeredItems = isTableReply ? rawItems.filter((rawItem) => rawItem.verdict !== undefined) : rawItems;
+  return answeredItems.map((rawItem) => readTriageItem(rawItem));
 }

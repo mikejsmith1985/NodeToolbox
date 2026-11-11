@@ -14,11 +14,42 @@
 //
 // Propose-only, like every other AI surface here: a prompt goes out, a reply is pasted back, and
 // nothing is written to Jira or sent anywhere on its own.
+//
+// The reply form is a fill-in table (one pre-listed row per issue) under an OPENING line, because Google's
+// AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format but completes a table. A JSON
+// reply is still read. A reply that is neither, or that leaves issues out, gets a follow-up for the same chat.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFillInTable,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
+import { readReplySections, type ReplySection } from '../../../utils/aiReplySections.ts';
 import type { CheckInComment, CheckInIssue } from './checkInModel.ts';
 
 export const CHECK_IN_REPLY_KIND = 'developerCheckIn';
+
+/** The fill-in table: each asked issue by key and summary, its observation/question/suggestion left blank. */
+export const CHECK_IN_REPLY_SPEC: ReplyRecordSpec = {
+  kind: CHECK_IN_REPLY_KIND,
+  replyMarker: 'CHECK_IN_TABLE:',
+  columns: [
+    { field: 'issueKey', header: 'Issue key' },
+    { field: 'summary', header: 'Summary', isNamingOnly: true },
+    { field: 'observation', header: 'Observation', answerHint: 'how it reads from the outside — never a verdict' },
+    { field: 'question', header: 'Question', answerHint: 'the one thing to ask about it, or ___ when nothing needs asking' },
+    { field: 'suggestion', header: 'Suggestion', answerHint: 'what might help it move, or ___' },
+    { field: 'looksFine', header: 'Looks fine', valueKind: 'boolean', answerHint: 'Yes or No' },
+  ],
+};
+
+/** The one line before the table that carries the message's opening sentence. */
+const OPENING_SECTIONS: readonly ReplySection<'opening'>[] = [
+  { key: 'opening', marker: 'OPENING', headingPattern: /^opening(?: line| sentence)?$/i },
+];
+// A table cell must stay on one line and never hold the "|" that separates cells.
+const TABLE_CELL_BREAK_PATTERN = /\s*[|\r\n]+\s*/g;
 
 /** What the assistant concluded about one issue, and what to ask about it. */
 export interface CheckInItem {
@@ -37,6 +68,11 @@ export interface CheckInItem {
 export interface CheckInReply {
   opening: string;
   items: CheckInItem[];
+}
+
+/** A read reply, plus the asked issues it left out — the cue for a follow-up, never filled in by guessing. */
+export interface CheckInParseResult extends CheckInReply {
+  missingIssueKeys: string[];
 }
 
 /** Renders one comment as a line the assistant can read. */
@@ -130,11 +166,46 @@ export function buildCheckInPrompt(personName: string, issues: readonly CheckInI
     `${personName}'s assigned work:`,
     issues.map((issue) => buildIssueBlock(issue)).join('\n\n'),
     '',
-    'Reply with ONLY this JSON:',
-    `{"kind":"${CHECK_IN_REPLY_KIND}","opening":"One friendly sentence to open the message",`,
-    '"items":[{"issueKey":"KEY-1","observation":"How it reads from the outside",',
-    '"question":"The one thing to ask about it","suggestion":"What might help it move, or empty",',
-    '"looksFine":false}]}',
+    ...buildCheckInReplyForm(issues),
+  ].join('\n');
+}
+
+/** An issue's summary as a table cell: one line, no "|". */
+function toTableCellText(cellText: string): string {
+  return cellText.replace(TABLE_CELL_BREAK_PATTERN, ' / ').trim();
+}
+
+/** The naming cells of each issue's row: its key and its summary. */
+function buildCheckInRowNamingCells(issues: readonly CheckInIssue[]): string[][] {
+  return issues.map((issue) => [issue.issueKey, toTableCellText(issue.summary)]);
+}
+
+/**
+ * The reply form: the OPENING line, then the table with every issue pre-listed so the assistant cannot
+ * invent or drop one. The OPENING line is the one thing allowed above the table.
+ */
+function buildCheckInReplyForm(issues: readonly CheckInIssue[]): string[] {
+  return [
+    'Begin your answer with one line: OPENING: followed by one friendly sentence to open the message.',
+    'Then give the table below — the OPENING line is the only thing allowed before it.',
+    buildRecordReplyInstructions(CHECK_IN_REPLY_SPEC, buildCheckInRowNamingCells(issues)),
+  ];
+}
+
+/**
+ * The follow-up for the same AI chat: the whole form again when the reply could not be read, or only the
+ * rows for the issues it left out. Nothing missing is ever filled in by Toolbox.
+ */
+export function buildCheckInFollowUpPrompt(issues: readonly CheckInIssue[], missingIssueKeys: readonly string[], wasReplyUnreadable: boolean): string {
+  if (wasReplyUnreadable) {
+    return ['Your last reply was not in the form I need, so it could not be read. Keep what you wrote, but lay it out like this.', ...buildCheckInReplyForm(issues)].join('\n');
+  }
+  const missingIssues = issues.filter((issue) => missingIssueKeys.includes(issue.issueKey));
+  if (missingIssues.length === 0) return '';
+  return [
+    `Your last reply left out ${missingIssues.map((issue) => issue.issueKey).join(', ')}. Answer only these now, in the same table.`,
+    CHECK_IN_REPLY_SPEC.replyMarker,
+    ...buildRecordFillInTable(CHECK_IN_REPLY_SPEC, buildCheckInRowNamingCells(missingIssues)),
   ].join('\n');
 }
 
@@ -150,8 +221,8 @@ function readTrimmedString(value: unknown): string {
  * this person does not hold would be sent to them anyway, and there is no recovering from that once
  * it is in a chat window. A missing field is merely an emptier line.
  */
-export function parseCheckInReply(replyText: string, knownIssueKeys: readonly string[]): CheckInReply {
-  const parsed = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>;
+export function parseCheckInReply(replyText: string, knownIssueKeys: readonly string[]): CheckInParseResult {
+  const parsed = JSON.parse(extractRecordReplyPayload(replyText, CHECK_IN_REPLY_SPEC)) as Record<string, unknown>;
   if (parsed.kind !== CHECK_IN_REPLY_KIND) {
     throw new Error(`Expected an AI reply with {"kind":"${CHECK_IN_REPLY_KIND}"}, got "${String(parsed.kind)}".`);
   }
@@ -175,5 +246,12 @@ export function parseCheckInReply(replyText: string, knownIssueKeys: readonly st
     });
   });
 
-  return { opening: readTrimmedString(parsed.opening), items };
+  const missingIssueKeys = knownIssueKeys.filter((issueKey) => !items.some((kept) => kept.issueKey === issueKey));
+  return { opening: readTrimmedString(parsed.opening) || readOpeningLine(replyText), items, missingIssueKeys };
+}
+
+/** The OPENING line a table reply carries above its table — its first line only, never the table under it. */
+function readOpeningLine(replyText: string): string {
+  const openingText = readReplySections(replyText, OPENING_SECTIONS).opening ?? '';
+  return openingText.split(/\r?\n/)[0].trim();
 }

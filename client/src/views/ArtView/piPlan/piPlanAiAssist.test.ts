@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildPiPlanAiPrompt, parsePiPlanAiReply } from './piPlanAiAssist.ts';
+import { buildPiPlanAiFollowUpPrompt, buildPiPlanAiPrompt, parsePiPlanAiReply } from './piPlanAiAssist.ts';
 import type { PiPlanPromptContext } from './piPlanAiAssist.ts';
 
 const CONTEXT: PiPlanPromptContext = {
@@ -39,7 +39,87 @@ describe('buildPiPlanAiPrompt', () => {
     expect(prompt).toContain('70% development / 30% internal testing'); // rule constants
     expect(prompt).toContain('13 points');
     expect(prompt).toContain('5 working days');
-    expect(prompt).toContain('"kind":"piPlan"');
+    expect(prompt).not.toContain('"kind"');
+  });
+
+  it('ends with a Story table listing every Feature once, its key and summary filled in (GH #499)', () => {
+    const prompt = buildPiPlanAiPrompt({
+      ...CONTEXT,
+      features: [...CONTEXT.features, { ...CONTEXT.features[0], key: 'ABC-2', summary: 'Card | wallet' }],
+    });
+    expect(prompt.split('\n').slice(-4)).toEqual([
+      'PI_PLAN_STORIES:',
+      'Feature key | Feature | Story | Story points | Testable output | Why this split',
+      'ABC-1 | Login | ___ | ___ | ___ | ___',
+      'ABC-2 | Card   wallet | ___ | ___ | ___ | ___',
+    ]);
+    expect(prompt).toMatch(/Copy its row once per Story/);
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ──
+
+const AI_MODE_REPLY = [
+  'Here is the Story breakdown for the PI, based on the Features you listed.',
+  '',
+  '| Feature key | Feature | Story | Story points | Testable output | Why this split |',
+  '|---|---|---|---|---|---|',
+  '| **ABC-1** | Login | Login form | 5 | Yes | Split by flow. |',
+  '| ABC-1 | Login | Login spike | 3 | No | ___ |',
+  '| ABC-2 | Logout | Logout button | 8 | Yes | One flow. |',
+  '',
+  'If you share the acceptance criteria, I can refine the sizes.',
+].join('\n');
+
+describe('parsePiPlanAiReply with an AI Mode reply', () => {
+  const known = ['ABC-1', 'ABC-2'];
+
+  it('groups a markdown table wrapped in an intro and a closing offer into the same suggestions', () => {
+    const result = parsePiPlanAiReply(AI_MODE_REPLY, known);
+    expect(result.suggestions).toEqual([
+      {
+        featureKey: 'ABC-1', rationale: 'Split by flow.', stories: [
+          { summary: 'Login form', sizePoints: 5, hasTestableOutput: true, matchExistingKey: null },
+          { summary: 'Login spike', sizePoints: 3, hasTestableOutput: false, matchExistingKey: null },
+        ],
+      },
+      { featureKey: 'ABC-2', rationale: 'One flow.', stories: [{ summary: 'Logout button', sizePoints: 8, hasTestableOutput: true, matchExistingKey: null }] },
+    ]);
+  });
+
+  it('reads a table pasted from the web page as tab-separated cells', () => {
+    const tabReply = 'Feature key\tStory\tStory points\nABC-1\tLogin form\t5';
+    const result = parsePiPlanAiReply(tabReply, known);
+    expect(result.suggestions[0].stories).toEqual([{ summary: 'Login form', sizePoints: 5, hasTestableOutput: true, matchExistingKey: null }]);
+  });
+
+  it('still rejects a Feature the table invented, and counts a Story with no points', () => {
+    const result = parsePiPlanAiReply('Feature key | Story | Story points\nNOPE-9 | Ghost | 3\nABC-1 | No size | ___', known);
+    expect(result.rejected.map((rejection) => rejection.featureKey)).toEqual(['NOPE-9']);
+    expect(result.unparsedCount).toBe(1);
+  });
+});
+
+describe('buildPiPlanAiFollowUpPrompt', () => {
+  const context = { ...CONTEXT, features: [...CONTEXT.features, { ...CONTEXT.features[0], key: 'ABC-2', summary: 'Logout' }] };
+
+  it('offers nothing when every Feature got a usable Story', () => {
+    expect(buildPiPlanAiFollowUpPrompt(context, parsePiPlanAiReply(AI_MODE_REPLY, ['ABC-1', 'ABC-2']))).toBe('');
+  });
+
+  it('asks for the whole table again when the reply could not be read', () => {
+    const followUp = buildPiPlanAiFollowUpPrompt(context, null);
+    expect(followUp).toMatch(/^Your last reply was not in the form I need/);
+    expect(followUp).toContain('ABC-1 | Login | ___');
+    expect(followUp).toContain('ABC-2 | Logout | ___');
+  });
+
+  it('asks for only the Features left without a usable Story — never guessing them', () => {
+    const partial = parsePiPlanAiReply('Feature key | Story | Story points\nABC-1 | Login form | 5\nABC-2 | ___ | ___', ['ABC-1', 'ABC-2']);
+    const followUp = buildPiPlanAiFollowUpPrompt(context, partial);
+    expect(followUp).toContain('no usable Story for ABC-2');
+    expect(followUp).toContain('ABC-2 | Logout | ___');
+    expect(followUp).not.toContain('ABC-1 | Login |');
   });
 });
 

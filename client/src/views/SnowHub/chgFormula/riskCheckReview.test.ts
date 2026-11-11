@@ -73,6 +73,61 @@ describe('parseRiskCheckReview', () => {
   });
 });
 
+describe('parseRiskCheckReview with a Google AI Mode reply (GH #499)', () => {
+  const MARKDOWN_TABLE_REPLY = [
+    'Here is the Release Manager review of your change, judged against the Formula Card.',
+    '',
+    'RISK_CHECK_TABLE:',
+    '| Item | Answer | Finding | Fix |',
+    '|:---|:---:|---|---|',
+    '| **Short Description** | ✅ PASS | Domain, action and environment are clear. | — |',
+    '| Blast Radius | GAP | No downstream consumers named. | List the consumers in RISK_AND_IMPACT. |',
+    '| Validation Owner | Needs info | Who validates in production? | ___ |',
+    '| Irreversibility Point | N/A | Nothing is deleted. | ___ |',
+    '| Is success objective? | No | Success is not measurable. | Add pass/fail criteria to TEST_PLAN. |',
+    '| Backout Trigger | ___ | ___ | ___ |',
+    '',
+    'If you provide the validation owner, I can re-check the change.',
+  ].join('\n');
+
+  it('reads a markdown table, its columns found by header — the intro and closing offer are never read as findings', () => {
+    const review = parseRiskCheckReview(MARKDOWN_TABLE_REPLY);
+
+    expect(review.findings).toEqual([
+      { status: 'PASS', field: 'Short Description', detail: 'Domain, action and environment are clear.', fix: '' },
+      { status: 'GAP', field: 'Blast Radius', detail: 'No downstream consumers named.', fix: 'List the consumers in RISK_AND_IMPACT.' },
+      { status: 'INFO', field: 'Validation Owner', detail: 'Who validates in production?', fix: '' },
+      { status: 'N/A', field: 'Irreversibility Point', detail: 'Nothing is deleted.', fix: '' },
+      { status: 'NO', field: 'Is success objective?', detail: 'Success is not measurable.', fix: 'Add pass/fail criteria to TEST_PLAN.' },
+    ]);
+  });
+
+  it('counts the verdict itself, since a table carries no VERDICT line', () => {
+    const review = parseRiskCheckReview(MARKDOWN_TABLE_REPLY);
+
+    expect(review.verdict).toBe('NOT READY — 2 gap(s); 1 fact needed from you.');
+    expect(review.isReady).toBe(false);
+  });
+
+  it('reads a tab-separated table pasted from the web page, with its columns in another order', () => {
+    const tabReply = ['Answer\tItem\tFinding', 'PASS\tShort Description\tClear.', 'PASS\tRisk\tRated.'].join('\n');
+
+    const review = parseRiskCheckReview(tabReply);
+
+    expect(review.findings.map((finding) => `${finding.status} ${finding.field}`)).toEqual(['PASS Short Description', 'PASS Risk']);
+    expect(review.isReady).toBe(true);
+  });
+
+  it('lets a follow-up\'s row replace the first reply\'s row for the same item', () => {
+    const firstReply = 'Item | Answer | Finding | Fix\nBlast Radius | GAP | Missing. | Add it.';
+    const followUpReply = 'Item | Answer | Finding | Fix\nBlast Radius | PASS | Now listed. | ___';
+
+    expect(parseRiskCheckReview(`${firstReply}\n${followUpReply}`).findings).toEqual([
+      { status: 'PASS', field: 'Blast Radius', detail: 'Now listed.', fix: '' },
+    ]);
+  });
+});
+
 describe('countConfirmPlaceholders', () => {
   it('counts the [CONFIRM: …] placeholders still left in each field, skipping fields with none', () => {
     const counts = countConfirmPlaceholders({

@@ -141,8 +141,12 @@ describe('ReleasePriorityPanel', () => {
     fireEvent.change(screen.getByLabelText('Release priority reply'), { target: { value: buildReply(['ENCUC-2', 'ENCUC-1']) } });
     fireEvent.click(screen.getByRole('button', { name: '↩ Load ranking' }));
 
-    expect(screen.getByText(/did not rank ENCUC-3/)).toBeInTheDocument();
+    expect(screen.getByText(/The assistant did not rank ENCUC-3/)).toBeInTheDocument();
     expect(screen.getByText('not ranked by the assistant — appended in its original order')).toBeInTheDocument();
+    // ...and offers a follow-up for the same chat asking for just that row (GH #499).
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('ENCUC-3 | Summary ENCUC-3 | ___ | ___');
+    expect(followUpBox.value).not.toContain('ENCUC-1 |');
   });
 
   it('refuses a reply from another surface and writes nothing', async () => {
@@ -220,5 +224,32 @@ describe('ReleasePriorityPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads an AI Mode table reply and offers a format follow-up when a reply cannot be read (GH #499)', async () => {
+    installContextFixtures();
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText('Release priority reply'), { target: { value: 'I would put ENCUC-2 first.' } });
+    fireEvent.click(screen.getByRole('button', { name: '↩ Load ranking' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No JSON object found/);
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('ENCUC-1 | Summary ENCUC-1 | ___ | ___');
+
+    fireEvent.change(screen.getByLabelText('Release priority reply'), { target: { value: [
+      'Here is the order.',
+      '| Issue key | Summary | Rank | Rationale |',
+      '|---|---|---|---|',
+      '| ENCUC-1 | Summary ENCUC-1 | 2 | b |',
+      '| ENCUC-2 | Summary ENCUC-2 | 1 | a |',
+      '| ENCUC-3 | Summary ENCUC-3 | 3 | c |',
+      'Let me know if you want this as a chart.',
+    ].join('\n') } });
+    fireEvent.click(screen.getByRole('button', { name: '↩ Load ranking' }));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Proposed release order' })).toHaveTextContent('ENCUC-2');
   });
 });

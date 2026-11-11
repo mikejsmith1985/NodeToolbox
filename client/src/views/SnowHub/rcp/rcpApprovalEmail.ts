@@ -382,7 +382,8 @@ const BRACKETED_PLACEHOLDER_PATTERN = /\[([^\]\n]+)\]/g;
 const PLACEHOLDER_PREFIX_PATTERN = /^\s*(?:CONFIRM|WRITE)\s*:\s*/i;
 // Filler words a draft uses where a fact belongs.
 const FILLER_PLACEHOLDERS = ['(not set)', 'TBD', 'TBA'];
-const SUBJECT_LINE_PATTERN = /^\s*Subject:/im;
+// The email's Subject line, allowing the bold marks an answer engine puts on it ("**Subject:** …").
+const SUBJECT_LINE_PATTERN = /^\s*(?:\*\*)?Subject(?:\*\*)?\s*:/im;
 
 /** True when a filler word stands alone in the email, not inside a longer word. */
 function containsFiller(emailText: string, fillerText: string): boolean {
@@ -449,26 +450,70 @@ export function buildRcpEmailGapPrompt(emailText: string, windowText: string, ga
   ].join('\n');
 }
 
+// ── Reading the reply ──
+
+// Google's AI Mode — the team's only assistant (GH #499) — answers as a document: an intro sentence, bold labels, and a
+// closing offer to help further. None of that belongs in an email sent to a Director.
+// The closing offer: addressed to the person asking, and promising more work ("If you'd like, I can…", "Would you like
+// me to…"). An email's own lines ("Let me know if you have questions") never promise the assistant's work, so stay.
+const ASSISTANT_OFFER_LINE_PATTERN = /^(?:if you(?:'d| would)? (?:like|want|prefer|provide|share|send|give|tell)|would you like|do you want|want me to|let me know if you(?:'d| would) like me|i can also)\b.*\b(?:i can|i could|i'll|i will|me to)\b/i;
+// A line that only separates the email from the offer, or a code fence.
+const SEPARATOR_LINE_PATTERN = /^\s*(?:-{3,}|\*{3,}|_{3,}|```[\w-]*)\s*$/;
+// Markdown bold marks, which a plain-text email must not carry: "**Subject:** …".
+const BOLD_MARK_PATTERN = /\*\*/g;
+// A window line written anywhere in the reply, bold or not: "**Start:** 2026-10-16 19:00".
+const WINDOW_LINE_PATTERN = /^\s*(?:Start|End)\s*:/i;
+
+/** The email without the closing offer and separators an answer engine adds after it. */
+function dropClosingOffer(emailText: string): string {
+  const emailLines = emailText.split(/\r?\n/);
+  while (emailLines.length > 0) {
+    const lastLine = emailLines[emailLines.length - 1].trim();
+    if (lastLine !== '' && !SEPARATOR_LINE_PATTERN.test(lastLine) && !ASSISTANT_OFFER_LINE_PATTERN.test(lastLine)) break;
+    emailLines.pop();
+  }
+  return emailLines.join('\n').trim();
+}
+
+/** The email when the reply has no email marker: from its Subject line on — an intro before it is the assistant's own. */
+function readUnmarkedEmail(replyBody: string): string {
+  const subjectMatch = SUBJECT_LINE_PATTERN.exec(replyBody);
+  return subjectMatch ? replyBody.slice(subjectMatch.index) : replyBody;
+}
+
+/** The window lines when the reply has no window marker: any "Start:" / "End:" lines written before the email. */
+function readUnmarkedWindow(replyBody: string, emailStartIndex: number): string {
+  return replyBody.slice(0, emailStartIndex).split(/\r?\n/).filter((replyLine) => WINDOW_LINE_PATTERN.test(replyLine))
+    .map((windowLine) => windowLine.trim()).join('\n');
+}
+
 /**
- * The confirmed window and the email out of AI Assist's reply. A reply without the marker lines is taken as the
- * email alone, with no window — which the gap check then asks AI Assist to confirm.
+ * The confirmed window and the email out of AI Assist's reply. Each is read under its marker line when the reply has
+ * them. Without them — Google's AI Mode ignores marker lines (GH #499) — the email runs from its Subject line, and the
+ * window is the "Start:" / "End:" lines written before it. An intro and a closing offer are never part of the email. A
+ * reply with no window is taken as the email alone — which the gap check then asks AI Assist to confirm.
  */
 export function readRcpEmailReply(replyText: string): { windowText: string; emailText: string } {
-  const replyBody = stripCodeFences(replyText);
+  const replyBody = stripCodeFences(replyText).replace(BOLD_MARK_PATTERN, '');
   const windowIndex = replyBody.indexOf(RCP_WINDOW_MARKER);
   const emailIndex = replyBody.indexOf(RCP_EMAIL_MARKER);
   if (emailIndex === -1) {
-    return { windowText: '', emailText: replyBody.replace(RCP_WINDOW_MARKER, '').trim() };
+    const unmarkedBody = replyBody.replace(RCP_WINDOW_MARKER, '');
+    const emailText = readUnmarkedEmail(unmarkedBody);
+    return { windowText: readUnmarkedWindow(unmarkedBody, unmarkedBody.length - emailText.length), emailText: dropClosingOffer(emailText) };
   }
   return {
-    windowText: windowIndex === -1 || windowIndex > emailIndex ? '' : replyBody.slice(windowIndex + RCP_WINDOW_MARKER.length, emailIndex).trim(),
-    emailText: replyBody.slice(emailIndex + RCP_EMAIL_MARKER.length).trim(),
+    windowText: windowIndex === -1 || windowIndex > emailIndex
+      ? readUnmarkedWindow(replyBody, emailIndex)
+      : replyBody.slice(windowIndex + RCP_WINDOW_MARKER.length, emailIndex).trim(),
+    emailText: dropClosingOffer(replyBody.slice(emailIndex + RCP_EMAIL_MARKER.length)),
   };
 }
 
-/** The pasted email, out of its code block, with its word count. */
+/** The pasted email, out of its code block and without an intro or closing offer, with its word count. */
 export function readApprovalEmailReply(replyText: string): { emailText: string; wordCount: number } {
-  const emailText = stripCodeFences(replyText).trim();
+  const replyBody = stripCodeFences(replyText).replace(BOLD_MARK_PATTERN, '');
+  const emailText = dropClosingOffer(readUnmarkedEmail(replyBody));
   return { emailText, wordCount: emailText === '' ? 0 : emailText.split(/\s+/).length };
 }
 

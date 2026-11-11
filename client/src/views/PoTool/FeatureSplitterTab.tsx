@@ -11,8 +11,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getIssueTypeFields } from '../../services/jiraApi.ts';
 import type { CreateMetaFieldEntry } from '../../types/jira.ts';
 import { useToast } from '../../components/Toast/ToastContext.ts';
-import PoAiPanel from './ai/PoAiPanel';
-import { buildSplitPrompt, parseSplitIngest } from './ai/splitAiAssist';
+import PoAiPanel, { type PoAiIngestOutcome } from './ai/PoAiPanel';
+import { buildSplitFollowUp, buildSplitPrompt, parseSplitIngest } from './ai/splitAiAssist';
 import { GOOD_INCREMENT_TESTS, SPLIT_HEURISTICS } from './coaching/splitHeuristics';
 import {
   createEmptyIncrement,
@@ -183,12 +183,14 @@ export default function FeatureSplitterTab({ dashboardTeamProfileId }: FeatureSp
   }
 
   /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-021, INV-J1). */
-  function handleIngestSplitProposal(responseText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngestSplitProposal(responseText: string): PoAiIngestOutcome {
     const { items, errors } = parseSplitIngest(responseText, draft.increments);
     if (items.length > 0) {
       updateDraft({ ...draft, increments: [...draft.increments, ...items] });
     }
-    return { acceptedCount: items.length, errors };
+    // The follow-up asks only for the form, or for rows that came back unnamed; its reply is read on its own and adds
+    // to the increments already landed.
+    return { acceptedCount: items.length, errors, followUpPrompt: buildSplitFollowUp(responseText) };
   }
 
   const commitDiff = useMemo(

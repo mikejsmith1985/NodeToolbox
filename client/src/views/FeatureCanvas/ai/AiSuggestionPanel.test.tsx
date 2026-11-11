@@ -51,7 +51,7 @@ describe('AiSuggestionPanel', () => {
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     expect(screen.getByText(/AI suggestions/)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), { target: { value: 'not json at all' } });
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), { target: { value: 'not json at all' } });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
 
     expect(screen.getByText(/No JSON object/)).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe('AiSuggestionPanel', () => {
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"parkCandidates","items":[{"issueKey":"DENP-1","action":"park","reason":"lowest priority"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
@@ -79,7 +79,7 @@ describe('AiSuggestionPanel', () => {
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"parkCandidates","items":[{"issueKey":"DENP-1","action":"complete","reason":"100% done"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
@@ -94,7 +94,7 @@ describe('AiSuggestionPanel', () => {
     act(() => setAiAssistUnlocked(true));
     render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'priorityOrder' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"priorityOrder","items":[{"issueKey":"DENP-1","bucket":"Must","rationale":"blocks downstream work"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
@@ -108,7 +108,7 @@ describe('AiSuggestionPanel', () => {
     const controller = buildController();
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sizeEstimate' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"sizeEstimate","items":[{"issueKey":"DENP-1","size":"L","rationale":"broad"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
@@ -117,13 +117,44 @@ describe('AiSuggestionPanel', () => {
     expect(controller.setSize).toHaveBeenCalledWith('DENP-1', 'L');
   });
 
+  it('reads an AI Mode table reply (intro + closing offer) into the same Accept-able suggestion (GH #499)', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sizeEstimate' } });
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
+      target: { value: 'Here are the sizes.\n| Issue key | Feature | Size | Why |\n|---|---|---|---|\n| DENP-1 | Login | L | broad |\nIf you share more, I can refine this.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    expect(controller.setSize).toHaveBeenCalledWith('DENP-1', 'L');
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a follow-up for the same AI chat when the reply could not be read or left a feature out', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sizeEstimate' } });
+    const pasteBox = screen.getByPlaceholderText(/Paste the AI reply/);
+    const ingestButton = screen.getByRole('button', { name: /Ingest suggestions/ });
+
+    fireEvent.change(pasteBox, { target: { value: 'DENP-1 feels like a large feature.' } });
+    fireEvent.click(ingestButton);
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*DENP-1 \| Login/);
+
+    fireEvent.change(pasteBox, { target: { value: 'Issue key | Size\nDENP-1 | ___' } });
+    fireEvent.click(ingestButton);
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toContain('no usable answer for DENP-1');
+  });
+
   it('creates and assigns a sprint box (moving the card in) when a Sprint-grouping suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sprintGrouping' } });
     // A title that does NOT match the seeded sprint, so this exercises creating a NEW box.
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 30","issueKeys":["DENP-1"]}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
@@ -177,7 +208,7 @@ describe('AiSuggestionPanel', () => {
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+    fireEvent.change(screen.getByPlaceholderText(/Paste the AI reply/), {
       target: { value: '{"kind":"masterPlan","items":[{"issueKey":"DENP-1","size":"L","bucket":"Must","triage":"keep","sprint":"Sprint 25","reason":"core"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest & apply plan/ }));

@@ -283,3 +283,47 @@ describe('CondenseMaterialPanel guidance and folding', () => {
     expect(screen.getByText(/1 document\(s\) still to condense/)).toBeInTheDocument();
   });
 });
+
+// ── Google AI Mode replies (GH #499) ──
+
+describe('CondenseMaterialPanel follow-ups for AI Mode', () => {
+  beforeEach(() => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+  });
+
+  /** Builds the open panel's prompt, pastes a reply and reads it. */
+  async function readReply(user: ReturnType<typeof userEvent.setup>, replyText: string): Promise<void> {
+    await user.click(screen.getByRole('button', { name: /build the prompt/i }));
+    await user.click(screen.getByLabelText(/paste the assistant/i));
+    await user.paste(replyText);
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+  }
+
+  it('condenses an AI Mode document and asks the same chat only for the headings it left out', async () => {
+    const user = userEvent.setup();
+    const { onExtractDocument } = renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Condense this one' }));
+
+    await readReply(user, 'Here is the extract.\n\n## Summary\nA billing grid.\n\n## Decisions\n- Consolidated statements');
+
+    expect(onExtractDocument).toHaveBeenCalledWith(expect.objectContaining({ decisions: ['Consolidated statements'] }));
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toContain('FACTS: [text]');
+  });
+
+  it('builds no brief from a reply missing a heading, and offers the follow-up instead', async () => {
+    const user = userEvent.setup();
+    const { onBuildBrief } = renderPanel({
+      sources: [pasteSource('paste-1', 'Billing Grid', 'a'), pasteSource('paste-2', 'Cutover Email', 'b')],
+      extracts: {
+        'paste-1': extract('paste-1', 'Billing Grid'),
+        'paste-2': extract('paste-2', 'Cutover Email'),
+      },
+    });
+
+    await readReply(user, '## Overview\nA brief.\n\n## Decisions\n- Ship it [Billing Grid]');
+
+    expect(onBuildBrief).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Problems with the reply')).toHaveTextContent('left out CONFLICTS');
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toContain('CONFLICTS: [text]');
+  });
+});

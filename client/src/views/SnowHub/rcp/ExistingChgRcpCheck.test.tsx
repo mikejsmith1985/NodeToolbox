@@ -118,4 +118,20 @@ describe('ExistingChgRcpCheck fixes', () => {
     await waitFor(() => expect(saveRcpChangeFix).toHaveBeenCalledWith('chg-1', { justification: 'Must ship during RCP.' }));
     expect(onFixSaved).toHaveBeenCalledWith({ justification: 'Must ship during RCP.' });
   });
+
+  it('offers a follow-up rather than saving prose it cannot place, then saves the labelled answer (GH #499)', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    renderFixable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Fix the justification with AI Assist/ }));
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'This change is important for the business.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save this justification/ }));
+
+    expect(saveRcpChangeFix).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toContain('JUSTIFICATION: [text]');
+
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'Rewritten Justification\nMust ship during RCP.\n\nIf you want, I can shorten it.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save this justification/ }));
+    await waitFor(() => expect(saveRcpChangeFix).toHaveBeenCalledWith('chg-1', { justification: 'Must ship during RCP.' }));
+  });
 });

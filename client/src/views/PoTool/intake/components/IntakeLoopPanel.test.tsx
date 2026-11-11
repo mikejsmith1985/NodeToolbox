@@ -136,6 +136,41 @@ describe('the copy-and-paste loop', () => {
 
     expect(screen.getByRole('region', { name: 'Prompt 2' })).toBeInTheDocument();
     expect(screen.getByText(/asked again in the next prompt/)).toBeInTheDocument();
-    expect((screen.getByLabelText('Prompt to copy') as HTMLTextAreaElement).value).toContain('item-1 — answer: kind');
+    expect((screen.getByLabelText('Prompt to copy') as HTMLTextAreaElement).value).toContain('item-1 — answer: Kind');
+  });
+});
+
+describe('the loop with Google AI Mode answers (GH #499)', () => {
+  async function startPaperlessIntake(): Promise<void> {
+    render(<EpicIntakeWorkspace dashboardTeamProfileId="team-a" jiraDeps={createJiraDeps([])} nowIso={() => NOW_ISO} />);
+    await user.click(screen.getByLabelText('Pasted notes'));
+    await user.paste('•\tPaperless Options');
+    await user.click(screen.getByRole('button', { name: 'Add pasted notes' }));
+    await user.click(screen.getByRole('button', { name: 'Start intake' }));
+  }
+
+  it('reads a filled-in markdown table with an intro and a closing offer, and offers no follow-up', async () => {
+    await startPaperlessIntake();
+
+    await copyPromptAndPaste(() => [
+      'Here is how I would sort these notes.',
+      '| Item | Current title | Kind | Owner | Enrollment share | Search terms | Label | Clearer title | Lines | Set aside | Reason |',
+      '|---|---|---|---|---|---|---|---|---|---|---|',
+      '| item-1 | Paperless Options | work | enrollment | 80 | paperless options | Roadmap | ___ | ___ | ___ | from the notes |',
+      'Let me know if you want the owners explained.',
+    ].join('\n'));
+
+    expect(screen.queryByText(/asked again in the next prompt/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a follow-up asking the same chat for the table when the answer could not be read', async () => {
+    await startPaperlessIntake();
+
+    await copyPromptAndPaste(() => 'Paperless Options looks like Enrollment work. If you provide sizes I can say more.');
+
+    const followUp = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUp.value).toContain('INTAKE_SORTING_TABLE:');
+    expect(followUp.value).toMatch(/^item-1 \| Paperless Options \| ___/m);
   });
 });

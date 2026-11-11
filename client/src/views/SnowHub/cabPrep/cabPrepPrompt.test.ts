@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildCabFactSheet, type CabChangeFacts } from './cabFactSheet.ts';
-import { buildCabPrepPrompt, parseCabPrepReply, readUnansweredQuestionIds } from './cabPrepPrompt.ts';
+import {
+  buildCabPrepFollowUp,
+  buildCabPrepPrompt,
+  mergeCabPreparedAnswers,
+  parseCabPrepReply,
+  readUnansweredQuestionIds,
+} from './cabPrepPrompt.ts';
 import { CAB_QUESTIONS } from './cabQuestionBank.ts';
 
 const CHANGE: CabChangeFacts = {
@@ -165,5 +171,68 @@ describe('readUnansweredQuestionIds', () => {
 
   it('reports every question as unanswered for an empty reply', () => {
     expect(readUnansweredQuestionIds([])).toHaveLength(CAB_QUESTIONS.length);
+  });
+});
+
+describe('CAB prep with Google AI Mode (GH #499)', () => {
+  const firstQuestion = CAB_QUESTIONS[0];
+  const secondQuestion = CAB_QUESTIONS[1];
+
+  it('ends with a fill-in table listing every question by id, so none can be added or dropped', () => {
+    const prompt = buildCabPrepPrompt(FACT_SHEET);
+
+    expect(prompt).toContain('CAB_PREP_TABLE:\nQuestion ID | Question | Answer | Unanswerable | What would answer it');
+    expect(prompt.trim().endsWith(`${CAB_QUESTIONS[CAB_QUESTIONS.length - 1].id} | ${CAB_QUESTIONS[CAB_QUESTIONS.length - 1].question} | ___ | ___ | ___`)).toBe(true);
+    expect(prompt).not.toContain('Reply with JSON only');
+  });
+
+  it('reads a markdown table reply with an intro and a closing offer, keeping every rule on an answer', () => {
+    const replyText = [
+      'Here is how the presenter could answer each question.',
+      '',
+      '| Question ID | Question | Answer | Unanswerable | What would answer it |',
+      '|---|---|---|---|---|',
+      `| ${firstQuestion.id} | ${firstQuestion.question} | The feed breaches its SLA. | No | ___ |`,
+      `| ${secondQuestion.id} | ${secondQuestion.question} | ___ | Yes | A dated deadline in the justification. |`,
+      '| made-up | A question nobody asked | Yes. | No | ___ |',
+      '',
+      'If you share the test results, I can strengthen these answers.',
+    ].join('\n');
+
+    const ingest = parseCabPrepReply(replyText);
+
+    expect(ingest.answers.map((answer) => [answer.questionId, answer.isUnanswerable])).toEqual([[firstQuestion.id, false], [secondQuestion.id, true]]);
+    expect(ingest.answers[1].whatWouldAnswerIt).toBe('A dated deadline in the justification.');
+    expect(ingest.rejectedItems).toEqual([{ id: 'made-up', reason: 'is not a question from the bank' }]);
+  });
+
+  it('reads a tab-separated table pasted from the web page', () => {
+    const replyText = ['Question ID\tAnswer\tUnanswerable', `${firstQuestion.id}\tThe feed breaches its SLA.\tno`].join('\n');
+
+    expect(parseCabPrepReply(replyText).answers[0].answer).toBe('The feed breaches its SLA.');
+  });
+
+  it('offers a follow-up for only the questions left out, and none once all are answered', () => {
+    const someAnswers = parseCabPrepReply(`Question ID | Answer | Unanswerable\n${firstQuestion.id} | Yes, it does. | no`).answers;
+    const followUp = buildCabPrepFollowUp(someAnswers, false);
+
+    expect(followUp).toMatch(new RegExp(`left ${CAB_QUESTIONS.length - 1} questions out`));
+    expect(followUp).toContain(`${secondQuestion.id} | ${secondQuestion.question} | ___`);
+    expect(followUp).not.toContain(`${firstQuestion.id} | ${firstQuestion.question} | ___`);
+
+    const allAnswers = CAB_QUESTIONS.map((question) => ({ ...someAnswers[0], questionId: question.id }));
+    expect(buildCabPrepFollowUp(allAnswers, false)).toBe('');
+  });
+
+  it('asks for the whole table again when the reply could not be read', () => {
+    expect(() => parseCabPrepReply('The change looks well prepared overall.')).toThrow('No JSON object found');
+    expect(buildCabPrepFollowUp([], true)).toMatch(/could not be read/);
+  });
+
+  it('adds a follow-up\'s answers to the first reply\'s, a later answer replacing an earlier one', () => {
+    const earlier = parseCabPrepReply(`Question ID | Answer | Unanswerable\n${firstQuestion.id} | First. | no\n${secondQuestion.id} | Old. | no`).answers;
+    const later = parseCabPrepReply(`Question ID | Answer | Unanswerable\n${secondQuestion.id} | New. | no`).answers;
+
+    expect(mergeCabPreparedAnswers(earlier, later).map((answer) => answer.answer)).toEqual(['First.', 'New.']);
   });
 });

@@ -4,6 +4,10 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
+import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import {
+  buildMonthlyReportFollowUpPrompt, buildMonthlyReportReplyForm, readMonthlyReportColumnHeader, readMonthlyReportReplyEntries,
+} from './monthlyReportAiReply.ts';
 import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
 import {
   createConfluenceDatabase,
@@ -2624,32 +2628,19 @@ function buildMonthlyReportAiPrompt(card: MonthlyReportCard, jiraStats: ReturnTy
     .filter((row) => (MONTHLY_REPORT_AI_FIELDS as readonly string[]).includes(row.fieldName))
     .map((row) => {
       const current = readMonthlyTemplateFieldValue(card, row.fieldName).trim();
-      return `- "${row.fieldName}": ${row.label}${current ? ` (current draft to refine: ${current})` : ''}`;
+      return `- ${readMonthlyReportColumnHeader(row.fieldName)}: ${row.label}${current ? ` (current draft to refine: ${current})` : ''}`;
     });
   return [
     `Help write the monthly delivery report for the team "${card.teamName}".`,
     contextLine,
     'Classify the work into business pillars — "Growth", "Affordability", or "Operating Model" — based on its intent. If the work spans more than one pillar, return SEPARATE entries, one per pillar, splitting the accomplishments accordingly.',
-    'For each pillar entry, draft concise, business-focused answers. Use "• " bullet lines where a list fits. Do NOT invent specific metrics that are not provided.',
-    'Respond ONLY with a JSON ARRAY of entries. Each entry has a "pillar" plus the fields below, e.g. '
-    + '[{"pillar":"Growth","initiativeName":"...","accomplished":"• ...","outcomes":"...","productAreas":"...","stakeholders":"..."}]. Fields:',
+    'For each pillar entry, draft concise, business-focused answers. Use "• " bullet points where a list fits. Do NOT invent specific metrics that are not provided.',
+    'What each column asks:',
     ...questions,
+    '',
+    // Google's AI Mode ignores a JSON reply format but completes a table (GH #499).
+    buildMonthlyReportReplyForm(),
   ].join('\n');
-}
-
-/** Extracts the first JSON array or object substring from a possibly-fenced assistant reply. */
-function extractJsonPayload(text: string): string {
-  const firstBracket = text.indexOf('[');
-  const lastBracket = text.lastIndexOf(']');
-  if (firstBracket !== -1 && lastBracket > firstBracket) {
-    return text.slice(firstBracket, lastBracket + 1);
-  }
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error('No JSON found in the response.');
-  }
-  return text.slice(firstBrace, lastBrace + 1);
 }
 
 /** Reads one pillar entry's narrative fields + validated pillar from a raw object. */
@@ -2666,13 +2657,9 @@ function readMonthlyAiEntry(raw: Record<string, unknown>): MonthlyReportAiEntry 
   return entry;
 }
 
-/** Parses an assistant reply into one-or-more per-pillar entries (accepts an array or a single object). */
+/** Parses an assistant reply — the filled-in pillar table, or a JSON array / object — into per-pillar entries. */
 function parseMonthlyReportAiDraft(responseText: string): MonthlyReportAiEntry[] {
-  const parsed = JSON.parse(extractJsonPayload(responseText)) as unknown;
-  const rawEntries = Array.isArray(parsed) ? parsed : [parsed];
-  return rawEntries
-    .filter((rawEntry): rawEntry is Record<string, unknown> => Boolean(rawEntry) && typeof rawEntry === 'object')
-    .map((rawEntry) => readMonthlyAiEntry(rawEntry));
+  return readMonthlyReportReplyEntries(responseText).map((rawEntry) => readMonthlyAiEntry(rawEntry));
 }
 
 /** The team's Point of Contact, derived from the most common assignee across its loaded issues. */
@@ -2751,6 +2738,8 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
   const [isAiDraftOpen, setIsAiDraftOpen] = useState(false);
   const [aiDraftResponse, setAiDraftResponse] = useState('');
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+  // The follow-up for the same AI chat when a reply could not be read ('' = none).
+  const [aiDraftFollowUp, setAiDraftFollowUp] = useState('');
   // Same gate as every other AI accelerator: only shown when AI Assist is unlocked (Ctrl+Alt+Z).
   const isAiAssistUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const aiPrompt = buildMonthlyReportAiPrompt(card, jiraStats);
@@ -2760,6 +2749,7 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
       const entries = parseMonthlyReportAiDraft(aiDraftResponse);
       if (entries.length === 0) {
         setAiDraftError('No recognized entries found in the response.');
+        setAiDraftFollowUp(buildMonthlyReportFollowUpPrompt());
         return;
       }
       // Pull the factual fields from Jira, applied to every pillar card for this team.
@@ -2780,10 +2770,12 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
       }));
       onReplaceTeamCards(card.teamId, replacementCards);
       setAiDraftError(null);
+      setAiDraftFollowUp('');
       setAiDraftResponse('');
       setIsAiDraftOpen(false);
     } catch (draftError) {
       setAiDraftError(draftError instanceof Error ? draftError.message : 'Could not read the response.');
+      setAiDraftFollowUp(buildMonthlyReportFollowUpPrompt());
     }
   }
 
@@ -2855,7 +2847,7 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
         </button>
         {isAiDraftOpen && (
           <div className={styles.monthlyAiDraftPanel}>
-            <label className={styles.monthlyFieldLabel}>1. Copy this prompt into Copilot</label>
+            <label className={styles.monthlyFieldLabel}>1. Copy this prompt into the AI assistant</label>
             <textarea className={styles.monthlyTextarea} readOnly value={aiPrompt} rows={5} aria-label="AI prompt" />
             <button
               className={styles.secondaryBtn}
@@ -2864,19 +2856,20 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
             >
               📋 Copy prompt
             </button>
-            <label className={styles.monthlyFieldLabel}>2. Paste Copilot&apos;s JSON reply</label>
+            <label className={styles.monthlyFieldLabel}>2. Paste the assistant&apos;s reply</label>
             <textarea
               className={styles.monthlyTextarea}
               value={aiDraftResponse}
               onChange={(event) => setAiDraftResponse(event.target.value)}
               rows={5}
-              placeholder='{"accomplished": "• …", "outcomes": "…"}'
+              placeholder="Paste the filled-in pillar table here"
               aria-label="AI response"
             />
             <button className={styles.monthlyJiraGenerateBtn} type="button" onClick={handleApplyAiDraft}>
               Apply AI draft
             </button>
             {aiDraftError !== null && <p className={styles.monthlyAiDraftError}>⚠️ {aiDraftError}</p>}
+            <AiFollowUpPrompt fieldId={`monthly-report-ai-follow-up-${card.cardId}`} followUpPrompt={aiDraftFollowUp} />
           </div>
         )}
       </div>

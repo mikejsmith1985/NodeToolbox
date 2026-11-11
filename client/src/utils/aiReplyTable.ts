@@ -1,4 +1,4 @@
-// replyTable.ts — Reads table-shaped assistant replies, and builds the fill-in table a prompt ends with.
+// aiReplyTable.ts — Reads table-shaped assistant replies, and builds the fill-in table a prompt ends with.
 //
 // The team moved from Copilot to Google's AI Mode, a search answer engine that answers in its own shape: a table copied
 // from a web page (tabs), a header row in an order of its choosing, lengths in hours (GH #499). Asking it to complete a
@@ -33,6 +33,21 @@ export function splitReplyCells(replyLine: string): string[] {
   const separator = plainLine.includes('|') ? '|' : plainLine.includes('\t') ? '\t' : ',';
   const cells = plainLine.split(separator).map((cellText) => cellText.trim()).filter((cellText) => cellText !== '');
   return cells.length > 0 && cells.every((cellText) => DIVIDER_CELL_PATTERN.test(cellText)) ? [] : cells;
+}
+
+/**
+ * A reply line as cells, keeping a blank cell in its place so the columns after it stay aligned: "KEY |  | note" is three
+ * cells. Only the empty edges an outer "|" leaves are dropped. A markdown divider row has no cells.
+ */
+export function splitReplyCellsKeepingBlanks(replyLine: string): string[] {
+  const plainLine = replyLine.replace(MARKDOWN_MARK_PATTERN, '').trim();
+  const separator = plainLine.includes('|') ? '|' : plainLine.includes('	') ? '	' : null;
+  if (separator === null) return [];
+  const cells = plainLine.split(separator).map((cellText) => cellText.trim());
+  if (separator === '|' && cells[0] === '') cells.shift();
+  if (separator === '|' && cells[cells.length - 1] === '') cells.pop();
+  const filledCells = cells.filter((cellText) => cellText !== '');
+  return filledCells.length > 0 && filledCells.every((cellText) => DIVIDER_CELL_PATTERN.test(cellText)) ? [] : cells;
 }
 
 /** A cell's length in whole minutes, or null when it is not one length above zero (a title, a date, a range, a blank). */

@@ -5,6 +5,8 @@
 // Toolbox has already grouped the notes by their bullets; this request asks for corrections and blanks, never for
 // new items. Every answer is validated here; `intakeClassifyApply.ts` then applies what survived.
 
+import { buildRecordReplyInstructions, type ReplyRecordSpec } from '../../../../utils/aiReplyRecords.ts';
+import { FILL_IN_BLANK } from '../../../../utils/aiReplyTable.ts';
 import { buildIssueTextMatchTerms } from '../../../../utils/jqlTextTerms.ts';
 import { MAX_CHARS_PER_PROMPT } from '../../rewrite/ai/bulkRewriteAiAssist.ts';
 import {
@@ -17,6 +19,7 @@ import {
   type IngestRejection,
   type IntakeItem,
   type IntakeLabel,
+  readItemDisplayTitle,
   type ItemKind,
   type ItemOwner,
   type SetAsideReason,
@@ -24,8 +27,11 @@ import {
 import { listOpenDecisions, type OpenDecision } from '../intakeChecklist.ts';
 import { splitLinesIntoPromptParts } from '../notesOutline.ts';
 import {
+  buildTableFollowUpPrompt,
+  listUnansweredItemIds,
   readBoundedString,
   readReplyEnvelope,
+  sanitizeTableCell,
   readVocabularyValue,
   resolveItemId,
   type IntakeRoundRequest,
@@ -33,6 +39,33 @@ import {
 } from './intakeReplyEnvelope.ts';
 
 export const CLASSIFY_REPLY_KIND = 'epicIntakeClassify';
+
+/**
+ * The sorting answer as a fill-in table, one pre-filled row per asked item (GH #499). Google's AI Mode ignores a JSON
+ * reply format but completes a table; each column fills the JSON field the checks below already read.
+ */
+export const CLASSIFY_TABLE_SPEC: ReplyRecordSpec = {
+  kind: CLASSIFY_REPLY_KIND,
+  replyMarker: 'INTAKE_SORTING_TABLE:',
+  columns: [
+    { field: 'id', header: 'Item' },
+    { field: 'currentTitle', header: 'Current title', isNamingOnly: true },
+    { field: 'kind', header: 'Kind', answerHint: 'work, risk, personAction, deferred or noise' },
+    { field: 'owner', header: 'Owner', answerHint: 'enrollment, shared, fulfillment or notActionable' },
+    { field: 'enrollmentShare', header: 'Enrollment share', valueKind: 'number', answerHint: 'a whole number 0-100' },
+    { field: 'searchTerms', header: 'Search terms', valueKind: 'list', answerHint: 'short phrases separated by ";"' },
+    { field: 'label', header: 'Label', answerHint: 'Roadmap or Stability' },
+    { field: 'title', header: 'Clearer title' },
+    { field: 'lines', header: 'Lines', valueKind: 'list', answerHint: 'line numbers separated by ";", only to regroup' },
+    { field: 'setAside', header: 'Set aside', valueKind: 'list', answerHint: '"line: reason" entries separated by ";"' },
+    { field: 'reason', header: 'Reason' },
+  ],
+};
+
+// A set-aside entry written in a table cell: "7: notWork", "7 - contextOnly", "[7] notWork".
+const SET_ASIDE_CELL_PATTERN = /^\[?(\d+)\]?\s*[:\-–—]?\s*([A-Za-z]+)$/;
+// A line number written in a table cell, with or without the brackets the request shows it in: "7", "[7]".
+const LINE_NUMBER_CELL_PATTERN = /^\[?(\d+)\]?$/;
 
 /** Room kept in every part for the fixed instructions, so the notes themselves get the rest of the paste limit. */
 const CLASSIFY_INSTRUCTION_ALLOWANCE_CHARS = 3000;
@@ -88,10 +121,10 @@ function readAskedDecisions(intake: EpicIntake): OpenDecision[] {
 function describeAskedFields(item: IntakeItem, askedDecisions: readonly OpenDecision[]): string {
   const askedSlots = new Set(askedDecisions.filter((openDecision) => openDecision.itemId === item.id).map((openDecision) => openDecision.slot));
   const fields: string[] = [];
-  if (askedSlots.has('kind')) fields.push('kind');
-  if (item.decisions.owner.state === 'open' && !item.decisions.owner.isAwaitingPo) fields.push('owner', 'enrollmentShare');
-  if (askedSlots.has('searchTerms')) fields.push('searchTerms');
-  if (item.decisions.label.state === 'open') fields.push('label');
+  if (askedSlots.has('kind')) fields.push('Kind');
+  if (item.decisions.owner.state === 'open' && !item.decisions.owner.isAwaitingPo) fields.push('Owner', 'Enrollment share');
+  if (askedSlots.has('searchTerms')) fields.push('Search terms');
+  if (item.decisions.label.state === 'open') fields.push('Label');
   return fields.join(', ');
 }
 
@@ -107,28 +140,35 @@ function buildClassifyText(items: readonly IntakeItem[], intake: EpicIntake, ask
   return [
     'You are helping a Product Owner sort meeting notes into work items for Jira Epics.',
     'Toolbox has already grouped the numbered lines below by their bullets. Correct the grouping only where it is wrong,',
-    'and answer only the fields listed for each item.',
+    'and answer only the columns listed for each item.',
     partLabel,
     '',
     ...items.map((item) => describeItemForClassify(item, intake, askedDecisions)),
     '',
-    'Fields:',
-    '- kind: work | risk | personAction (a to-do for a person) | deferred (explicitly not now) | noise',
-    '- owner: enrollment | shared (both Enrollment and Fulfillment have real work of their own) | fulfillment | notActionable.',
+    'Columns:',
+    '- Kind: work | risk | personAction (a to-do for a person) | deferred (explicitly not now) | noise',
+    '- Owner: enrollment | shared (both Enrollment and Fulfillment have real work of their own) | fulfillment | notActionable.',
     '  Decide it yourself — the Product Owner reviews your choices afterwards rather than answering questions.',
-    '- enrollmentShare: whole number 0-100 — how much of the scope is Enrollment\'s; the rest is Fulfillment\'s',
-    `- searchTerms: 1-${MAX_SEARCH_TERMS_PER_ITEM} short phrases (2-4 words) likely to appear in an existing Epic's summary for the same scope`,
-    '- label: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
-    '- title: optional clearer title, under 120 characters',
-    '- lines: optional — only when the grouping is wrong, every line number that belongs to the item.',
+    '- Enrollment share: whole number 0-100 — how much of the scope is Enrollment\'s; the rest is Fulfillment\'s',
+    `- Search terms: 1-${MAX_SEARCH_TERMS_PER_ITEM} short phrases (2-4 words), separated by ";", likely to appear in an existing Epic's summary for the same scope`,
+    '- Label: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
+    '- Clearer title: optional, under 120 characters',
+    '- Lines: optional — only when the grouping is wrong, every line number that belongs to the item, separated by ";".',
     '  Sizing lines ("XL Enrollment") and sub-scope lines stay with their parent item.',
-    '- setAside (top level, optional): [{"line": 7, "reason": "headingOrProse | duplicateOfAnotherLine | notWork | contextOnly"}]',
+    '- Set aside: optional — lines of that item that are not work, each as "line: reason", reason one of',
+    '  headingOrProse | duplicateOfAnotherLine | notWork | contextOnly (e.g. "7: notWork; 9: contextOnly")',
+    '- Reason: one short sentence on why',
     '',
     'Rules: use only the item ids above; never invent an item; only move lines between the items above.',
+    `Leave ${FILL_IN_BLANK} in Kind, Owner, Enrollment share, Search terms or Label when the item's "answer:" list does not name it.`,
     '',
-    'Respond ONLY with valid JSON:',
-    `{"kind":"${CLASSIFY_REPLY_KIND}","items":[{"id":"item-1","kind":"work","owner":"enrollment","enrollmentShare":70,"searchTerms":["core integration"],"label":"Roadmap","reason":"..."}],"setAside":[]}`,
+    buildRecordReplyInstructions(CLASSIFY_TABLE_SPEC, buildClassifyRows(items)),
   ].join('\n');
+}
+
+/** One pre-filled row per asked item: its id and current title, so the answer cannot add, drop or rename an item. */
+export function buildClassifyRows(items: readonly IntakeItem[]): string[][] {
+  return items.map((item) => [item.id, sanitizeTableCell(readItemDisplayTitle(item))]);
 }
 
 /**
@@ -153,14 +193,35 @@ export function buildClassifyRequests(intake: EpicIntake): ClassifyRequest[] {
 
 // ── Reading the answer ──
 
+/** A line number from JSON (a number) or from a table cell ("7", "[7]"); anything else is passed on to be refused. */
+function readLineNumberValue(rawLineNumber: unknown): unknown {
+  if (typeof rawLineNumber !== 'string') return rawLineNumber;
+  const lineMatch = LINE_NUMBER_CELL_PATTERN.exec(rawLineNumber.trim());
+  return lineMatch ? Number(lineMatch[1]) : rawLineNumber;
+}
+
+/** A set-aside entry from a table cell ("7: notWork") as the {line, reason} object the JSON form uses. */
+function readSetAsideCell(cellEntry: unknown): unknown {
+  if (typeof cellEntry !== 'string') return cellEntry;
+  const entryMatch = SET_ASIDE_CELL_PATTERN.exec(cellEntry.trim());
+  return entryMatch ? { line: Number(entryMatch[1]), reason: entryMatch[2] } : { line: cellEntry, reason: null };
+}
+
+/** The set-aside entries: the JSON form's top-level list, else every table row's "Set aside" cell. */
+function collectSetAsideEntries(payload: Record<string, unknown>, rawItems: readonly RawReplyItem[]): unknown[] {
+  if (Array.isArray(payload.setAside)) return payload.setAside;
+  return rawItems.flatMap((rawItem) => (Array.isArray(rawItem.setAside) ? rawItem.setAside.map(readSetAsideCell) : []));
+}
+
 function readLineNumbers(rawLines: unknown, linePool: ReadonlySet<number>): { lineNumbers: number[] | null; error: string | null } {
   if (rawLines === undefined || rawLines === null) {
     return { lineNumbers: null, error: null };
   }
-  const isValid = Array.isArray(rawLines) && rawLines.length > 0
-    && rawLines.every((lineNumber) => Number.isInteger(lineNumber) && linePool.has(lineNumber as number));
+  const lineNumbers = Array.isArray(rawLines) ? rawLines.map(readLineNumberValue) : [];
+  const isValid = lineNumbers.length > 0
+    && lineNumbers.every((lineNumber) => Number.isInteger(lineNumber) && linePool.has(lineNumber as number));
   return isValid
-    ? { lineNumbers: [...new Set(rawLines as number[])].sort((left, right) => left - right), error: null }
+    ? { lineNumbers: [...new Set(lineNumbers as number[])].sort((left, right) => left - right), error: null }
     : { lineNumbers: null, error: 'The lines must be numbers of lines in this part.' };
 }
 
@@ -220,7 +281,7 @@ function readSetAside(rawSetAside: unknown, linePool: ReadonlySet<number>): { se
  * know are rejected by name, so an invented item never gets in.
  */
 export function parseClassifyReply(replyText: string, intake: EpicIntake, askedItemIds: readonly string[]): ClassifyOutcome {
-  const envelope = readReplyEnvelope(replyText, CLASSIFY_REPLY_KIND);
+  const envelope = readReplyEnvelope(replyText, CLASSIFY_REPLY_KIND, CLASSIFY_TABLE_SPEC);
   if (envelope.wholeReplyError !== null) {
     return { accepted: [], rejected: [{ itemId: null, reason: envelope.wholeReplyError }], setAside: [] };
   }
@@ -235,6 +296,17 @@ export function parseClassifyReply(replyText: string, intake: EpicIntake, askedI
       accepted.push(readClassifyAnswer(rawItem, itemId, linePool));
     }
   }
-  const setAsideResult = readSetAside(envelope.payload.setAside, linePool);
+  const setAsideResult = readSetAside(collectSetAsideEntries(envelope.payload, envelope.items), linePool);
   return { accepted, rejected: [...rejected, ...setAsideResult.rejected], setAside: setAsideResult.setAside };
+}
+
+/**
+ * The follow-up to paste into the same chat after a sorting answer: the whole table again when the answer could not
+ * be read, only the rows of the items it left out, or '' when every asked item came back. Nothing is guessed.
+ */
+export function buildClassifyFollowUpPrompt(intake: EpicIntake, askedItemIds: readonly string[], outcome: ClassifyOutcome): string {
+  const askedItems = intake.items.filter((item) => askedItemIds.includes(item.id));
+  const wasReplyUnreadable = outcome.accepted.length === 0 && outcome.rejected.some((rejection) => rejection.itemId === null);
+  const answeredItemIds = outcome.accepted.map((answer) => answer.itemId);
+  return buildTableFollowUpPrompt(CLASSIFY_TABLE_SPEC, buildClassifyRows(askedItems), wasReplyUnreadable, listUnansweredItemIds(askedItemIds, answeredItemIds));
 }

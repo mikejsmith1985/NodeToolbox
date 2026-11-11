@@ -18,8 +18,9 @@ import { saveFeatureReviewSimpleField } from '../../SprintDashboard/featureRevie
 import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 import { normalizeFeatureDescription, stripAiAttribution } from '../ai/featureDocSections.ts';
 import { importPiReviewFeatureKeys } from './importPiReviewFeatures.ts';
-import PoAiPanel from '../ai/PoAiPanel';
-import { buildBulkRewritePrompts, parseBulkRewriteReply } from './ai/bulkRewriteAiAssist';
+import PoAiPanel, { type PoAiIngestOutcome } from '../ai/PoAiPanel';
+import { buildBulkRewriteFollowUpPrompt, buildBulkRewritePromptParts, parseBulkRewriteReply } from './ai/bulkRewriteAiAssist';
+import type { BatchReplyParseResult } from './rewriteBatchModel';
 import { usePoHygieneContext } from '../hooks/usePoHygieneContext';
 import BeforeAfterRow from './BeforeAfterRow.tsx';
 import CondenseMaterialPanel from './CondenseMaterialPanel.tsx';
@@ -78,6 +79,15 @@ const STATE_ORDER: ItemState[] = [
 /** Mints a short, collision-unlikely batch id (no security requirement — just uniqueness in localStorage). */
 function mintBatchId(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * The follow-up for the issues a read reply left out of its part — none at all, or a block with nothing in it — asking
+ * the same AI chat for only those (GH #499). Never filled in from anything else; '' when the part came back whole.
+ */
+function buildMissingIssuesFollowUp(partJiraKeys: readonly string[], result: BatchReplyParseResult): string {
+  const missingJiraKeys = partJiraKeys.filter((jiraKey) => !result.rewritesByKey[jiraKey]);
+  return buildBulkRewriteFollowUpPrompt(missingJiraKeys, false);
 }
 
 export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName = '', piReviewTeam }: BulkRewriteTabProps) {
@@ -216,8 +226,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
   // Where the run has got to, and the one thing to do next. Worked out in one place so the strip and
   // the panels below can never disagree about which step somebody is on.
   const journey = readRewriteJourney(batch);
-  const prompts = useMemo(
-    () => buildBulkRewritePrompts(
+  const promptParts = useMemo(
+    () => buildBulkRewritePromptParts(
       // The current proposal rides along so a re-run after adding notes EXTENDS the draft rather than
       // re-deriving it from the original text.
       capturableItems.map((item) => ({
@@ -404,8 +414,11 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
     setPasteLabelInput('');
   }
 
-  /** Ingests one (possibly partial) reply, merging proposals into the batch by key. No Jira write here. */
-  function handleIngest(replyText: string): { acceptedCount: number; errors: string[] } {
+  /**
+   * Ingests one (possibly partial) reply, merging proposals into the batch by key. No Jira write here. `partJiraKeys`
+   * are the issues the reply's prompt part asked about, so the ones it left out can be asked for again.
+   */
+  function handleIngest(replyText: string, partJiraKeys: readonly string[]): PoAiIngestOutcome {
     if (!batch) {
       return { acceptedCount: 0, errors: ['Start a batch first.'] };
     }
@@ -421,7 +434,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
       setIngestNotice(null);
       return {
         acceptedCount: 0,
-        errors: [`Could not read the reply: ${reason} Paste the assistant's full reply (it must be the JSON that starts with {"kind":"featureRewriteBatch"}).`],
+        errors: [`Could not read the reply: ${reason} Paste the assistant's full reply — or send the follow-up below to the same chat and paste its answer.`],
+        followUpPrompt: buildBulkRewriteFollowUpPrompt(partJiraKeys, true),
       };
     }
     const overwrittenEditedKeys = batch.items
@@ -460,7 +474,7 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
           + 'nothing to re-write. Copy the prompt again and check the whole thing arrived.']
         : []),
     ];
-    return { acceptedCount, errors };
+    return { acceptedCount, errors, followUpPrompt: hadNothingAtAll ? '' : buildMissingIssuesFollowUp(partJiraKeys, result) };
   }
 
   // ── Review (US2) ──────────────────────────────────────────────────────────
@@ -823,8 +837,8 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
             {notYetRewritten.length > 0 ? (
               <p className={styles.helpText}>{notYetRewritten.length} issue(s) not yet re-written.</p>
             ) : null}
-            {prompts.length > 1 ? (
-              <p className={styles.infoBanner}>The prompt is split into {prompts.length} parts (batch exceeds the size cap) — run each part and paste every reply back.</p>
+            {promptParts.length > 1 ? (
+              <p className={styles.infoBanner}>The prompt is split into {promptParts.length} parts (batch exceeds the size cap) — run each part and paste every reply back.</p>
             ) : null}
             {ingestNotice ? (
               <ul className={styles.noticeList} aria-label="Ingest results">
@@ -1072,15 +1086,15 @@ export default function BulkRewriteTab({ dashboardTeamProfileId, selectedPiName 
           {/* ── Gated AI round-trip: one stable panel per prompt part. Shown whenever the batch has
               capturable issues (and AI is unlocked) — NOT hidden once every issue has a proposal — so
               unlocking AI always reveals it and the PO can re-run / re-generate a re-write (GH #220). ── */}
-          {prompts.length > 0 ? prompts.map((promptText, partIndex) => (
+          {promptParts.length > 0 ? promptParts.map(({ promptText, jiraKeys: partJiraKeys }, partIndex) => (
             <PoAiPanel
               key={`prompt-part-${partIndex}`}
-              title={prompts.length > 1
-                ? `Step 3 — Draft the re-writes (part ${partIndex + 1} of ${prompts.length})`
+              title={promptParts.length > 1
+                ? `Step 3 — Draft the re-writes (part ${partIndex + 1} of ${promptParts.length})`
                 : 'Step 3 — Draft the re-writes'}
               helpText="Builds a prompt that asks for a re-write of every issue in this batch, in the nine-section format, from the notes in Step 1. Paste the reply back and it fills the After column below — every word stays editable, and nothing reaches Jira until you approve and submit. Run this again after adding more notes to refine the whole set." 
               buildPrompt={() => promptText}
-              onIngest={handleIngest}
+              onIngest={(replyText) => handleIngest(replyText, partJiraKeys)}
             />
           )) : null}
 

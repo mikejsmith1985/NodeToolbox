@@ -10,11 +10,13 @@
 
 import { useMemo, useState } from 'react';
 
-import PoAiPanel from '../ai/PoAiPanel.tsx';
+import PoAiPanel, { type PoAiIngestOutcome } from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import {
+  buildBatchReadinessFollowUpPrompt,
   buildBatchReadinessPrompts,
   buildBatchReadinessReport,
+  groupBatchEpicsIntoParts,
   buildBatchSummary,
   formatBatchReport,
   parseBatchReadinessIngest,
@@ -99,6 +101,15 @@ export default function BatchReadinessPanel() {
     [loadedBatch, epicsPerPrompt, activeCriteria],
   );
 
+  /** Each part's Epic keys, packed the same way as the prompts, so a part's follow-up asks only for its own rows. */
+  const partIssueKeys = useMemo(
+    () => (loadedBatch
+      ? groupBatchEpicsIntoParts(loadedBatch.epics, activeCriteria, epicsPerPrompt * activeCriteria.length)
+        .map((partEpics) => partEpics.map((epic) => epic.source.issueKey))
+      : []),
+    [loadedBatch, epicsPerPrompt, activeCriteria],
+  );
+
   /** The report, rebuilt whenever a reply lands. */
   const batchReport: BatchReadinessReport | null = useMemo(() => {
     if (!loadedBatch) {
@@ -170,7 +181,7 @@ export default function BatchReadinessPanel() {
   }
 
   /** Reads one part's reply, merging its verdicts into what earlier parts already produced. */
-  function handleIngest(responseText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngest(responseText: string, partIndex: number): PoAiIngestOutcome {
     if (!loadedBatch) {
       return { acceptedCount: 0, errors: ['Run a query first.'] };
     }
@@ -183,7 +194,14 @@ export default function BatchReadinessPanel() {
     setVerdictsByIssueKey((previousVerdicts) => ({ ...previousVerdicts, ...partVerdicts }));
     setCopiedFlavour(null);
 
-    return { acceptedCount: Object.values(partVerdicts).flat().length, errors };
+    // An unreadable or partial reply gets a follow-up for this part's rows only — nothing missing is ever guessed.
+    const followUpPrompt = buildBatchReadinessFollowUpPrompt(
+      responseText,
+      partIssueKeys[partIndex] ?? [],
+      activeCriteria.map((criterion) => criterion.id),
+      partVerdicts,
+    );
+    return { acceptedCount: Object.values(partVerdicts).flat().length, errors, followUpPrompt };
   }
 
   /** Copies the whole review in the markup of wherever it is being pasted. */
@@ -439,7 +457,7 @@ export default function BatchReadinessPanel() {
                 + 'needed. Nothing is written to Jira in this mode.'
               }
               key={`readiness-part-${partIndex}`}
-              onIngest={handleIngest}
+              onIngest={(responseText) => handleIngest(responseText, partIndex)}
               title={prompts.length === 1
                 ? 'Review these Epics against Definition of Ready and Done'
                 : `Review these Epics — part ${partIndex + 1} of ${prompts.length}`}

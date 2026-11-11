@@ -999,6 +999,31 @@ describe('CreateChgTab', () => {
 
     expect(mockActions.updateGeneratedField).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent(/No recognisable fields/);
+    // A follow-up for the same AI chat asks for the labelled form, rather than a dead end (GH #499).
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toMatch(/could not be read/);
+  });
+
+  it('applies a Google AI Mode reply written under headings, and asks the same chat for only the fields it left out (GH #499)', async () => {
+    const user = userEvent.setup();
+    await openEnhancePromptModal(user);
+
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'Here are the drafted fields.\n\nShort Description\nEnrollment | Deploy 26.10 | PROD\n\nJustification (Why it is needed)\nPlanned release.\n\nIf you provide the test results, I can refine the test plan.' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply reply to fields' }));
+
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Enrollment | Deploy 26.10 | PROD');
+    expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('justification', 'Planned release.');
+    const followUpText = (screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value;
+    expect(followUpText).toContain('DESCRIPTION, RISK_AND_IMPACT, IMPLEMENTATION_PLAN, TEST_PLAN, BACKOUT_PLAN');
+    expect(followUpText).not.toContain('SHORT_DESCRIPTION: [text]');
+
+    // The follow-up's reply completes the round, so nothing more is asked for.
+    fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
+      target: { value: 'DESCRIPTION: a\nRISK_AND_IMPACT: b\nIMPLEMENTATION_PLAN: c\nTEST_PLAN: d\nBACKOUT_PLAN: e' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply reply to fields' }));
+    expect(screen.queryByLabelText('Follow-up for the same AI chat')).toBeNull();
   });
 
   // ── Environment date-order guard (GH #282) ──
@@ -1589,7 +1614,7 @@ describe('CreateChgTab', () => {
     const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
     expect(promptText).toContain('Formula Card');
     expect(promptText).toContain('Backout Plan:');
-    expect(promptText).toContain('VERDICT:');
+    expect(promptText).toContain('RISK_CHECK_TABLE:');
 
     fireEvent.change(screen.getByRole('textbox', { name: "Paste the assistant's reply here" }), {
       target: { value: 'GAP: Missing test plan\nGAP: No backout procedure documented' },

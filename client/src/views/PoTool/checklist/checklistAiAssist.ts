@@ -5,15 +5,65 @@
 // words in the Epic that support it, and what is still needed. That last field is the one the PO actually works
 // from, so a reply that omits it is incomplete even when its verdict is right.
 //
-// Same contract as every other AI surface here: prompt out, JSON reply in, nothing written to Jira by this file.
+// Same contract as every other AI surface here: prompt out, reply in, nothing written to Jira by this file.
+//
+// The team's assistant is Google's AI Mode, which ignores JSON instructions (GH #499). So the prompt ends with a
+// fill-in table listing every criterion, and the reader turns that table back into the same {kind, items[]} JSON the
+// strict checks below already validate. A JSON reply is still read. A reply that is unreadable, or leaves criteria
+// out, gets a follow-up for the same chat asking only for the table or only for the missing rows — never a guess.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  isUnreadableRecordReply,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
 import { DEFINITION_LABELS, type ReadinessCriterion } from './dorCriteria.ts';
 import type { CriterionStatus, CriterionVerdict } from './readinessReport.ts';
 import type { EpicChecklistSource } from './checklistField.ts';
 
 /** The fixed discriminator the assistant must echo, so another reply cannot be ingested here by accident. */
 const CHECKLIST_INGEST_KIND = 'epicReadinessReview';
+
+/** The answers a status cell may hold, said once in the prompt's rules. */
+export const STATUS_ANSWER_HINT = 'satisfied, partial or missing';
+/** What the evidence cell takes. */
+export const EVIDENCE_ANSWER_HINT = 'the words in the Epic that show it; leave ___ when there are none';
+/** What the "what is missing" cell takes. */
+export const WHAT_IS_MISSING_ANSWER_HINT = 'what must be added to the Epic to meet it; leave ___ when satisfied';
+
+/** The fill-in table the single-Epic review is answered in: one row per criterion, its id and words filled in. */
+export const CHECKLIST_REPLY_SPEC: ReplyRecordSpec = {
+  kind: CHECKLIST_INGEST_KIND,
+  replyMarker: 'READINESS_REVIEW_TABLE:',
+  columns: [
+    { field: 'criterionId', header: 'Criterion id' },
+    { field: 'criterionText', header: 'Criterion', isNamingOnly: true },
+    { field: 'status', header: 'Status', answerHint: STATUS_ANSWER_HINT },
+    { field: 'evidence', header: 'Evidence', answerHint: EVIDENCE_ANSWER_HINT },
+    { field: 'whatIsMissing', header: 'What is missing', answerHint: WHAT_IS_MISSING_ANSWER_HINT },
+  ],
+};
+
+// A "|" inside a criterion's words would split its row into extra cells, so it is written as "/".
+const TABLE_CELL_SEPARATOR_PATTERN = /\|/g;
+
+/** One criterion's prefilled cells: its id, then its words. */
+function buildCriterionRowCells(criterion: ReadinessCriterion): string[] {
+  return [criterion.id, criterion.text.replace(TABLE_CELL_SEPARATOR_PATTERN, '/')];
+}
+
+/**
+ * The follow-up for a reply that answered only some rows: the same rules and table, holding only those rows. It asks
+ * for nothing already answered, so the verdicts that did come back stand.
+ */
+export function buildMissingRowsFollowUpPrompt(spec: ReplyRecordSpec, missingRowCells: readonly (readonly string[])[]): string {
+  return [
+    `Your last reply left ${missingRowCells.length} row(s) out. Answer only these rows now, in the same way.`,
+    buildRecordReplyInstructions(spec, missingRowCells),
+  ].join('\n');
+}
 
 /** The outcome of reading one reply: the verdicts that survived, and what was wrong with the rest. */
 export interface ChecklistIngestResult {
@@ -90,18 +140,36 @@ export function buildChecklistPrompt(
     '  "missing"   — the Epic says nothing that meets it.',
     '',
     'Rules:',
-    '  • "evidence" must quote or closely paraphrase the actual words in the Epic. A criterion cannot be',
+    '  • "Evidence" must quote or closely paraphrase the actual words in the Epic. A criterion cannot be',
     '    "satisfied" without evidence. If you have nothing to quote, the answer is "missing".',
-    '  • "whatIsMissing" must say what would have to be added to the Epic to satisfy the criterion. For a',
-    '    satisfied criterion, leave it as an empty string.',
+    '  • "What is missing" must say what would have to be added to the Epic to satisfy the criterion. For a',
+    '    satisfied criterion, leave it blank.',
     '  • Judge only what is written above. Do not assume work happened because the Epic looks mature, and do',
     '    not treat the Epic\'s status, its age, or the existence of child issues as evidence on its own.',
     '  • Answer every criterion id exactly once. Use only the ids given. Do not invent criteria.',
     '',
-    'Respond ONLY with valid JSON:',
-    `{"kind":"${CHECKLIST_INGEST_KIND}","items":[`
-      + '{"criterionId":"dor-business-objective","status":"partial","evidence":"...","whatIsMissing":"..."}]}',
+    buildRecordReplyInstructions(CHECKLIST_REPLY_SPEC, criteria.map(buildCriterionRowCells)),
   ].join('\n');
+}
+
+/**
+ * The follow-up to paste into the same chat when a reply could not be read in full: the whole table again when it
+ * was unreadable, only the unanswered criteria when some were left out, or '' when nothing is missing.
+ */
+export function buildChecklistFollowUpPrompt(
+  responseText: string,
+  criteria: readonly ReadinessCriterion[],
+  answeredVerdicts: readonly CriterionVerdict[],
+): string {
+  const allRowCells = criteria.map(buildCriterionRowCells);
+  if (isUnreadableRecordReply(responseText, CHECKLIST_REPLY_SPEC)) {
+    return buildRecordFormatFixPrompt(CHECKLIST_REPLY_SPEC, allRowCells);
+  }
+  const answeredIds = new Set(answeredVerdicts.map((verdict) => verdict.criterionId));
+  const missingCriteria = criteria.filter((criterion) => !answeredIds.has(criterion.id));
+  return missingCriteria.length === 0
+    ? ''
+    : buildMissingRowsFollowUpPrompt(CHECKLIST_REPLY_SPEC, missingCriteria.map(buildCriterionRowCells));
 }
 
 /** Coerces anything to a trimmed string. */
@@ -109,10 +177,29 @@ function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Reads the status, defaulting an unrecognised one to missing rather than guessing in the Epic's favour. */
-function readStatus(value: unknown): CriterionStatus | null {
-  const statusText = readTrimmedString(value).toLowerCase();
+// An answer engine writes "Partly satisfied" or "Partially met" for the partial status; it means the same thing.
+const PARTIAL_STATUS_PATTERN = /^part(?:ly|ial|ially)\b/;
+// Trailing punctuation an answer engine adds to a one-word cell: "Missing."
+const TRAILING_PUNCTUATION_PATTERN = /[.!]+$/;
+
+/**
+ * Reads the status, or null for an unrecognised one — the caller reports that as missing rather than guessing in
+ * the Epic's favour.
+ */
+export function readCriterionStatus(value: unknown): CriterionStatus | null {
+  const statusText = readTrimmedString(value).toLowerCase().replace(TRAILING_PUNCTUATION_PATTERN, '');
+  if (PARTIAL_STATUS_PATTERN.test(statusText)) {
+    return 'partial';
+  }
   return ALLOWED_STATUSES.find((allowedStatus) => allowedStatus === statusText) ?? null;
+}
+
+/**
+ * True when a reply row carries no answer at all — a table row whose blanks were all left in. It is reported as
+ * unanswered, never read as "missing": a blank is the absence of a judgement, not a judgement.
+ */
+export function isBlankAnswerRow(candidateItem: Record<string, unknown>): boolean {
+  return ['status', 'evidence', 'whatIsMissing'].every((field) => readTrimmedString(candidateItem[field]) === '');
 }
 
 /**
@@ -129,7 +216,7 @@ export function parseChecklistIngest(
 ): ChecklistIngestResult {
   let payload: Record<string, unknown>;
   try {
-    const parsed: unknown = JSON.parse(extractJsonPayload(responseText));
+    const parsed: unknown = JSON.parse(extractRecordReplyPayload(responseText, CHECKLIST_REPLY_SPEC));
     if (typeof parsed !== 'object' || parsed === null) {
       return { verdicts: [], errors: ['The assistant response was not valid JSON.'] };
     }
@@ -157,6 +244,10 @@ export function parseChecklistIngest(
     }
     const candidateItem = candidate as Record<string, unknown>;
     const criterionId = readTrimmedString(candidateItem.criterionId);
+    // A row left blank is not answered — it falls through to the "not answered" report below.
+    if (allowedCriterionIds.has(criterionId) && isBlankAnswerRow(candidateItem)) {
+      return;
+    }
 
     if (!allowedCriterionIds.has(criterionId)) {
       errors.push(`"${criterionId || '(no id)'}" is not one of the criteria, so it was ignored.`);
@@ -169,7 +260,7 @@ export function parseChecklistIngest(
     seenCriterionIds.add(criterionId);
 
     const evidence = readTrimmedString(candidateItem.evidence);
-    const claimedStatus = readStatus(candidateItem.status);
+    const claimedStatus = readCriterionStatus(candidateItem.status);
     if (claimedStatus === null) {
       errors.push(`"${criterionId}" came back with no usable status, so it is reported as missing.`);
     }

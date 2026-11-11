@@ -329,3 +329,71 @@ describe('ExistingChgRiskCheck — the outage record (a Production change was re
     expect(screen.queryByText('VERDICT: READY FOR APPROVAL')).not.toBeInTheDocument();
   });
 });
+
+describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchReviewedCtasks).mockResolvedValue([MISALIGNED_TASK]);
+    vi.mocked(fetchChangeJiraStories).mockResolvedValue([]);
+    vi.mocked(fetchChangeAttachmentFileNames).mockResolvedValue([]);
+    vi.mocked(fetchChangeOutages).mockResolvedValue([]);
+    vi.mocked(useAiAssist).mockReturnValue({ isUnlocked: true } as ReturnType<typeof useAiAssist>);
+  });
+
+  it('asks for the review as a table ending the prompt, with a row for each implementation task', async () => {
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+
+    const promptText = (screen.getByLabelText('Prompt') as HTMLTextAreaElement).value;
+    expect(promptText.trim().endsWith('CTASK0012345 · Backout plan | ___ | ___ | ___')).toBe(true);
+  });
+
+  it('reads a markdown-table review, and offers a follow-up for the rows it left blank', async () => {
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    const tableReply = [
+      'Here is the review.',
+      '| Item | Answer | Finding | Fix |',
+      '|---|---|---|---|',
+      '| Blast Radius | GAP | No consumers named. | List them in RISK_AND_IMPACT. |',
+      '| CTASK0012345 · Backout plan | PASS | Steps and owner are named. | ___ |',
+      'If you would like, I can draft the missing text.',
+    ].join('\n');
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: tableReply } });
+    fireEvent.click(screen.getByRole('button', { name: /Use this review/ }));
+
+    const followUpText = (screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value;
+    expect(followUpText).toContain('Short Description | ___ | ___ | ___');
+    expect(followUpText).not.toContain('Blast Radius | ___');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(await screen.findByText('Blast Radius')).toBeInTheDocument();
+  });
+
+  it('offers the table again, instead of a dead end, when the review could not be read', async () => {
+    renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    fireEvent.click(screen.getByRole('button', { name: /Risk check CHG \+ CTASKs/ }));
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'Overall the change looks reasonable.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Use this review/ }));
+
+    expect(screen.getByText(/No answers could be read/)).toBeInTheDocument();
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toMatch(/could not be read/);
+  });
+
+  it('applies a fix written under headings, and offers the labelled form when nothing could be read', async () => {
+    const onApplyChangeFields = renderPanel();
+    await screen.findByText(/CTASK0012345 · Configuration item/);
+    pasteReply(/Risk check CHG \+ CTASKs/, 'Item | Answer | Finding | Fix\nBackout Plan | GAP | No timing. | Add timing.', /Use this review/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Fix these gaps/ }));
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'I think the plan is mostly fine as written.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Apply/ }));
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toContain('BACKOUT_PLAN: [text]');
+
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'Here is the fix.\n\nBackout Plan\nRedeploy v1.4 within 15 minutes.\n\nWould you like me to adjust anything?' } });
+    fireEvent.click(screen.getByRole('button', { name: /Apply/ }));
+    expect(onApplyChangeFields).toHaveBeenCalledWith({ backoutPlan: 'Redeploy v1.4 within 15 minutes.' });
+  });
+});

@@ -8,6 +8,7 @@
 // key must come from that item's own candidates, a PO-settled answer or PO-edited draft is never replaced, and a
 // reply that cannot be read at all costs nothing.
 
+import { buildRecordReplyInstructions, type ReplyRecordSpec } from '../../../../utils/aiReplyRecords.ts';
 import { SECTION_LABELS, VALIDATION_MARKER } from '../../ai/featureDocSections.ts';
 import { MAX_CHARS_PER_PROMPT } from '../../rewrite/ai/bulkRewriteAiAssist.ts';
 import {
@@ -36,9 +37,13 @@ import {
 } from '../intakeChecklist.ts';
 import { applySharedScopeSuffix, isSharedItem, MAX_EPIC_SUMMARY_CHARS, readDraftFromReply } from './intakeDraftRound.ts';
 import { describeMatchVerdict, MATCH_CONFIDENCES, validateMatchVerdict } from './intakeMatchRound.ts';
+import { buildDescriptionMarker, readItemDescriptions } from './intakeResolveDescriptions.ts';
 import {
+  buildTableFollowUpPrompt,
+  listUnansweredItemIds,
   readBoundedString,
   readReplyEnvelope,
+  sanitizeTableCell,
   readVocabularyValue,
   resolveItemId,
   type IntakeRoundRequest,
@@ -46,6 +51,25 @@ import {
 } from './intakeReplyEnvelope.ts';
 
 export const RESOLVE_REPLY_KIND = 'epicIntakeResolve';
+
+/**
+ * The resolve answer as a fill-in table, one pre-filled row per asked item (GH #499). Google's AI Mode ignores a JSON
+ * reply format but completes a table; the long descriptions follow it as labelled sections (intakeResolveDescriptions).
+ */
+export const RESOLVE_TABLE_SPEC: ReplyRecordSpec = {
+  kind: RESOLVE_REPLY_KIND,
+  replyMarker: 'INTAKE_RESOLVE_TABLE:',
+  columns: [
+    { field: 'id', header: 'Item' },
+    { field: 'currentTitle', header: 'Current title', isNamingOnly: true },
+    { field: 'verdict', header: 'Verdict', answerHint: 'existing or createNew' },
+    { field: 'key', header: 'Existing Epic key', answerHint: 'only with existing — a key from that item\'s own list' },
+    { field: 'confidence', header: 'Confidence', answerHint: 'high or low' },
+    { field: 'label', header: 'Label', answerHint: 'Roadmap or Stability' },
+    { field: 'summary', header: 'Epic summary', answerHint: 'only when the item needs a new Epic' },
+    { field: 'reason', header: 'Reason' },
+  ],
+};
 
 /** At most this many found Epics are listed per item, so one noisy search cannot crowd out every other item. */
 export const MAX_CANDIDATES_IN_PROMPT = 8;
@@ -127,9 +151,9 @@ function readResolveItems(intake: EpicIntake): IntakeItem[] {
 // ── Building the request ──
 
 const QUESTION_FIELDS: Record<ResolveQuestion, string> = {
-  duplicate: 'verdict, key, confidence, reason',
-  label: 'label',
-  draft: 'summary, description (only if it needs a new Epic)',
+  duplicate: 'Verdict, Existing Epic key, Confidence, Reason',
+  label: 'Label',
+  draft: 'Epic summary and a description (only if it needs a new Epic)',
 };
 
 function describeCandidate(candidate: DuplicateCandidate): string {
@@ -153,35 +177,57 @@ function describeItemForResolve(item: IntakeItem, intake: EpicIntake): string {
   ].join('\n');
 }
 
-function buildResolveText(itemBlocks: readonly string[], projectKey: string, partLabel: string): string {
+/** One pre-filled table row per asked item: its id and title, so the answer cannot add, drop or rename an item. */
+export function buildResolveRows(items: readonly IntakeItem[]): string[][] {
+  return items.map((item) => [item.id, sanitizeTableCell(readItemDisplayTitle(item))]);
+}
+
+/**
+ * What follows the table: one labelled description per item that may need a new Epic. A nine-section document does
+ * not fit in a table cell, so each one is its own section, found later by its label or a heading naming the item.
+ */
+function describeDescriptionSections(items: readonly IntakeItem[]): string[] {
+  const draftItemIds = items.filter((item) => readAskedQuestions(item).includes('draft')).map((item) => item.id);
+  if (draftItemIds.length === 0) {
+    return [];
+  }
+  return [
+    '',
+    'After the table, for each of these items whose Verdict is createNew, write its new Epic\'s description, starting',
+    'on its own line with the label shown (skip an item whose Verdict is existing):',
+    ...draftItemIds.map((itemId) => `${buildDescriptionMarker(itemId)}:`),
+  ];
+}
+
+function buildResolveText(items: readonly IntakeItem[], itemBlocks: readonly string[], projectKey: string, partLabel: string): string {
   return [
     `You are helping a Product Owner turn meeting notes into Jira Epics in the ${projectKey} project.`,
-    'Answer only the fields listed for each item. The Product Owner reviews every answer in one table afterwards.',
+    'Answer only the columns listed for each item. The Product Owner reviews every answer in one table afterwards.',
     partLabel,
     '',
     ...itemBlocks,
     '',
-    'Fields:',
-    '- verdict: "existing" (with "key") when one of the Epics listed under that item already covers the same scope; "createNew" when none does.',
+    'Columns:',
+    '- Verdict: "existing" (with the Existing Epic key) when one of the Epics listed under that item already covers the same scope; "createNew" when none does.',
     '  Choose a key ONLY from that item\'s own list. Never use a key from another item\'s list, and never invent one.',
-    '- confidence: "high" when you are sure, "low" when the Product Owner should look again.',
-    '- label: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
-    `- summary: one line, under ${MAX_EPIC_SUMMARY_CHARS} characters — only when the item needs a new Epic.`,
-    '- description: only when the item needs a new Epic. It MUST contain these nine sections, in this order, each as "Label:" on its own line:',
+    '- Confidence: "high" when you are sure, "low" when the Product Owner should look again.',
+    '- Label: Roadmap (new capability or funding ask) | Stability (upgrades, tech debt, compliance, performance)',
+    `- Epic summary: one line, under ${MAX_EPIC_SUMMARY_CHARS} characters — only when the item needs a new Epic.`,
+    'A description (only when the item needs a new Epic) MUST contain these nine sections, in this order, each as "Label:" on its own line:',
     ...SECTION_LABELS.map((label) => `  - ${label}`),
     `  Where the notes do not support a section, still include it and start it with ${VALIDATION_MARKER.business},`,
     `  ${VALIDATION_MARKER.technical} or ${VALIDATION_MARKER.both}.`,
     '  Use ONLY that item\'s own notes. Do not mention sizes or costs. Do not say who or what wrote the text.',
     '',
-    'Rules: use only the item ids above; never invent an item.',
+    'Rules: use only the item ids above; never invent an item. Leave ___ in a column the item\'s "Answer:" line does not name.',
     '',
-    'Respond ONLY with valid JSON:',
-    `{"kind":"${RESOLVE_REPLY_KIND}","items":[{"id":"item-1","verdict":"createNew","key":null,"confidence":"high","reason":"...","label":"Roadmap","summary":"...","description":"Description:\\n..."}]}`,
+    buildRecordReplyInstructions(RESOLVE_TABLE_SPEC, buildResolveRows(items)),
+    ...describeDescriptionSections(items),
   ].join('\n');
 }
 
 interface ItemBlock {
-  itemId: string;
+  item: IntakeItem;
   text: string;
 }
 
@@ -209,13 +255,14 @@ function packItemBlocks(blocks: readonly ItemBlock[], maxChars: number): ItemBlo
  */
 export function buildResolveRequests(intake: EpicIntake): ResolveRequest[] {
   // Blocks are measured as rendered, found Epics included — the notes alone would under-count a candidate-heavy item.
-  const blocks = readResolveItems(intake).map((item) => ({ itemId: item.id, text: describeItemForResolve(item, intake) }));
+  const blocks = readResolveItems(intake).map((item) => ({ item, text: describeItemForResolve(item, intake) }));
   const parts = packItemBlocks(blocks, MAX_CHARS_PER_PROMPT - RESOLVE_INSTRUCTION_ALLOWANCE_CHARS);
   return parts.map((partBlocks, partIndex) => {
     const partLabel = parts.length > 1 ? `This is part ${partIndex + 1} of ${parts.length}.` : '';
+    const partItems = partBlocks.map((block) => block.item);
     const request: IntakeRoundRequest = {
-      text: buildResolveText(partBlocks.map((block) => block.text), intake.targetProjectKey, partLabel),
-      itemIds: partBlocks.map((block) => block.itemId),
+      text: buildResolveText(partItems, partBlocks.map((block) => block.text), intake.targetProjectKey, partLabel),
+      itemIds: partItems.map((item) => item.id),
     };
     return { ...request, partIndex, partCount: parts.length };
   });
@@ -246,17 +293,33 @@ function readResolveAnswer(rawItem: RawReplyItem, item: IntakeItem): ResolveAnsw
 }
 
 /**
+ * Gives each table row the description written for it in its own labelled section. A row that already carries one (the
+ * JSON form) keeps it; a row with no section stays without one, so a missing description is never made up.
+ */
+function attachSectionDescriptions(rawItems: readonly RawReplyItem[], replyText: string, askedItemIds: readonly string[]): RawReplyItem[] {
+  if (rawItems.every((rawItem) => !isAbsent(rawItem.description))) {
+    return [...rawItems];
+  }
+  const descriptionsByItemId = readItemDescriptions(replyText, askedItemIds);
+  return rawItems.map((rawItem) => {
+    const itemId = resolveItemId(rawItem.id, askedItemIds);
+    const sectionDescription = itemId === null ? undefined : descriptionsByItemId[itemId];
+    return isAbsent(rawItem.description) && sectionDescription !== undefined ? { ...rawItem, description: sectionDescription } : rawItem;
+  });
+}
+
+/**
  * Validates one part's pasted answer against the items that part asked about. Never throws: an unreadable reply
  * comes back as one rejection with no item, and an item id the part did not ask about is rejected by name.
  */
 export function parseResolveReply(replyText: string, intake: EpicIntake, askedItemIds: readonly string[]): IngestOutcome<ResolveAnswer> {
-  const envelope = readReplyEnvelope(replyText, RESOLVE_REPLY_KIND);
+  const envelope = readReplyEnvelope(replyText, RESOLVE_REPLY_KIND, RESOLVE_TABLE_SPEC);
   if (envelope.wholeReplyError !== null) {
     return { accepted: [], rejected: [{ itemId: null, reason: envelope.wholeReplyError }] };
   }
   const accepted: ResolveAnswer[] = [];
   const rejected: IngestRejection[] = [];
-  for (const rawItem of envelope.items) {
+  for (const rawItem of attachSectionDescriptions(envelope.items, replyText, askedItemIds)) {
     const itemId = resolveItemId(rawItem.id, askedItemIds);
     const item = intake.items.find((candidate) => candidate.id === itemId);
     if (itemId === null || item === undefined) {
@@ -384,4 +447,31 @@ export function applyResolveOutcome(
     ingestedAtIso: nowIso,
   };
   return { ...updated, updatedAtIso: nowIso, roundHistory: [...updated.roundHistory, roundRecord] };
+}
+
+// ── The follow-up ──
+
+/** True when an asked item said "createNew" (or left the verdict to an earlier answer) but came back with no description. */
+function isMissingDescription(answer: ResolveAnswer, item: IntakeItem): boolean {
+  const isNewEpic = answer.verdict?.verdict === 'createNew' || readSettledValue(item.decisions.duplicate)?.verdict === 'createNew';
+  return readAskedQuestions(item).includes('draft') && isNewEpic && answer.draft === null;
+}
+
+/**
+ * The follow-up to paste into the same chat after a resolve answer, read against the intake as it stood when the
+ * answer was pasted: the whole table again when it could not be read; otherwise only the rows (and descriptions) of
+ * the items it left out or whose new-Epic description is missing; '' when nothing is missing. Nothing is guessed.
+ */
+export function buildResolveFollowUpPrompt(intake: EpicIntake, askedItemIds: readonly string[], outcome: IngestOutcome<ResolveAnswer>): string {
+  const askedItems = intake.items.filter((item) => askedItemIds.includes(item.id));
+  const wasReplyUnreadable = outcome.accepted.length === 0 && outcome.rejected.some((rejection) => rejection.itemId === null);
+  const answeredItemIds = outcome.accepted
+    .filter((answer) => !isMissingDescription(answer, askedItems.find((item) => item.id === answer.itemId) as IntakeItem))
+    .map((answer) => answer.itemId);
+  const missingItemIds = wasReplyUnreadable ? askedItemIds : listUnansweredItemIds(askedItemIds, answeredItemIds);
+  const tablePrompt = buildTableFollowUpPrompt(RESOLVE_TABLE_SPEC, buildResolveRows(askedItems), wasReplyUnreadable, missingItemIds);
+  if (tablePrompt === '') {
+    return '';
+  }
+  return [tablePrompt, ...describeDescriptionSections(askedItems.filter((item) => missingItemIds.includes(item.id)))].join('\n');
 }

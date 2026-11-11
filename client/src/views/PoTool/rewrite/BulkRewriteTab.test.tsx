@@ -1017,3 +1017,43 @@ describe('BulkRewriteTab guided strip', () => {
     expect(screen.queryByText(/Do this next:/)).not.toBeInTheDocument();
   });
 });
+
+// ── Google AI Mode replies (GH #499) ────────────────────────────────────────
+
+describe('BulkRewriteTab — replies from Google AI Mode', () => {
+  /** Captures two issues, builds the prompt, pastes a reply and reads it. */
+  async function readReplyForTwoIssues(replyText: string): Promise<void> {
+    const user = userEvent.setup();
+    mockJiraGet.mockResolvedValue({ fields: { summary: 'S', description: 'd', customfield_10200: 'ac' } });
+    setAiAssistUnlocked(true);
+    render(<BulkRewriteTab dashboardTeamProfileId="team-1" />);
+    await user.type(screen.getByLabelText('Jira keys'), 'ABC-1 ABC-2');
+    await user.click(screen.getByRole('button', { name: /capture originals/i }));
+    await user.click(await screen.findByRole('button', { name: /build the prompt/i }));
+    fireEvent.change(await screen.findByLabelText(/paste the assistant/i), { target: { value: replyText } });
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+  }
+
+  it('applies an AI Mode reply and asks the same chat only for the issue it left out', async () => {
+    await readReplyForTwoIssues('Here are the re-writes.\n\n## ISSUE ABC-1\n### Description\nrewritten\n\nLet me know if you want more.');
+
+    await waitFor(() => expect(screen.getByText(/Applied 1 re-write/)).toBeInTheDocument());
+    const followUp = (screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value;
+    expect(followUp).toContain('ISSUE ABC-2');
+    expect(followUp).not.toContain('ISSUE ABC-1');
+  });
+
+  it('offers the whole form again for a reply that could not be read', async () => {
+    await readReplyForTwoIssues('Sorry, I could not do that.');
+
+    await waitFor(() => expect(screen.getByText(/Could not read the reply/)).toBeInTheDocument());
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toContain('could not be read');
+  });
+
+  it('offers no follow-up when every issue came back', async () => {
+    await readReplyForTwoIssues('ISSUE ABC-1\nDescription:\none\nISSUE ABC-2\nDescription:\ntwo');
+
+    await waitFor(() => expect(screen.getByText(/Applied 2 re-write/)).toBeInTheDocument());
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+});

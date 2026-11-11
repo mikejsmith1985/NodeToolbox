@@ -7,8 +7,10 @@ import { useCallback } from 'react';
 import { setAiAssistUnlocked, useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import { buildSectionsFollowUpPrompt, listMissingSections, readReplySections } from '../../../utils/aiReplySections.ts';
 import {
   CHG_FIELD_REPLY_MARKERS,
+  CHG_FIELD_REPLY_SECTIONS,
   CODE_BLOCK_REPLY_INSTRUCTION,
   restoreMarkerLineBreaks,
   stripCodeFences,
@@ -177,37 +179,35 @@ export function buildAiAssistPromptText(
 }
 
 /**
- * Parses AI Assist's deterministic "KEY: value" response into the seven CHG fields.
- * Each value runs from its marker up to the next marker (so multi-line values are
- * preserved). A leading line boundary on each marker prevents the "DESCRIPTION"
- * marker from matching inside "SHORT_DESCRIPTION". Missing fields are omitted.
+ * Reads the CHG fields out of AI Assist's reply. Each field is found by its asked-for marker ("BACKOUT_PLAN:") or by the
+ * heading an answer engine writes instead ("Backout Plan") — Google's AI Mode answers as a document (GH #499). Each value
+ * runs to the next field's start, so multi-line values are kept; an intro, header facts before the first field, and a
+ * closing offer to help further are dropped. Missing fields are omitted.
  *
  * @param responseText - The raw text AI Assist returned.
  * @returns Only the fields that were found, trimmed.
  */
 export function parseAiAssistChgResponse(responseText: string): Partial<AiAssistGeneratedFields> {
-  const parsedFields: Partial<AiAssistGeneratedFields> = {};
   if (typeof responseText !== 'string') {
-    return parsedFields;
+    return {};
   }
-  // A code-block reply loses its fences, and a flattened paste gets its markers back on their own lines.
+  // A flattened paste gets its markers back on their own lines before the sections are read.
   const restoredResponse = restoreMarkerLineBreaks(stripCodeFences(responseText), CHG_FIELD_REPLY_MARKERS);
+  return readReplySections(restoredResponse, CHG_FIELD_REPLY_SECTIONS);
+}
 
-  for (let markerIndex = 0; markerIndex < AI_ASSIST_RESPONSE_MARKERS.length; markerIndex += 1) {
-    const { marker, field } = AI_ASSIST_RESPONSE_MARKERS[markerIndex];
-    const laterMarkers = AI_ASSIST_RESPONSE_MARKERS.slice(markerIndex + 1).map((entry) => entry.marker);
-    // Stop at the next known marker OR end of input — so a value works whether or
-    // not later markers are present in the response.
-    const stopAhead = laterMarkers.length > 0 ? `(?=\\n\\s*(?:${laterMarkers.join('|')})\\s*:|$)` : '$';
-    const fieldRegExp = new RegExp(`(?:^|\\n)\\s*${marker}\\s*:\\s*([\\s\\S]*?)${stopAhead}`, 'i');
-
-    const match = restoredResponse.match(fieldRegExp);
-    if (match && match[1].trim()) {
-      parsedFields[field] = match[1].trim();
-    }
+/**
+ * The follow-up for the same AI chat when a reply left out some of the asked-for CHG fields, or '' when none is
+ * needed. Only the missing fields are asked for, so the text already applied is kept (GH #499).
+ */
+export function buildChgFieldsFollowUp(responseText: string, askedFieldKeys: readonly ChgTextFieldKey[]): string {
+  const parsedFields = parseAiAssistChgResponse(responseText);
+  const askedSections = CHG_FIELD_REPLY_SECTIONS.filter((section) => askedFieldKeys.includes(section.key));
+  const missingSections = listMissingSections(parsedFields, askedSections);
+  if (missingSections.length === 0) {
+    return '';
   }
-
-  return parsedFields;
+  return buildSectionsFollowUpPrompt(missingSections, missingSections.length === askedSections.length);
 }
 
 /**

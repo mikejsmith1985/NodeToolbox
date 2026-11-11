@@ -8,6 +8,10 @@
 // gathered. The prompt's job is to hand all of that over at once, which is exactly the context-switching
 // the tab exists to remove.
 //
+// The answer is asked for as a labelled document plus a fill-in table for Jira fields, because Google's AI Mode — the
+// team's only assistant — ignores JSON instructions and writes documents (GH #499). compositionReplySections.ts reads
+// that document back into the JSON shape validated here; a JSON reply from any other assistant is still read.
+//
 // See specs/017-po-feature-tools/contracts/ai-assist-json.md.
 
 import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
@@ -16,6 +20,7 @@ import type { CompositionDraft } from '../drafts/draftModel';
 import { describeSourceOrigin, describeSourceTitle, readSourceText } from '../sources/sourceModel';
 import { stripAiAttribution, VALIDATION_MARKER } from './featureDocSections.ts';
 import { mergeEnrichedDescription } from './featureEnrichMerge.ts';
+import { buildCompositionAnswerLayout, buildCompositionSectionsFollowUp, readCompositionReplySections } from './compositionReplySections.ts';
 import type { AiIngestResult } from './splitAiAssist';
 import { describeEnterpriseFeatureRules } from '../../../domain/featureStateGates.ts';
 
@@ -98,7 +103,7 @@ export function buildCompositionPrompt(
       const optionsHint = options && options.length > 0 ? ` — choose exactly one of: ${options.join(', ')}` : '';
       return `  - "${fieldId}" (${fieldName})${optionsHint}`;
     }).join('\n')
-    : '  (none — do not include a "fields" object)';
+    : '  (none — do not include a "fields" object or a Jira fields table)';
 
   return [
     'You are helping a Product Owner write a Jira Feature so their team can understand and commit to it.',
@@ -129,7 +134,8 @@ export function buildCompositionPrompt(
     'Populate every section from the material. Where the material does not give you enough to be sure, still propose',
     'content but BEGIN that section with one of these exact markers, chosen by the section\'s nature:',
     `  ${VALIDATION_MARKER.business}  |  ${VALIDATION_MARKER.technical}  |  ${VALIDATION_MARKER.both}`,
-    'Put the FULL acceptance criteria BOTH in the description\'s "Acceptance Criteria" section AND in the acceptanceCriteria field.',
+    'Write the FULL acceptance criteria in the ACCEPTANCE_CRITERIA section — it goes BOTH into the description AND into',
+    'Jira\'s own Acceptance Criteria field, so do not shorten it.',
     'In the Risks section, include any existing Jira issue key the material references for a risk — do not invent keys.',
     'Never state or imply that any of this was written, generated, or drafted by AI. A validation marker means the',
     'information is missing — it is never a disclaimer about AI authorship.',
@@ -140,8 +146,7 @@ export function buildCompositionPrompt(
     'Do not invent facts that are not in the material or the Product Owner\'s description. Do not choose the',
     'project or the issue type — the Product Owner does that.',
     '',
-    'Respond ONLY with valid JSON:',
-    `{"kind":"${COMPOSITION_INGEST_KIND}","feature":{"summary":"...","description":"...","acceptanceCriteria":"...","fields":{},"rationale":"..."}}`,
+    buildCompositionAnswerLayout(COMPOSITION_INGEST_KIND, writableFieldNamesById),
   ].join('\n');
 }
 
@@ -150,23 +155,55 @@ function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Reads the payload object, turning both unreadable cases into one plain error. */
-function readPayloadObject(responseText: string): { payload?: Record<string, unknown>; error?: string } {
+/** What reading a reply produced: the payload to validate, or the error and follow-up to show instead. */
+interface PayloadReading {
+  payload?: Record<string, unknown>;
+  error?: string;
+  followUpPrompt?: string;
+}
+
+const NO_PAYLOAD_ERROR = 'No JSON object found in the assistant response.';
+const INVALID_JSON_ERROR = 'The assistant response was not valid JSON.';
+
+/** A JSON reply's object, 'invalid' when a JSON-looking block would not parse, or null when there is none. */
+function readJsonReplyObject(responseText: string): Record<string, unknown> | 'invalid' | null {
   let jsonText: string;
   try {
     jsonText = extractJsonPayload(responseText);
   } catch {
-    return { error: 'No JSON object found in the assistant response.' };
+    return null;
   }
   try {
     const parsed: unknown = JSON.parse(jsonText);
-    if (typeof parsed !== 'object' || parsed === null) {
-      return { error: 'The assistant response was not valid JSON.' };
-    }
-    return { payload: parsed as Record<string, unknown> };
+    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : 'invalid';
   } catch {
-    return { error: 'The assistant response was not valid JSON.' };
+    return 'invalid';
   }
+}
+
+/**
+ * Reads the payload object. A JSON reply (any assistant but AI Mode) is read as before; otherwise the reply is read as
+ * the labelled document the prompt asks for. A document missing required sections is NOT read — nothing missing is
+ * ever filled in — and a follow-up asks for only those sections.
+ */
+function readPayloadObject(responseText: string, isEnrichingExisting: boolean): PayloadReading {
+  const jsonReply = readJsonReplyObject(responseText);
+  if (jsonReply !== null && jsonReply !== 'invalid') {
+    return { payload: jsonReply };
+  }
+  const reading = readCompositionReplySections(responseText, COMPOSITION_INGEST_KIND, isEnrichingExisting);
+  const followUpPrompt = buildCompositionSectionsFollowUp(reading);
+  if (reading.payloadText === null) {
+    return { error: jsonReply === 'invalid' ? INVALID_JSON_ERROR : NO_PAYLOAD_ERROR, followUpPrompt };
+  }
+  if (reading.missingSections.length > 0) {
+    const missingNames = reading.missingSections.map((section) => section.marker).join(', ');
+    return {
+      error: `The reply left out ${missingNames}. Copy the follow-up below into the same AI chat, add its reply under this one, then read it again.`,
+      followUpPrompt,
+    };
+  }
+  return { payload: JSON.parse(reading.payloadText) as Record<string, unknown> };
 }
 
 /**
@@ -185,9 +222,9 @@ export function parseCompositionIngest(
    */
   existingDescription = '',
 ): AiIngestResult<CompositionProposal> {
-  const { payload, error } = readPayloadObject(responseText);
+  const { payload, error, followUpPrompt } = readPayloadObject(responseText, existingDescription.trim() !== '');
   if (!payload) {
-    return { items: [], errors: [error!] };
+    return { items: [], errors: [error!], followUpPrompt };
   }
 
   if (payload.kind !== COMPOSITION_INGEST_KIND) {

@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
 import type { CapacitySummary } from '../../SprintDashboard/capacityModel.ts';
@@ -14,7 +15,7 @@ import type { PiReviewRow } from '../piReviewTable.ts';
 import styles from '../PiReviewTab.module.css';
 import { buildEpicsToSchedule } from './epicDatePlanInputs.ts';
 import { readDailyCapacityPoints, scheduleEpicDates, type EpicDateProposal, type EpicToSchedule } from './epicDateSchedule.ts';
-import { buildEpicOrderPrompt, parseEpicOrderReply } from './epicOrderAiAssist.ts';
+import { buildEpicOrderFollowUpPrompt, buildEpicOrderPrompt, parseEpicOrderReply } from './epicOrderAiAssist.ts';
 
 interface EpicDatePlanPanelProps {
   rows: readonly PiReviewRow[];
@@ -103,6 +104,8 @@ export function EpicDatePlanPanel({ rows, jiraIssueMap, piName, piWindow, capaci
   const [aiOrder, setAiOrder] = useState<string[] | null>(null);
   const [rationaleByKey, setRationaleByKey] = useState<Record<string, string>>({});
   const [aiError, setAiError] = useState<string | null>(null);
+  // The follow-up for the same AI chat when a reply strayed from the form or left Epics unplaced ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [acceptedKeys, setAcceptedKeys] = useState<Set<string>>(new Set());
   const [writtenKeys, setWrittenKeys] = useState<Set<string>>(new Set());
   const [isWriting, setIsWriting] = useState(false);
@@ -135,8 +138,10 @@ export function EpicDatePlanPanel({ rows, jiraIssueMap, piName, piWindow, capaci
       if (orderReply.maxParallelEpics !== null) setMaxParallelEpics(orderReply.maxParallelEpics);
       setAcceptedKeys(new Set());
       setAiError(orderReply.rejectedKeys.length > 0 ? `Ignored keys not on this page: ${orderReply.rejectedKeys.join(', ')}.` : null);
+      setFollowUpPrompt(buildEpicOrderFollowUpPrompt(epics, orderReply));
     } catch (parseError) {
       setAiError(parseError instanceof Error ? parseError.message : 'The pasted order could not be read.');
+      setFollowUpPrompt(buildEpicOrderFollowUpPrompt(epics, null));
     }
   };
 
@@ -199,7 +204,9 @@ export function EpicDatePlanPanel({ rows, jiraIssueMap, piName, piWindow, capaci
           dependencyTextByKey: buildDependencyTextByKey(rows),
         })}
         title="Propose the Epic order"
-      />
+      >
+        <AiFollowUpPrompt fieldId="epic-order-ai-follow-up" followUpPrompt={followUpPrompt} />
+      </ReportAiPanel>
       <div className={styles.tableShell}>
         <table className={styles.dataTable}>
           <thead>

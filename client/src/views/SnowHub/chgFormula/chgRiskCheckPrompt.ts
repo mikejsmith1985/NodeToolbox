@@ -12,6 +12,7 @@ import {
   stripCodeFences,
 } from './assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
+import { buildRiskCheckTableLines, listFullCheckItems } from './riskCheckTable.ts';
 import {
   CHG_TEXT_FIELD_LABELS,
   renderFormulaCardChecklist,
@@ -76,23 +77,15 @@ export const REVIEW_STATUS_RULES: readonly string[] = [
     + 'other field at its minimum from what is given.',
   'RECORD when the problem is a record field (configuration item, category, environment, assignment group, change '
     + 'owner, risk, impact, planned start or end): say what to set in the change form.',
-  'Answer lines:',
-  'PASS | <name> — <why it meets the minimum acceptable>',
-  'GAP | <name> — <what falls short> — Fix: <the specific text to add, and which change field it belongs in>',
-  'N/A | <name> — <why it does not apply to this change>',
-  'INFO | <name> — <the one question the owner must answer>',
-  'RECORD | <name> — <what to set in the change form>',
+  'YES or NO for a Front-Page Quality Gate question; a NO counts as a gap.',
 ];
 
-// The review part of the reply. One line per card field keeps the review scannable and makes every gap
-// point at the exact text box it must be fixed in.
-const REPLY_FORMAT_LINES: readonly string[] = [
-  'Reply in plain text, in exactly this format and card order, with no other commentary.',
-  'One line per Formula Card field (sections 1-7), judged by these rules:',
+// The review part of the reply. One row per card field keeps the review scannable and makes every gap point at the
+// exact text box it must be fixed in. The answer is a fill-in table listing every item, because Google's AI Mode — the
+// team's only assistant — ignores a line format but completes a table (GH #499). Toolbox counts the verdict itself.
+const REVIEW_INTRO_LINES: readonly string[] = [
+  'Judge every Formula Card field (sections 1-7) and every Front-Page Quality Gate question by these rules:',
   ...REVIEW_STATUS_RULES,
-  'Then one line per Front-Page Quality Gate question: YES | <question> or NO | <question> — <why>.',
-  'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s), counting only GAP '
-    + 'and NO lines.',
 ];
 
 /**
@@ -132,9 +125,9 @@ export function splitRiskCheckReply(replyText: string): RiskCheckReplyParts {
 }
 
 /**
- * The whole pre-approval check as one prompt: the record facts and delivery path, all seven text fields,
- * then the Formula Card checklist and the reply format. An extra part (the change's tasks) adds its records
- * after the change and its reply lines after the format.
+ * The whole pre-approval check as one prompt: the record facts and delivery path, all seven text fields, the Formula
+ * Card checklist and the judging rules, then the fill-in table to answer in — one row per card field and quality-gate
+ * question. An extra part (the change's tasks) adds its records after the change, and its rows to the table.
  */
 export function buildChgRiskCheckPrompt(
   context: ChgPromptContext,
@@ -155,9 +148,10 @@ export function buildChgRiskCheckPrompt(
     'Change Request Formula Card:',
     renderFormulaCardChecklist(),
     '',
-    ...REPLY_FORMAT_LINES,
+    ...REVIEW_INTRO_LINES,
     ...(extraPart ? extraPart.replyLines : []),
-    '',
     CODE_BLOCK_REPLY_INSTRUCTION,
+    '',
+    ...buildRiskCheckTableLines(listFullCheckItems(extraPart?.tableItems)),
   ].join('\n');
 }

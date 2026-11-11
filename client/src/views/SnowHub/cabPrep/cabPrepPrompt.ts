@@ -7,8 +7,18 @@
 // The rule that matters most: an unanswerable question must come back UNANSWERED, naming the field
 // that would have answered it. A board meeting is exactly where a confident invention does damage,
 // because the answer is repeated aloud by someone who trusts it.
+//
+// Google's AI Mode — the team's only assistant since 2026-11 (GH #499) — ignores a JSON reply format but completes a
+// table. So the prompt ends with a fill-in table listing every question, and its reader turns the table back into the
+// same JSON every rule below already checks. A JSON reply still reads. Questions left blank get a follow-up for the SAME
+// chat asking for just those rows — an answer is never guessed for them.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
 import {
   CAB_CONCERN_LABELS,
   CAB_QUESTIONS,
@@ -60,15 +70,35 @@ const PROMPT_PREAMBLE = [
   '',
 ].join('\n');
 
+/**
+ * The reply as a fill-in table: one row per bank question, its id and words filled in. Each column becomes the answer
+ * property of the same name, so every rule on a JSON answer applies to a table row unchanged.
+ */
+export const CAB_PREP_REPLY_SPEC: ReplyRecordSpec = {
+  kind: 'cabPrep',
+  replyMarker: 'CAB_PREP_TABLE:',
+  columns: [
+    { field: 'questionId', header: 'Question ID' },
+    { field: 'question', header: 'Question', isNamingOnly: true },
+    { field: 'answer', header: 'Answer', answerHint: 'two or three sentences, as the presenter would say them out loud' },
+    { field: 'isUnanswerable', header: 'Unanswerable', valueKind: 'boolean', answerHint: 'yes when the facts do not support an answer, otherwise no' },
+    { field: 'whatWouldAnswerIt', header: 'What would answer it', answerHint: 'only for an unanswerable question: the CHG field, person or test result that would answer it' },
+  ],
+};
+
+/** Each question's naming cells — its id and its words — for one table row. */
+function buildQuestionRows(questionIds: readonly string[]): string[][] {
+  return CAB_QUESTIONS
+    .filter((question) => questionIds.includes(question.id))
+    .map((question) => [question.id, question.question]);
+}
+
 /** Spells out the reply shape, including that there is nowhere to put a new question. */
 function buildReplyInstruction(): string {
   return [
     '',
-    'Reply with JSON only, in exactly this shape:',
-    '{"kind":"cabPrep","answers":[{"questionId":"...","answer":"...",'
-      + '"isUnanswerable":false,"whatWouldAnswerIt":""}]}',
-    'Use the questionId values exactly as given. Do not add questions of your own.',
-    'No other properties are permitted on an answer.',
+    'Do not add questions of your own. Do not change a Question ID.',
+    buildRecordReplyInstructions(CAB_PREP_REPLY_SPEC, buildQuestionRows(CAB_QUESTIONS.map((question) => question.id))),
   ].join('\n');
 }
 
@@ -165,10 +195,14 @@ function readAnswer(
  * is one the presenter walks in without and does not know it.
  */
 export function parseCabPrepReply(replyText: string): CabPrepIngest {
-  const payload = JSON.parse(extractJsonPayload(replyText)) as { kind?: unknown; answers?: unknown };
+  const payload = JSON.parse(extractRecordReplyPayload(replyText, CAB_PREP_REPLY_SPEC)) as { kind?: unknown; answers?: unknown; items?: unknown };
 
   if (payload.kind !== 'cabPrep') {
     throw new Error(`This reply is for "${String(payload.kind)}", not "cabPrep".`);
+  }
+  // A filled-in table is read back as "items"; a JSON reply carries "answers".
+  if (payload.answers === undefined && Array.isArray(payload.items)) {
+    payload.answers = payload.items;
   }
   if (!Array.isArray(payload.answers)) {
     throw new Error('The reply carries no answers array.');
@@ -194,4 +228,34 @@ export function parseCabPrepReply(replyText: string): CabPrepIngest {
 export function readUnansweredQuestionIds(answers: readonly CabPreparedAnswer[]): string[] {
   const answeredIds = new Set(answers.map((answer) => answer.questionId));
   return CAB_QUESTIONS.filter((question) => !answeredIds.has(question.id)).map((question) => question.id);
+}
+
+/**
+ * One round's answers so far: a follow-up reply answers only the questions left out, so its answers are added to the
+ * earlier ones, a question answered twice taking its later answer.
+ */
+export function mergeCabPreparedAnswers(
+  earlierAnswers: readonly CabPreparedAnswer[],
+  laterAnswers: readonly CabPreparedAnswer[],
+): CabPreparedAnswer[] {
+  const laterIds = new Set(laterAnswers.map((answer) => answer.questionId));
+  return [...earlierAnswers.filter((answer) => !laterIds.has(answer.questionId)), ...laterAnswers];
+}
+
+/**
+ * The follow-up for the same AI chat, or '' when every question has an answer. An unreadable reply gets the whole table
+ * again; a reply that left questions out gets a table of only those, so the answers already given are kept.
+ */
+export function buildCabPrepFollowUp(answers: readonly CabPreparedAnswer[], wasReplyUnreadable: boolean): string {
+  if (wasReplyUnreadable) {
+    return buildRecordFormatFixPrompt(CAB_PREP_REPLY_SPEC, buildQuestionRows(CAB_QUESTIONS.map((question) => question.id)));
+  }
+  const unansweredIds = readUnansweredQuestionIds(answers);
+  if (unansweredIds.length === 0) {
+    return '';
+  }
+  return [
+    `Your last reply left ${unansweredIds.length} ${unansweredIds.length === 1 ? 'question' : 'questions'} out. Answer only these now, from the same facts.`,
+    buildRecordReplyInstructions(CAB_PREP_REPLY_SPEC, buildQuestionRows(unansweredIds)),
+  ].join('\n');
 }

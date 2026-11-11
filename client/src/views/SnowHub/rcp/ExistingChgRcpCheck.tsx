@@ -16,6 +16,7 @@ import { AiAssistPromptModal, type AiAssistPromptSession } from '../tabs/AiAssis
 import styles from '../tabs/CreateChgTab.module.css';
 import { readRcpRulesEnabled } from './rcpApprovalEmail.ts';
 import {
+  buildRcpJustificationFollowUp,
   buildRcpJustificationPrompt,
   planRcpWindowFix,
   readRcpJustificationReply,
@@ -154,7 +155,11 @@ export function ExistingChgRcpCheck({
       applyReply: (replyText) => {
         const justification = readRcpJustificationReply(replyText);
         if (justification === '') {
-          return { statusMessage: 'No JUSTIFICATION: section was found in the pasted reply.', wasApplied: false };
+          return {
+            statusMessage: 'No justification was found in the pasted reply — paste the follow-up below into the same AI chat.',
+            wasApplied: false,
+            followUpPrompt: buildRcpJustificationFollowUp(replyText),
+          };
         }
         void applyFix({ justification }, { justification });
         return { statusMessage: 'Justification saved to the change — close this to see the re-check.', wasApplied: true };

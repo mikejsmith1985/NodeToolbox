@@ -7,8 +7,19 @@
 //
 // Parsing is lenient per field, strict per key: one malformed proposal must not throw away the
 // rest, but an item naming an issue that is not on the page is reported and dropped, never applied.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format, so the prompt
+// ends with a fill-in table listing every asked fix (one row per issue and fix). The reader turns the
+// table back into the same {kind, items[]} envelope, so every per-fix rule below still applies; a JSON
+// reply is still read. A reply that is neither, or that leaves rows out, gets a follow-up instead.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts'
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  readRecordTableItems,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts'
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts'
 import { deriveIssueDates, readDrivingFixVersion } from '../checks/issueDateRules.ts'
 import type { HygieneFinding } from '../checks/hygieneChecks.ts'
@@ -17,6 +28,20 @@ import type { HygieneFinding } from '../checks/hygieneChecks.ts'
 
 /** The envelope's kind. A reply that echoes anything else is a wrong reply, not a partial one. */
 const HYGIENE_AI_REPLY_KIND = 'hygiene'
+/**
+ * The fill-in table the prompt ends with: one row per asked fix, its issue key and fix id filled in.
+ * The fix id is read back (it says which flag the value fixes); the value and rationale are the answer.
+ */
+export const HYGIENE_REPLY_SPEC: ReplyRecordSpec = {
+  kind: HYGIENE_AI_REPLY_KIND,
+  replyMarker: 'HYGIENE_FIXES:',
+  columns: [
+    { field: 'issueKey', header: 'Issue key' },
+    { field: 'checkId', header: 'Fix' },
+    { field: 'value', header: 'Proposed value', answerHint: 'the value to write, on one line — leave ___ to propose nothing for that fix' },
+    { field: 'rationale', header: 'Rationale', answerHint: 'one line on why' },
+  ],
+}
 /** Longest field value the AI may propose — matches the house cap in the PI Review module. */
 export const MAX_AI_FIX_VALUE_LENGTH = 300
 /** A stale-nudge comment can breathe a little more than a field value. */
@@ -94,7 +119,14 @@ export interface HygieneAiRunResult {
   unknownKeys: string[]
   /** Items or fixes that yielded nothing usable. */
   unparsedCount: number
+  /** Asked fixes a table reply left out altogether (not ones it left blank on purpose). */
+  missingFixRows: HygieneFixRow[]
+  /** A follow-up for the same chat asking only for the missing rows, or '' when none are missing. */
+  followUpPrompt: string
 }
+
+/** One asked fix as the fill-in table names it: [issue key, fix id]. */
+export type HygieneFixRow = readonly [issueKey: string, checkId: string]
 
 /** One comment in a stale issue's recent conversation. */
 export interface StaleIssueComment {
@@ -327,6 +359,8 @@ export interface HygieneAiPromptPlan {
   includedIssueKeys: string[]
   /** Issues left out to stay inside the budget — never silently dropped. */
   omittedCount: number
+  /** Every [issue key, fix id] row the prompt's fill-in table asks about — what a follow-up re-asks. */
+  askedFixRows: HygieneFixRow[]
 }
 
 /**
@@ -358,6 +392,7 @@ export function buildHygieneAiPromptPlan(
       includedCount: fixableFindings.length,
       includedIssueKeys: fixableFindings.map((finding) => finding.issue.key),
       omittedCount: 0,
+      askedFixRows: listAskedFixRows(fixableFindings, restrictToCheckIds),
     }
   }
 
@@ -368,7 +403,9 @@ export function buildHygieneAiPromptPlan(
   const emptyScaffoldLength = renderPrompt([], staleContextsByKey, openVersionNamesByProject, restrictToCheckIds).length
   const perFindingCosts = fixableFindings.map((finding) =>
     buildFindingBlock(finding, staleContextsByKey, restrictToCheckIds).length + 1
-    + finding.issue.key.length + KEY_LIST_SEPARATOR_LENGTH)
+    + finding.issue.key.length + KEY_LIST_SEPARATOR_LENGTH
+    // ...and its rows in the fill-in table, one per asked fix, each followed by a newline.
+    + measureFixTableRowsLength(finding, restrictToCheckIds))
 
   const isStaleAskedAnywhere = fixableFindings.some((finding) =>
     readAiFixableFlags(finding, restrictToCheckIds).some((flag) => flag.checkId === 'stale'))
@@ -387,6 +424,7 @@ export function buildHygieneAiPromptPlan(
     includedCount,
     includedIssueKeys: chosenFindings.map((finding) => finding.issue.key),
     omittedCount: fixableFindings.length - includedCount,
+    askedFixRows: listAskedFixRows(chosenFindings, restrictToCheckIds),
   }
 }
 
@@ -404,6 +442,30 @@ export function buildHygieneAiPrompt(
   options: HygieneAiPromptOptions = {},
 ): string {
   return buildHygieneAiPromptPlan(findings, options, staleContextsByKey, openVersionNamesByProject).promptText
+}
+
+/** Every [issue key, fix id] row the fill-in table asks about, in the order the issues are listed. */
+export function listAskedFixRows(
+  findings: readonly HygieneFinding[],
+  restrictToCheckIds: readonly string[] = [],
+): HygieneFixRow[] {
+  return findings.flatMap((finding) => readAiFixableFlags(finding, restrictToCheckIds)
+    .map((flag): HygieneFixRow => [finding.issue.key, flag.checkId]))
+}
+
+/** The characters one finding's rows add to the fill-in table — priced so the budget stays honest. */
+function measureFixTableRowsLength(finding: HygieneFinding, restrictToCheckIds: readonly string[]): number {
+  const askedRows = listAskedFixRows([finding], restrictToCheckIds)
+  const tableRows = buildRecordReplyInstructions(HYGIENE_REPLY_SPEC, askedRows).split('\n').slice(-askedRows.length)
+  return tableRows.reduce((totalLength, tableRow) => totalLength + tableRow.length + 1, 0)
+}
+
+/**
+ * The follow-up for a reply that could not be read at all: the same table again, asking for the form
+ * only so the judgement the assistant already made is kept.
+ */
+export function buildHygieneAiFormatFixPrompt(askedFixRows: readonly HygieneFixRow[]): string {
+  return buildRecordFormatFixPrompt(HYGIENE_REPLY_SPEC, askedFixRows)
 }
 
 /** Renders the prompt for an already-chosen set of findings. Pure string assembly, no selection. */
@@ -438,25 +500,14 @@ Rules:
   - Keep field values under ${MAX_AI_FIX_VALUE_LENGTH} characters.${isAnyStaleAsked ? ` A nudge comment may run to ${MAX_AI_COMMENT_LENGTH}.` : ''}
   - Omit a fix entirely when the context is not enough to propose responsibly — a human has to
     catch every bad guess, so say nothing rather than guess.
-${staleRulesSection}  - Give a one-line "rationale" per fix so the reviewer understands your reasoning.
+${staleRulesSection}  - Give a one-line rationale per fix so the reviewer understands your reasoning.
 
 Issues (${fixableFindings.length}):
 ${fixableFindings.map((finding) => buildFindingBlock(finding, staleContextsByKey, restrictToCheckIds)).join('\n')}
 
 Issue keys you may use: ${issueKeyList}${releaseSection}
 
-Reply with this JSON object and nothing else:
-{
-  "kind": "hygiene",
-  "items": [
-    {
-      "issueKey": "<one of the keys above>",
-      "fixes": [
-        { "checkId": "<one of the fix ids listed for that issue>", "value": "<proposed value>", "rationale": "<one line>" }
-      ]
-    }
-  ]
-}`
+${buildRecordReplyInstructions(HYGIENE_REPLY_SPEC, listAskedFixRows(fixableFindings, restrictToCheckIds))}`
 }
 
 // ── Parsing ──
@@ -491,16 +542,53 @@ function readProposalValue(checkId: string, rawValue: unknown): string | null {
 }
 
 /**
+ * A table reply arrives as one flat item per row ({issueKey, checkId, value, rationale}); the JSON
+ * form nests fixes under each issue. Rows are folded into that nested shape so ONE validator reads
+ * both. A row left blank (no value) is the assistant choosing to propose nothing — skipped silently,
+ * exactly as an omitted fix in the JSON form is, never counted as unreadable.
+ */
+function foldTableRowsIntoItems(rawItems: readonly unknown[]): unknown[] {
+  return rawItems.flatMap((rawItem) => {
+    if (typeof rawItem !== 'object' || rawItem === null || 'fixes' in rawItem || !('checkId' in rawItem)) return [rawItem]
+    const tableRow = rawItem as Record<string, unknown>
+    if (tableRow.value === undefined) return []
+    return [{ issueKey: tableRow.issueKey, fixes: [{ checkId: tableRow.checkId, value: tableRow.value, rationale: tableRow.rationale }] }]
+  })
+}
+
+/**
+ * The asked rows a TABLE reply left out altogether. A JSON reply may omit fixes by design (its old
+ * form said so), so it is never chased; a blank cell in the table is an answer, not a gap.
+ */
+function findMissingFixRows(replyText: string, askedFixRows: readonly HygieneFixRow[]): HygieneFixRow[] {
+  const tableItems = readRecordTableItems(replyText, HYGIENE_REPLY_SPEC)
+  if (!tableItems || tableItems.length === 0) return []
+  const answeredRowIds = new Set(tableItems.map((tableItem) =>
+    `${String(tableItem.issueKey ?? '').trim().toUpperCase()}|${String(tableItem.checkId ?? '').trim()}`))
+  return askedFixRows.filter(([issueKey, checkId]) => !answeredRowIds.has(`${issueKey.toUpperCase()}|${checkId}`))
+}
+
+/** The follow-up for a table that left rows out: only those rows, in the same table. */
+function buildMissingFixRowsPrompt(missingFixRows: readonly HygieneFixRow[]): string {
+  return [
+    `Your last reply left out ${missingFixRows.length} of the fixes I asked about. Answer only these now, in the same table.`,
+    buildRecordReplyInstructions(HYGIENE_REPLY_SPEC, missingFixRows),
+  ].join('\n')
+}
+
+/**
  * Parses an AI reply into per-fix proposals, plus an honest account of what could not be used.
  *
- * Throws only for a reply that is wholly wrong — not JSON, or echoing another surface's kind.
- * Every other problem degrades per item or per fix rather than discarding the page's work.
+ * Throws only for a reply that is wholly wrong — neither the table nor JSON, or echoing another
+ * surface's kind. Every other problem degrades per item or per fix rather than discarding the page's
+ * work. When `askedFixRows` is given, a table that left rows out also yields a follow-up for them.
  */
 export function parseHygieneAiReply(
   replyText: string,
   knownIssueKeys: readonly string[],
+  askedFixRows: readonly HygieneFixRow[] = [],
 ): HygieneAiRunResult {
-  const parsedEnvelope = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>
+  const parsedEnvelope = JSON.parse(extractRecordReplyPayload(replyText, HYGIENE_REPLY_SPEC)) as Record<string, unknown>
   if (parsedEnvelope.kind !== HYGIENE_AI_REPLY_KIND) {
     throw new Error(
       `Response kind "${String(parsedEnvelope.kind)}" does not match the requested "${HYGIENE_AI_REPLY_KIND}".`,
@@ -508,7 +596,7 @@ export function parseHygieneAiReply(
   }
 
   const knownKeysUpper = new Set(knownIssueKeys.map((issueKey) => issueKey.toUpperCase()))
-  const rawItems = Array.isArray(parsedEnvelope.items) ? parsedEnvelope.items : []
+  const rawItems = foldTableRowsIntoItems(Array.isArray(parsedEnvelope.items) ? parsedEnvelope.items : [])
 
   const proposals: HygieneAiProposal[] = []
   const unknownKeys: string[] = []
@@ -556,5 +644,7 @@ export function parseHygieneAiReply(
     }
   }
 
-  return { proposals, unknownKeys, unparsedCount }
+  const missingFixRows = findMissingFixRows(replyText, askedFixRows)
+  const followUpPrompt = missingFixRows.length === 0 ? '' : buildMissingFixRowsPrompt(missingFixRows)
+  return { proposals, unknownKeys, unparsedCount, missingFixRows, followUpPrompt }
 }

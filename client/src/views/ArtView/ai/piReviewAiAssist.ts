@@ -10,10 +10,17 @@
 //     reported and dropped, never applied.
 //
 // The reply envelope is the {kind, items[]} shape the Canvas, Aging triage and Personal Flow
-// surfaces already use, so the shared object-rooted extractJsonPayload works unmodified and a reply
-// pasted from another surface is caught by the kind guard.
+// surfaces already use. Google's AI Mode — the team's only assistant (GH #499) — ignores JSON, so
+// the prompt ends with a fill-in table listing every Feature; the shared record reader turns that
+// table back into the same envelope, and a JSON reply from any other assistant is still read.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts'
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  type ReplyRecordColumn,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts'
 import {
   FEATURE_SIZING_SCALE,
   isFeatureSizeName,
@@ -35,6 +42,35 @@ const PI_REVIEW_REPLY_KIND = 'piReview'
 export const MAX_AI_NOTE_LENGTH = 300
 /** Values a model uses to mean "nothing to say" — they must never reach a cell. */
 const BLANKISH_NOTE_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--', 'tbd', 'unknown'])
+// A "|" or line break inside a summary would split its table row, so it is written as a space.
+const TABLE_CELL_BREAKING_PATTERN = /[|\r\n]+/g
+/** The line the reply's table follows, so the reader can skip any intro the assistant writes first. */
+const PI_REVIEW_REPLY_MARKER = 'PI_REVIEW_TABLE:'
+
+// The fill-in table's columns. Dev Work and Test Support are only asked for when the page has them.
+const ISSUE_KEY_COLUMN: ReplyRecordColumn = { field: 'issueKey', header: 'Issue key' }
+const FEATURE_NAME_COLUMN: ReplyRecordColumn = { field: 'summary', header: 'Feature', isNamingOnly: true }
+const SIZE_COLUMN: ReplyRecordColumn = { field: 'size', header: 'Size', answerHint: 'XS, S, M, L, XL or XXL — a size, never a point number' }
+const DEV_WORK_COLUMN: ReplyRecordColumn = {
+  field: 'devWork', header: 'Dev work', valueKind: 'boolean', answerHint: 'Yes when our team builds it, No when not, ___ when the material does not say',
+}
+const TEST_SUPPORT_COLUMN: ReplyRecordColumn = {
+  field: 'testSupport', header: 'Test support', valueKind: 'boolean',
+  answerHint: 'Yes when we ONLY help test another team\'s build, No when not, ___ when the material does not say',
+}
+const NOTE_COLUMNS: readonly ReplyRecordColumn[] = [
+  { field: 'riskNote', header: 'Risk note', answerHint: 'why this is risky' },
+  { field: 'dependencyNote', header: 'Dependency note', answerHint: 'why the dependency matters' },
+  { field: 'implementationNote', header: 'Implementation note', answerHint: 'what the ART/RTE should know' },
+  { field: 'rationale', header: 'Why this size', answerHint: 'one line on why this size' },
+]
+
+/** Every column the reader accepts — a reply carrying a box the page lacks is read, and the tab ignores it. */
+const PI_REVIEW_READ_SPEC: ReplyRecordSpec = {
+  kind: PI_REVIEW_REPLY_KIND,
+  replyMarker: PI_REVIEW_REPLY_MARKER,
+  columns: [ISSUE_KEY_COLUMN, FEATURE_NAME_COLUMN, SIZE_COLUMN, DEV_WORK_COLUMN, TEST_SUPPORT_COLUMN, ...NOTE_COLUMNS],
+}
 
 // ── Types ──
 
@@ -130,23 +166,18 @@ export function buildPiReviewAiPrompt(
   // Only ask for the boxes this page can record — see PiReviewAiColumnAvailability.
   const boxInstructions = [
     hasDevWorkColumn
-      ? '  3. "devWork": true when this Feature requires development BY OUR TEAM — we write the code.'
+      ? '  3. Dev work: Yes when this Feature requires development BY OUR TEAM — we write the code.'
       : '',
     hasTestSupportColumn
-      ? '  4. "testSupport": true when our team is ONLY supporting the testing of ANOTHER team\'s'
+      ? '  4. Test support: Yes when our team is ONLY supporting the testing of ANOTHER team\'s'
         + '\n     development — they build it, we help test it. If we build it, that is not test support.'
       : '',
-  ].filter(Boolean).join('\n');
-
-  const boxReplyFields = [
-    hasDevWorkColumn ? '      "devWork": true | false,' : '',
-    hasTestSupportColumn ? '      "testSupport": true | false,' : '',
   ].filter(Boolean).join('\n');
 
   const boxRules = hasDevWorkColumn || hasTestSupportColumn
     ? '\n  - Judge the Dev Work / Test Support boxes from what the Feature asks OUR team to do. They answer'
       + '\n    different questions: Dev Work is "do we build it"; Test Support is "do we only help test what'
-      + '\n    another team built". Omit a box entirely when the material does not tell you — saying nothing'
+      + '\n    another team built". Leave a box as ___ when the material does not tell you — saying nothing'
       + '\n    is better than a guess, because a wrong tick is one a person has to catch.'
     : '';
 
@@ -160,37 +191,66 @@ ${boxInstructions}
 ${buildSizingScaleBlock()}
 
 Rules:
-  - Return the "size" only. Do NOT return a point number — the app derives points from the scale,
+  - Give the size only. Do NOT return a point number — the app derives points from the scale,
     and any point number you send is ignored.
   - Use only the issue keys listed below. Never invent a Feature or a key.
   - The linked dependencies and risks shown are already recorded in Jira and shown on the page. Do
     not restate the keys: explain WHY the dependency bites or WHAT the risk actually is. That
     explanation is the part Jira's links cannot carry.
-  - If a Feature has no description or acceptance criteria, say so in "rationale" rather than
+  - If a Feature has no description or acceptance criteria, say so in "Why this size" rather than
     guessing a size silently.
   - Keep every note under ${MAX_AI_NOTE_LENGTH} characters and worth an RTE's attention.
-  - Omit a note field entirely when you have nothing useful to say about it.${boxRules}
+  - Leave a note cell as ___ when you have nothing useful to say about it.${boxRules}
 
 Features (${contexts.length} Features — cover every one):
 ${featureBlocks}
 
 Issue keys you may use: ${issueKeyList}
 
-Reply with this JSON object and nothing else:
-{
-  "kind": "piReview",
-  "items": [
-    {
-      "issueKey": "<one of the keys above>",
-      "size": "XS | S | M | L | XL | XXL",
-${boxReplyFields}
-      "riskNote": "<why this is risky, or omit>",
-      "dependencyNote": "<why the dependency matters, or omit>",
-      "implementationNote": "<what the ART/RTE should know, or omit>",
-      "rationale": "<one line on why this size>"
-    }
+${buildRecordReplyInstructions(buildPiReviewReplySpec(columnAvailability), listFeatureRowNamingCells(contexts))}`
+}
+
+/** The table the prompt asks for: only the boxes this page can record — see PiReviewAiColumnAvailability. */
+function buildPiReviewReplySpec(columnAvailability: PiReviewAiColumnAvailability): ReplyRecordSpec {
+  const boxColumns = [
+    ...(columnAvailability.hasDevWorkColumn ? [DEV_WORK_COLUMN] : []),
+    ...(columnAvailability.hasTestSupportColumn ? [TEST_SUPPORT_COLUMN] : []),
   ]
-}`
+  return { ...PI_REVIEW_READ_SPEC, columns: [ISSUE_KEY_COLUMN, FEATURE_NAME_COLUMN, SIZE_COLUMN, ...boxColumns, ...NOTE_COLUMNS] }
+}
+
+/** One pre-filled row per Feature — its key and summary — so the reply cannot invent or drop a Feature. */
+function listFeatureRowNamingCells(contexts: readonly PiReviewAiFeatureContext[]): string[][] {
+  return contexts.map((context) => [context.issueKey, context.summary.replace(TABLE_CELL_BREAKING_PATTERN, ' ')])
+}
+
+/**
+ * The follow-up to paste into the same AI chat, or '' when the reply needs none.
+ *
+ * An unreadable reply gets the whole table again; a reply that left Features without a usable answer
+ * gets a table of just those Features. Nothing missing is ever guessed — the assistant is asked.
+ *
+ * @param runResult - The parsed reply, or null when the reply could not be read at all.
+ */
+export function buildPiReviewAiFollowUpPrompt(
+  contexts: readonly PiReviewAiFeatureContext[],
+  columnAvailability: PiReviewAiColumnAvailability,
+  runResult: PiReviewAiRunResult | null,
+): string {
+  const replySpec = buildPiReviewReplySpec(columnAvailability)
+  if (runResult === null) {
+    return buildRecordFormatFixPrompt(replySpec, listFeatureRowNamingCells(contexts))
+  }
+  const answeredKeys = new Set(runResult.suggestions.map((suggestion) => suggestion.issueKey))
+  const missingContexts = contexts.filter((context) => !answeredKeys.has(context.issueKey.toUpperCase()))
+  if (missingContexts.length === 0) {
+    return ''
+  }
+  return [
+    `Your last reply gave no usable answer for ${missingContexts.map((context) => context.issueKey).join(', ')}. `
+      + 'Answer only those now, in this table.',
+    buildRecordReplyInstructions(replySpec, listFeatureRowNamingCells(missingContexts)),
+  ].join('\n')
 }
 
 // ── Parsing ──
@@ -268,14 +328,14 @@ function readSuggestion(rawItem: Record<string, unknown>, issueKey: string): PiR
  * missing key drops the item. That trade is deliberate: with one item per Feature across a whole PI,
  * throwing on the first bad enum would discard a page of good work.
  *
- * @param replyText - The raw reply, possibly wrapped in prose or ```json fences.
+ * @param replyText - The raw reply: the filled-in table (markdown or tab-separated) or JSON, possibly wrapped in prose.
  * @param knownIssueKeys - The Feature keys actually on the page; anything else is reported.
  */
 export function parsePiReviewAiReply(
   replyText: string,
   knownIssueKeys: readonly string[],
 ): PiReviewAiRunResult {
-  const parsedEnvelope = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>
+  const parsedEnvelope = JSON.parse(extractRecordReplyPayload(replyText, PI_REVIEW_READ_SPEC)) as Record<string, unknown>
   if (parsedEnvelope.kind !== PI_REVIEW_REPLY_KIND) {
     throw new Error(
       `Response kind "${String(parsedEnvelope.kind)}" does not match the requested "${PI_REVIEW_REPLY_KIND}".`,

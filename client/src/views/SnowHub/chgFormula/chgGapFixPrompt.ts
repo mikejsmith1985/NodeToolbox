@@ -5,7 +5,8 @@
 // just those fields rewritten, which the app applies from the pasted reply. A small prompt gets a short,
 // direct reply that assistants do not cut off.
 
-import { CONVERSATIONAL_REPLY_INSTRUCTION } from './assistantReplyText.ts';
+import { buildSectionsFollowUpPrompt, type ReplySection } from '../../../utils/aiReplySections.ts';
+import { CHG_FIELD_REPLY_SECTIONS, CONVERSATIONAL_REPLY_INSTRUCTION } from './assistantReplyText.ts';
 import { buildChgContextText, type ChgPromptContext, type ExtraPromptPart } from './chgPromptContext.ts';
 import type { ChgTextFieldValues } from './chgRiskCheckPrompt.ts';
 import {
@@ -14,6 +15,7 @@ import {
   type ChgTextFieldKey,
 } from './formulaCard.ts';
 import { renderSelectedChangeText, resolveGapTextFields } from './gapFocus.ts';
+import { buildCtaskBackoutSection } from './ctaskReviewPrompt.ts';
 import type { RiskCheckFinding } from './riskCheckReview.ts';
 
 // Each drafted field's reply marker, in the order the drafting prompt uses them.
@@ -26,6 +28,9 @@ const FIELD_MARKERS: ReadonlyArray<{ marker: string; fieldKey: ChgTextFieldKey }
   { marker: 'TEST_PLAN', fieldKey: 'testPlan' },
   { marker: 'BACKOUT_PLAN', fieldKey: 'backoutPlan' },
 ];
+
+// What each labelled field in the reply form stands for; the assistant replaces it with the field's text.
+const WHOLE_FIELD_PLACEHOLDER = '[the whole field as it should now read]';
 
 /** One gap as the rewrite prompt lists it: the field, what is wrong, and the reviewer's suggested fix. */
 function renderGapLine(finding: RiskCheckFinding): string {
@@ -100,15 +105,31 @@ export function buildChgGapFixPrompt(
     ...(extraPart?.gapLines ?? []),
     ...(hasChangeFields ? ['', 'Formula Card rules for these fields:', renderFieldRules(fixableFieldKeys)] : []),
     '',
-    'Reply with the complete rewritten text of each field you changed, using these markers in this order, and '
-      + 'leave out any field you did not change:',
-    ...FIELD_MARKERS.filter(({ fieldKey }) => fixableFieldKeys.includes(fieldKey)).map(({ marker }) => `${marker}:`),
-    ...(extraPart?.replyLines ?? []),
+    'Reply with the complete rewritten text of each field you changed, using the labels at the end of this message in '
+      + 'their order, and leave out any field you did not change. Start each one on its own line with its label exactly '
+      + 'as written, followed by a colon — not a heading, a table or bullet points of your own.',
     'Each is the whole field as it should now read, not just the added sentence. Keep every correct fact already '
       + 'in it. A gap in a record field (configuration item, category, assignment group, owner, dates) cannot be '
       + 'fixed in text — skip it. Where the fix needs a fact you do not have, ask me for it here in this chat — '
       + 'in this round, never write [CONFIRM: ...] and never invent it.',
     '',
     CONVERSATIONAL_REPLY_INSTRUCTION,
+    '',
+    // The labelled form comes last, so the reply's shape is the final thing the assistant reads (GH #499).
+    ...FIELD_MARKERS.filter(({ fieldKey }) => fixableFieldKeys.includes(fieldKey)).map(({ marker }) => `${marker}: ${WHOLE_FIELD_PLACEHOLDER}`),
+    ...(extraPart?.replyLines ?? []),
   ].join('\n');
+}
+
+/**
+ * The follow-up for a fix reply that could not be read at all — no field and no task plan was found in it. It asks for
+ * the same labelled form, so the rewrites already worked out in that chat are kept (GH #499). A reply that rewrote only
+ * some fields needs none: leaving an unchanged field out is what this round asks for.
+ */
+export function buildGapFixFollowUp(fixableFieldKeys: readonly ChgTextFieldKey[], askedCtaskNumbers: readonly string[]): string {
+  const askedSections: ReplySection[] = [
+    ...CHG_FIELD_REPLY_SECTIONS.filter((section) => fixableFieldKeys.includes(section.key)),
+    ...askedCtaskNumbers.map((ctaskNumber) => buildCtaskBackoutSection(ctaskNumber)),
+  ];
+  return askedSections.length === 0 ? '' : buildSectionsFollowUpPrompt(askedSections, true);
 }

@@ -18,6 +18,7 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
+  buildPersonalFlowCoachingFollowUpPrompt,
   buildPersonalFlowCoachingPrompt,
   parsePersonalFlowCoachingResponse,
   type PersonalFlowCoaching,
@@ -772,6 +773,8 @@ function PersonalFlowCoachingSection({
 }): React.JSX.Element {
   const [coaching, setCoaching] = useState<PersonalFlowCoaching | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the reply could not be used (GH #499).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
 
   const prompt = useMemo(
     () => buildPersonalFlowCoachingPrompt(toCoachingInput(result, personName, windowDays, statusNameById)),
@@ -782,9 +785,11 @@ function PersonalFlowCoachingSection({
     try {
       setCoaching(parsePersonalFlowCoachingResponse(responseText));
       setError(null);
+      setFollowUpPrompt('');
     } catch (caughtError) {
       setCoaching(null);
       setError(caughtError instanceof Error ? caughtError.message : 'Could not read the response.');
+      setFollowUpPrompt(buildPersonalFlowCoachingFollowUpPrompt(responseText));
     }
   };
 
@@ -795,6 +800,8 @@ function PersonalFlowCoachingSection({
       ingestLabel="Ingest coaching"
       onIngest={ingestCoaching}
       error={error}
+      followUpFieldId="personal-flow-coaching-follow-up"
+      followUpPrompt={followUpPrompt}
     >
       {coaching !== null && <CoachingNarrative coaching={coaching} />}
     </ReportAiPanel>

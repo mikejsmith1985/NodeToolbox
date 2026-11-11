@@ -108,7 +108,9 @@ import {
   buildReleaseNotesHeading,
   buildReleaseNotesHtml,
   buildReleaseAiAssistPrompt,
-  parseReleaseAiAssistResponse,
+  buildReleaseAiAssistReplyExpectation,
+  readReleaseAiAssistReply,
+  type ReleaseAiAssistReplyExpectation,
   type ReleaseAiAssistPromptInput,
   type ReleaseAiAssistTableDocument,
   type ReleaseAiAssistTableRow,
@@ -125,6 +127,8 @@ import { ReleaseNotesConfluencePublisher } from './releaseNotesConfluence/Releas
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
+import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import { buildPointingReplyFormLines, parsePointingAiReply } from './aiReply/pointingAiAssistReply.ts';
 
 // ── Named constants ──
 
@@ -840,6 +844,10 @@ interface ReleaseImportModalState {
   versionName: string;
   responseText: string;
   errorMessage: string | null;
+  /** The keys the release's prompt listed — what the reply's form is checked against (GH #499). */
+  expectation?: ReleaseAiAssistReplyExpectation;
+  /** A follow-up for the same AI chat when the reply was unreadable or left rows out; '' when none. */
+  followUpPrompt?: string;
 }
 
 /** Release radar status classification — "done" follows the ART delivered rule (Ready for QA or later). */
@@ -3666,16 +3674,6 @@ function computeSingleEstimate(
 // ── AI Assist helpers ──
 
 /**
- * Parsed estimate from an AI Assist response. Points have already been validated
- * against the Fibonacci scale before this type is constructed.
- */
-interface AiAssistPointingItem {
-  key: string;
-  points: number;
-  reasoning: string;
-}
-
-/**
  * Builds the prompt text the user pastes into AI Assist.
  * Includes the anchor story as a calibration reference, every non-anchor queue
  * issue with its algorithm estimate and dimension scores, and explicit output
@@ -3742,78 +3740,12 @@ function buildPointingAiAssistPrompt(
     'The algorithm estimate is a starting point — apply your judgment based on description and context.',
     'For sparse stories (short summary, no description), reason conservatively from available signals.',
     '',
-    'Respond ONLY with a valid JSON array — no prose, no markdown code fences:',
-    '[',
-    '  { "key": "PROJ-123", "points": 5, "reasoning": "One sentence." },',
-    `  { "key": "PROJ-124", "points": ${breakdownThreshold}, "reasoning": "One sentence. ⚠ Consider breakdown." }`,
-    ']',
-    '',
     `Only use values from the team's scale: ${scaleText}.`,
     `Append "⚠ Consider breakdown." to the reasoning for any estimate above ${breakdownThreshold}.`,
+    '',
+    // A pre-filled table, not a JSON array: Google's AI Mode ignores reply syntax but fills in a table (GH #499).
+    buildPointingReplyFormLines(nonAnchorIssues.map((issue) => issue.key), storyPointScale, breakdownThreshold),
   ].join('\n');
-}
-
-/**
- * Extracts and validates an AI Assist pointing response pasted by the user.
- * Searches the full text for a JSON array (AI Assist often wraps JSON in prose),
- * then filters out any entries whose key is not in the current queue or whose
- * point value is not on the Fibonacci scale.
- */
-function parseAiAssistPointingResponse(
-  responseText: string,
-  validQueueKeys: Set<string>,
-  storyPointScale: number[],
-): { items: AiAssistPointingItem[]; errorMessage: string | null } {
-  const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    return {
-      items: [],
-      errorMessage: 'No JSON array found. Make sure AI Assist returned the array format described in the prompt.',
-    };
-  }
-
-  let parsedResponse: unknown;
-  try {
-    parsedResponse = JSON.parse(jsonMatch[0]);
-  } catch {
-    return {
-      items: [],
-      errorMessage: 'The JSON in the response could not be parsed — check for missing commas or quotes.',
-    };
-  }
-
-  if (!Array.isArray(parsedResponse)) {
-    return { items: [], errorMessage: 'Expected a JSON array but found a different type.' };
-  }
-
-  const validScaleValues = new Set(storyPointScale);
-  const validItems: AiAssistPointingItem[] = [];
-
-  for (const rawEntry of parsedResponse) {
-    if (typeof rawEntry !== 'object' || rawEntry === null) continue;
-
-    const entry = rawEntry as Record<string, unknown>;
-    const issueKey = typeof entry.key === 'string' ? entry.key.trim().toUpperCase() : null;
-    const pointValue = typeof entry.points === 'number' ? entry.points : null;
-    const reasoning = typeof entry.reasoning === 'string' ? entry.reasoning : '';
-
-    // Skip entries whose key is not in the current pointing queue
-    if (!issueKey || !validQueueKeys.has(issueKey)) continue;
-
-    // Skip entries with point values that are off the configured scale
-    if (pointValue === null || !validScaleValues.has(pointValue)) continue;
-
-    validItems.push({ key: issueKey, points: pointValue, reasoning });
-  }
-
-  if (validItems.length === 0) {
-    return {
-      items: [],
-      errorMessage: 'No valid estimates matched the current queue. Check that issue keys are correct and point values are on the scale (1 2 3 5 8 13 20 40 100).',
-    };
-  }
-
-  return { items: validItems, errorMessage: null };
 }
 
 interface PointingTableRowProps {
@@ -4088,6 +4020,10 @@ function PointingTab({
   const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
   const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
   const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the pointing reply was unreadable or left stories out (GH #499).
+  const [pointingFollowUpPrompt, setPointingFollowUpPrompt] = useState('');
+  // The stories still awaiting an estimate, so a follow-up's reply pasted on its own is checked only against them.
+  const [pendingPointingKeys, setPendingPointingKeys] = useState<string[] | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
   function rebuildPointingSession({
@@ -4340,6 +4276,8 @@ function PointingTab({
     );
     setAiAssistResponseInput('');
     setAiAssistResponseParseError(null);
+    setPointingFollowUpPrompt('');
+    setPendingPointingKeys(null);
     setIsCopied(false);
     setIsAiAssistModalVisible(true);
   }
@@ -4357,12 +4295,15 @@ function PointingTab({
    * Closes the modal on success so the user can review and save at their own pace.
    */
   function applyAiAssistResponse(responseText: string) {
-    const validQueueKeys = new Set(
-      pointingQueue
-        .filter((issue) => issue.key !== anchorConfig?.issueKey)
-        .map((issue) => issue.key),
-    );
-    const { items, errorMessage } = parseAiAssistPointingResponse(responseText, validQueueKeys, storyPointScale);
+    const queueKeys = pointingQueue
+      .filter((issue) => issue.key !== anchorConfig?.issueKey)
+      .map((issue) => issue.key);
+    const askedQueueKeys = pendingPointingKeys ?? queueKeys;
+    const validQueueKeys = new Set(queueKeys.map((issueKey) => issueKey.toUpperCase()));
+    const { items, errorMessage, followUpPrompt } = parsePointingAiReply(responseText, validQueueKeys, storyPointScale, askedQueueKeys);
+    setPointingFollowUpPrompt(followUpPrompt);
+    const estimatedKeys = new Set(items.map((item) => item.key));
+    setPendingPointingKeys(askedQueueKeys.filter((issueKey) => !estimatedKeys.has(issueKey.toUpperCase())));
 
     if (errorMessage) {
       setAiAssistResponseParseError(errorMessage);
@@ -4376,6 +4317,11 @@ function PointingTab({
       }
       return nextOverrides;
     });
+    // Stories the reply left out stay open: the modal keeps showing their follow-up instead of closing.
+    if (followUpPrompt !== '') {
+      setAiAssistResponseParseError(`Applied ${items.length} estimate(s). Some stories were left out or pointed off the scale — copy the follow-up below into the same AI chat, then paste its reply here.`);
+      return;
+    }
     setIsAiAssistModalVisible(false);
     setAiAssistResponseInput('');
     setAiAssistResponseParseError(null);
@@ -4634,7 +4580,7 @@ function PointingTab({
 
             <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 2</strong> — Paste AI Assist's JSON response below. Toolbox will apply
+                <strong>Step 2</strong> — Paste AI Assist's reply (its filled-in table) below. Toolbox will apply
                 the estimates to the Override column so you can review each value before saving.
               </p>
               <textarea
@@ -4644,12 +4590,13 @@ function PointingTab({
                   setAiAssistResponseInput(changeEvent.target.value);
                   setAiAssistResponseParseError(null);
                 }}
-                placeholder={'[\n  { "key": "PROJ-123", "points": 5, "reasoning": "..." },\n  ...\n]'}
+                placeholder={'Issue key | Points | Reasoning\nPROJ-123 | 5 | ...'}
                 value={aiAssistResponseInput}
               />
               {aiAssistResponseParseError ? (
                 <p className={styles.errorMessage}>{aiAssistResponseParseError}</p>
               ) : null}
+              <AiFollowUpPrompt fieldId="pointing-ai-follow-up" followUpPrompt={pointingFollowUpPrompt} />
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
@@ -5999,13 +5946,17 @@ function ReleasesTab({
   }, [devSkipRiskPromptModalState, devSkipRiskReplyText]);
 
   const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
+    // The same input the prompt was built from, so the reply is checked against exactly the keys it listed.
+    const promptInput = buildReleasePromptInput(projectKey.trim().toUpperCase(), releaseEntry);
     setReleaseImportModalState({
       versionId: releaseEntry.version.id,
       versionName: releaseEntry.version.name,
       responseText: '',
       errorMessage: null,
+      expectation: buildReleaseAiAssistReplyExpectation(promptInput),
+      followUpPrompt: '',
     });
-  }, []);
+  }, [projectKey]);
 
   const handleReleaseImportTextChange = useCallback((responseText: string) => {
     setReleaseImportModalState((previousModalState) => {
@@ -6026,26 +5977,24 @@ function ReleasesTab({
       return;
     }
 
-    try {
-      const parsedReleaseNotes = parseReleaseAiAssistResponse(releaseImportModalState.responseText);
+    const expectation = releaseImportModalState.expectation
+      ?? { releaseName: releaseImportModalState.versionName, issueKeys: [], featureKeys: [] };
+    const replyReading = readReleaseAiAssistReply(releaseImportModalState.responseText, expectation);
+    const parsedReleaseNotes = replyReading.document;
+    if (parsedReleaseNotes) {
       setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
         ...previousReleaseNotesByVersionId,
         [releaseImportModalState.versionId]: parsedReleaseNotes,
       }));
-      setReleaseImportModalState(null);
-    } catch (caughtError) {
-      const errorMessage = caughtError instanceof Error ? caughtError.message : 'Unable to parse the AI Assist response.';
-      setReleaseImportModalState((previousModalState) => {
-        if (!previousModalState) {
-          return previousModalState;
-        }
-
-        return {
-          ...previousModalState,
-          errorMessage,
-        };
-      });
     }
+    // A complete reply closes the modal; otherwise it stays open with the message and the follow-up to copy.
+    if (parsedReleaseNotes && replyReading.followUpPrompt === '') {
+      setReleaseImportModalState(null);
+      return;
+    }
+    setReleaseImportModalState((previousModalState) => (previousModalState
+      ? { ...previousModalState, errorMessage: replyReading.message, followUpPrompt: replyReading.followUpPrompt }
+      : previousModalState));
   }, [releaseImportModalState]);
 
   const handleReleaseNotesSectionRef = useCallback((versionId: string, releaseNotesSectionElement: HTMLElement | null) => {
@@ -6594,7 +6543,7 @@ function ReleasesTab({
               Paste AI Assist response for {releaseImportModalState.versionName}
             </h3>
             <p className={styles.releasePromptInstructions}>
-              Paste the JSON response from AI Assist. Toolbox will parse it and render a release-notes table for this release.
+              Paste the reply from AI Assist (its filled-in form, or JSON). Toolbox will read it and render a release-notes table for this release.
             </p>
             <textarea
               aria-label="AI Assist release response"
@@ -6605,6 +6554,7 @@ function ReleasesTab({
             {releaseImportModalState.errorMessage ? (
               <p className={styles.errorMessage}>{releaseImportModalState.errorMessage}</p>
             ) : null}
+            <AiFollowUpPrompt fieldId="release-notes-ai-follow-up" followUpPrompt={releaseImportModalState.followUpPrompt ?? ''} />
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}

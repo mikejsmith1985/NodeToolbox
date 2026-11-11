@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { RcpChangeFacts } from './rcpChangeFacts.ts';
 import {
+  buildRcpJustificationFollowUp,
   buildRcpJustificationPrompt,
   planRcpWindowFix,
   readRcpJustificationReply,
@@ -72,5 +73,22 @@ describe('the justification fix', () => {
   it('reads the rewritten justification from a pasted reply', () => {
     expect(readRcpJustificationReply('```text\nJUSTIFICATION:\nMust ship during RCP.\n```')).toBe('Must ship during RCP.');
     expect(readRcpJustificationReply('nothing useful')).toBe('');
+  });
+});
+
+describe('the justification rewrite with Google AI Mode (GH #499)', () => {
+  it('ends with the labelled form, so the reply\'s shape is the last thing read', () => {
+    expect(buildRcpJustificationPrompt(FACTS).trim().endsWith('JUSTIFICATION: [the whole rewritten justification]')).toBe(true);
+  });
+
+  it('reads a rewrite under a heading, without the intro or the closing offer', () => {
+    const replyText = 'Here is the rewrite.\n\n### Rewritten Justification\nMust ship during the RCP: the vendor cut-off is Dec 1.\n\nIf you want, I can shorten it.';
+
+    expect(readRcpJustificationReply(replyText)).toBe('Must ship during the RCP: the vendor cut-off is Dec 1.');
+  });
+
+  it('offers a follow-up asking for the label when no justification could be read', () => {
+    expect(buildRcpJustificationFollowUp('The change seems fine to me.')).toContain('JUSTIFICATION: [text]');
+    expect(buildRcpJustificationFollowUp('JUSTIFICATION: Must ship now.')).toBe('');
   });
 });

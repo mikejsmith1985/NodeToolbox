@@ -21,9 +21,10 @@ import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import { buildCurrentTemplateData } from '../hooks/crgTemplateData.ts';
 import type { AiAssistGeneratedFields } from '../hooks/useAiAssist.ts';
-import { buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { buildChgFieldsFollowUp, buildIssueDetailText, parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION, isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
-import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
+import { buildChgGapFixPrompt, buildGapFixFollowUp, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
+import { appendRoundReply, buildRiskCheckFollowUp, listFullCheckItems } from '../chgFormula/riskCheckTable.ts';
 import {
   buildGapRecheckPrompt,
   countRecheckOutcome,
@@ -2557,8 +2558,12 @@ const APPLY_FIELDS_BUTTON_LABEL = 'Apply reply to fields';
 const APPLY_FIXES_BUTTON_LABEL = 'Apply fixes to fields';
 const USE_RECHECK_BUTTON_LABEL = 'Use this re-check';
 const NO_RECOGNISABLE_FIELDS_MESSAGE =
-  'No recognisable fields found — the reply must use the SHORT_DESCRIPTION / DESCRIPTION / JUSTIFICATION / '
-  + 'RISK_AND_IMPACT / IMPLEMENTATION_PLAN / TEST_PLAN / BACKOUT_PLAN markers.';
+  'No recognisable fields found — paste the follow-up below into the same AI chat, then paste its reply here.';
+// Added to a status when a reply left asked-for fields or review rows out; the follow-up asks for only those (GH #499).
+const FIELDS_LEFT_OUT_NOTE = ' Some fields were left out — paste the follow-up below into the same AI chat.';
+const ROWS_LEFT_OUT_NOTE = ' Some rows were left unanswered — paste the follow-up below into the same AI chat.';
+// Shown when a pasted review or re-check holds no answer Toolbox can read; the follow-up beside it asks for the table.
+const UNREADABLE_REVIEW_MESSAGE = 'No answers could be read from the pasted reply — paste the follow-up below into the same AI chat.';
 
 /** Names the surface so an operator always knows whether they are creating or overwriting. */
 function resolveTabTitle(mode: CrgTabProps['mode'], rebuildTargetNumber: string): string {
@@ -2709,11 +2714,13 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
   ]);
 
   // Parses a pasted reply and applies every recognised marker value to its CHG field,
-  // restricted to the fields the originating prompt actually asked for.
+  // restricted to the fields the originating prompt actually asked for. The follow-up asks the same AI chat for the
+  // asked fields still missing from every reply of the round (GH #499) — never guessed.
   const applyParsedChgFields = useCallback((
     replyText: string,
     allowedFieldKeys: ReadonlyArray<keyof AiAssistGeneratedFields>,
-  ): { statusMessage: string; wasApplied: boolean; appliedFieldCount: number } => {
+    roundReplies: string = replyText,
+  ): { statusMessage: string; wasApplied: boolean; appliedFieldCount: number; followUpPrompt: string } => {
     const parsedFields = parseAiAssistChgResponse(replyText);
     const appliedFieldKeys = allowedFieldKeys.filter((fieldKey) => Boolean(parsedFields[fieldKey]));
     const planningUpdate: Partial<Record<'implementationPlan' | 'testPlan' | 'backoutPlan', string>> = {};
@@ -2730,14 +2737,28 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       actions.setChgPlanningContent(planningUpdate);
     }
 
+    const followUpPrompt = buildChgFieldsFollowUp(appliedFieldKeys.length > 0 ? roundReplies : replyText, allowedFieldKeys);
     return {
       wasApplied: appliedFieldKeys.length > 0,
       appliedFieldCount: appliedFieldKeys.length,
+      followUpPrompt,
       statusMessage: appliedFieldKeys.length > 0
-        ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.`
+        ? `Applied ${appliedFieldKeys.length} field(s) from the pasted reply.${followUpPrompt ? FIELDS_LEFT_OUT_NOTE : ''}`
         : NO_RECOGNISABLE_FIELDS_MESSAGE,
     };
   }, [actions]);
+
+  // A drafting round's reply handler: applies each pasted reply, and reads the round's replies together so a follow-up's
+  // answer for the fields left out completes the first reply instead of being asked for again.
+  const buildDraftingReplyHandler = useCallback((allowedFieldKeys: ReadonlyArray<keyof AiAssistGeneratedFields>) => {
+    let roundReplies = '';
+    return (replyText: string) => {
+      const nextRoundReplies = appendRoundReply(roundReplies, replyText);
+      const applyOutcome = applyParsedChgFields(replyText, allowedFieldKeys, nextRoundReplies);
+      if (applyOutcome.wasApplied) roundReplies = nextRoundReplies;
+      return applyOutcome;
+    };
+  }, [applyParsedChgFields]);
 
   // Step 4 Planning: the full seven-field prompt — change details and all three plans — written to the
   // Release Manager's Formula Card and seeded with the record's facts and any content to refine (GH #395).
@@ -2752,9 +2773,9 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         + 'Implementation, Test and Backout plans — then paste the reply below to fill them automatically.',
       promptText: buildPrompt(selectedIssues, readChgTextFields(state), buildChgPromptContextFromState(state, choiceOptions)),
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
-      applyReply: (replyText) => applyParsedChgFields(replyText, ENHANCE_PROMPT_FIELD_KEYS),
+      applyReply: buildDraftingReplyHandler(ENHANCE_PROMPT_FIELD_KEYS),
     });
-  }, [state, choiceOptions, buildPrompt, applyParsedChgFields, setAiAssistPromptSession]);
+  }, [state, choiceOptions, buildPrompt, buildDraftingReplyHandler, setAiAssistPromptSession]);
 
   // Step 3: a targeted prompt for Short Description and Description only — the full
   // four-field prompt (Step 4) is left to the Planning step so each step stays focused.
@@ -2772,19 +2793,19 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       '',
       buildChgContextText(buildChgPromptContextFromState(state, choiceOptions)),
       '',
+      'Jira issues:',
+      issueLines,
+      '',
       'SHORT_DESCRIPTION must satisfy:',
       renderFormulaGuidanceForField('shortDescription'),
       'DESCRIPTION must satisfy:',
       renderFormulaGuidanceForField('description'),
       '',
-      'Respond ONLY in this exact format with no extra commentary:',
+      CODE_BLOCK_REPLY_INSTRUCTION,
+      // The labelled form comes last, so the reply's shape is the final thing the assistant reads (GH #499).
+      'Respond ONLY in this exact format, each label starting its own line, with no extra commentary:',
       'SHORT_DESCRIPTION: [one line: domain | action | object | version or scope | environment]',
       'DESCRIPTION: [current state, what changes, how, what does not change, why now]',
-      '',
-      'Jira issues:',
-      issueLines,
-      '',
-      CODE_BLOCK_REPLY_INSTRUCTION,
     ].join('\n');
 
     setAiAssistPromptSession({
@@ -2792,15 +2813,18 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         'Copy this prompt and paste it into AI Assist to draft the Short Description and Description, then paste the reply below to fill the two fields automatically.',
       promptText: draftPrompt,
       applyButtonLabel: APPLY_FIELDS_BUTTON_LABEL,
-      applyReply: (replyText) => applyParsedChgFields(replyText, DRAFT_PROMPT_FIELD_KEYS),
+      applyReply: buildDraftingReplyHandler(DRAFT_PROMPT_FIELD_KEYS),
     });
-  }, [state, choiceOptions, applyParsedChgFields, setAiAssistPromptSession]);
+  }, [state, choiceOptions, buildDraftingReplyHandler, setAiAssistPromptSession]);
 
   // Step 6: the Release Manager's pre-approval check — the whole change, record facts included, against
   // every Formula Card field (GH #395). The pasted review is displayed on the Results step as-is — the
   // user may still submit regardless of what it flags (FR-005).
   const handleOpenRiskCheckPrompt = useCallback(() => {
     const riskPrompt = buildChgRiskCheckPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state));
+    const askedItems = listFullCheckItems();
+    // Every review pasted in this round is kept, so a follow-up's answers for the rows left blank add to the first.
+    let roundReplies = '';
 
     setAiAssistPromptSession({
       instructions:
@@ -2813,18 +2837,24 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         if (!reviewText && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setRiskCheckReviewText(applyTeamStandards(reviewText, readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
+        if (parseRiskCheckReview(reviewText).findings.length === 0 && !revisedFieldsText) {
+          return { statusMessage: UNREADABLE_REVIEW_MESSAGE, wasApplied: false, followUpPrompt: buildRiskCheckFollowUp(replyText, askedItems) };
+        }
+        roundReplies = appendRoundReply(roundReplies, reviewText);
+        setRiskCheckReviewText(applyTeamStandards(roundReplies, readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
         // The corrected fields the review asked for are written straight into the change, so a gap is
         // fixed by pasting the reply rather than by retyping each suggestion.
         const correctedFieldCount = revisedFieldsText
           ? applyParsedChgFields(revisedFieldsText, ENHANCE_PROMPT_FIELD_KEYS).appliedFieldCount
           : 0;
         setIsRiskReviewOutOfDate(correctedFieldCount > 0);
+        const followUpPrompt = buildRiskCheckFollowUp(roundReplies, askedItems);
         return {
-          statusMessage: correctedFieldCount > 0
+          statusMessage: (correctedFieldCount > 0
             ? `Risk review captured and ${correctedFieldCount} field(s) corrected from it — the review is shown on the Results step.`
-            : 'Risk review captured — it is shown on the Results step.',
+            : 'Risk review captured — it is shown on the Results step.') + (followUpPrompt ? ROWS_LEFT_OUT_NOTE : ''),
           wasApplied: true,
+          followUpPrompt,
         };
       },
     });
@@ -2850,7 +2880,10 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
         // Only the fields the prompt showed may change — a reply that rewrites more is not trusted with it.
         const fixOutcome = applyParsedChgFields(replyText, resolveFixableFields(gapFindings));
         if (!fixOutcome.wasApplied) {
-          return isAssistantQuestion(replyText) ? { ...fixOutcome, statusMessage: PASTED_QUESTION_MESSAGE } : fixOutcome;
+          // A question is answered in the AI chat; a reply in some other shape gets the labelled form again.
+          return isAssistantQuestion(replyText)
+            ? { ...fixOutcome, statusMessage: PASTED_QUESTION_MESSAGE, followUpPrompt: '' }
+            : { ...fixOutcome, followUpPrompt: buildGapFixFollowUp(resolveFixableFields(gapFindings), []) };
         }
         setIsRiskReviewOutOfDate(true);
         return {
@@ -2871,6 +2904,8 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       handleOpenRiskCheckPrompt();
       return;
     }
+    const askedItems = openFindings.map((finding) => finding.field);
+    let roundReplies = '';
 
     setAiAssistPromptSession({
       instructions:
@@ -2879,15 +2914,17 @@ export default function CrgTab({ mode = 'wizard', targetChangeNumber }: CrgTabPr
       promptText: buildGapRecheckPrompt(buildRiskCheckContextFromState(state, choiceOptions), readChgTextFields(state), openFindings),
       applyButtonLabel: USE_RECHECK_BUTTON_LABEL,
       applyReply: (replyText) => {
-        const { closedCount, stillOpenCount } = countRecheckOutcome(replyText);
-        if (closedCount + stillOpenCount === 0) {
-          return { wasApplied: false, statusMessage: 'No PASS / GAP lines found in the pasted re-check.' };
+        if (parseRiskCheckReview(replyText).findings.length === 0) {
+          return { wasApplied: false, statusMessage: UNREADABLE_REVIEW_MESSAGE, followUpPrompt: buildRiskCheckFollowUp(replyText, askedItems) };
         }
-        setRiskCheckReviewText(applyTeamStandards(mergeRecheckIntoReview(previousReviewText, replyText), readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
+        roundReplies = appendRoundReply(roundReplies, replyText);
+        const { closedCount, stillOpenCount } = countRecheckOutcome(roundReplies);
+        setRiskCheckReviewText(applyTeamStandards(mergeRecheckIntoReview(previousReviewText, roundReplies), readChangeDurationEstimates(state), undefined, state.chgBasicInfo.assignedTo.displayName));
         setIsRiskReviewOutOfDate(false);
         return {
           wasApplied: true,
           statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open — the review is updated.`,
+          followUpPrompt: buildRiskCheckFollowUp(roundReplies, askedItems),
         };
       },
     });

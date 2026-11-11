@@ -10,10 +10,17 @@
 
 import { useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import { useAiAssist } from '../hooks/useAiAssist.ts';
 import type { ChangeRequest } from '../../../types/snow.ts';
 import { buildCabFactSheet } from './cabFactSheet.ts';
-import { buildCabPrepPrompt, parseCabPrepReply } from './cabPrepPrompt.ts';
+import {
+  buildCabPrepFollowUp,
+  buildCabPrepPrompt,
+  mergeCabPreparedAnswers,
+  parseCabPrepReply,
+  type CabPreparedAnswer,
+} from './cabPrepPrompt.ts';
 import { buildCabPrepPack, formatCabPrepPack } from './cabPrepPack.ts';
 import { loadCabScopeIssues } from './cabScopeFetch.ts';
 import { readJiraKeysFromChange, readRejectedIssueKeys, readTypedIssueKeys } from './cabScopeSource.ts';
@@ -46,6 +53,9 @@ export function CabPrepSection({ loadedChange, styles }: CabPrepSectionProps) {
   const [promptText, setPromptText] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
+  // This round's answers so far, so a follow-up's reply for the questions left out adds to them (GH #499).
+  const [roundAnswers, setRoundAnswers] = useState<CabPreparedAnswer[]>([]);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
 
   // The keys the change itself names — the seed the operator edits from.
   const seededScopeKeys = readJiraKeysFromChange(
@@ -108,17 +118,27 @@ export function CabPrepSection({ loadedChange, styles }: CabPrepSectionProps) {
     setPromptText(buildCabPrepPrompt(factSheet));
     setReplyText('');
     setApplyStatus(null);
+    setRoundAnswers([]);
+    setFollowUpPrompt('');
   }
 
-  /** Consumes the pasted reply and renders the pack, or says why it could not. */
+  /**
+   * Consumes the pasted reply and renders the pack, or says why it could not. A reply that could not be read, or that
+   * left questions out, brings a follow-up for the same AI chat; its reply is added to the answers already given.
+   */
   function applyReply(): void {
     try {
       const ingest = parseCabPrepReply(replyText);
       if (ingest.answers.length === 0) {
         setApplyStatus('No usable answers were in that reply.');
+        setFollowUpPrompt(buildCabPrepFollowUp(roundAnswers, roundAnswers.length === 0));
         return;
       }
-      const pack = buildCabPrepPack(ingest.answers);
+      const allAnswers = mergeCabPreparedAnswers(roundAnswers, ingest.answers);
+      setRoundAnswers(allAnswers);
+      setFollowUpPrompt(buildCabPrepFollowUp(allAnswers, false));
+      setReplyText('');
+      const pack = buildCabPrepPack(allAnswers);
       setPackText(formatCabPrepPack(pack, loadedChange.number));
       // Rejections are reported, never swallowed: an answer that vanished silently is one the
       // presenter walks in without and does not know it.
@@ -132,6 +152,8 @@ export function CabPrepSection({ loadedChange, styles }: CabPrepSectionProps) {
       );
     } catch (caughtError) {
       setApplyStatus(caughtError instanceof Error ? caughtError.message : 'That reply could not be read.');
+      // Neither the table nor JSON: the follow-up asks for the form again, keeping what was already answered.
+      setFollowUpPrompt(buildCabPrepFollowUp(roundAnswers, roundAnswers.length === 0));
     }
   }
 
@@ -225,6 +247,7 @@ export function CabPrepSection({ loadedChange, styles }: CabPrepSectionProps) {
               </button>
             </div>
             {applyStatus !== null ? <p role="status">{applyStatus}</p> : null}
+            <AiFollowUpPrompt fieldId="cab-prep-follow-up" followUpPrompt={followUpPrompt} />
           </div>
         ) : null}
 

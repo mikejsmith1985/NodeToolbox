@@ -18,15 +18,22 @@
 
 import { useState } from 'react';
 
-import PoAiPanel from '../ai/PoAiPanel';
+import PoAiPanel, { type PoAiIngestOutcome } from '../ai/PoAiPanel';
 import {
+  buildDocumentExtractFollowUpPrompt,
   buildDocumentExtractPrompts,
   isDocumentExtractEmpty,
   mergeDocumentExtracts,
   parseDocumentExtractReply,
 } from './ai/documentExtract.ts';
 import type { DocumentExtract } from './ai/documentExtract.ts';
-import { buildCorpusBriefPrompt, parseCorpusBriefReply, renderCorpusBrief } from './ai/corpusBrief.ts';
+import {
+  buildCorpusBriefFollowUpPrompt,
+  buildCorpusBriefPrompt,
+  listMissingCorpusBriefSections,
+  parseCorpusBriefReply,
+  renderCorpusBrief,
+} from './ai/corpusBrief.ts';
 import { MAX_CHARS_PER_PROMPT } from './ai/bulkRewriteAiAssist.ts';
 import { MAX_SHARED_MATERIAL_CHARS } from './ai/sharedMaterial.ts';
 import type { CorpusBrief } from './ai/corpusBrief.ts';
@@ -90,27 +97,42 @@ export default function CondenseMaterialPanel({
   const openSourcePrompts = openSource === null ? [] : buildDocumentExtractPrompts(openSource);
 
   /** Ingests one part's reply, merging it onto whatever earlier parts already produced. */
-  function handleIngestExtract(source: ReferencedSource, replyText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngestExtract(source: ReferencedSource, replyText: string): PoAiIngestOutcome {
+    // AI Mode may answer in its own shape or leave a heading out: the follow-up asks the same chat for just that.
+    // Its answer can be pasted on its own — an extract part merges onto what is already there.
+    const followUpPrompt = buildDocumentExtractFollowUpPrompt(replyText);
     try {
       const parsed = parseDocumentExtractReply(replyText, source, new Date().toISOString());
       if (isDocumentExtractEmpty(parsed)) {
-        return { acceptedCount: 0, errors: ['That reply had nothing in it — no summary, decisions, requirements, questions or facts.'] };
+        return { acceptedCount: 0, errors: ['That reply had nothing in it — no summary, decisions, requirements, questions or facts.'], followUpPrompt };
       }
       const existing = extracts[source.id];
       onExtractDocument(existing === undefined ? parsed : mergeDocumentExtracts(existing, parsed));
-      return { acceptedCount: 1, errors: [] };
+      return { acceptedCount: 1, errors: [], followUpPrompt };
     } catch (thrownError) {
-      return { acceptedCount: 0, errors: [thrownError instanceof Error ? thrownError.message : String(thrownError)] };
+      return { acceptedCount: 0, errors: [thrownError instanceof Error ? thrownError.message : String(thrownError)], followUpPrompt };
     }
   }
 
   /** Ingests the consolidation reply, checking every source title against the documents actually read. */
-  function handleIngestBrief(replyText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngestBrief(replyText: string): PoAiIngestOutcome {
+    const followUpPrompt = buildCorpusBriefFollowUpPrompt(replyText);
+    const missingSectionLabels = listMissingCorpusBriefSections(replyText);
+    // A brief REPLACES the one before it, so it is never built from a reply missing a heading — that would read an
+    // unanswered list as an empty one. The reply stays on screen and the follow-up's answer is pasted under it.
+    if (missingSectionLabels.length > 0) {
+      return {
+        acceptedCount: 0,
+        errors: [`The reply left out ${missingSectionLabels.join(', ')}. Send the follow-up below to the same chat, `
+          + 'paste its answer under this reply, then read the reply again.'],
+        followUpPrompt,
+      };
+    }
     try {
       onBuildBrief(parseCorpusBriefReply(replyText, builtExtracts, new Date().toISOString()));
       return { acceptedCount: 1, errors: [] };
     } catch (thrownError) {
-      return { acceptedCount: 0, errors: [thrownError instanceof Error ? thrownError.message : String(thrownError)] };
+      return { acceptedCount: 0, errors: [thrownError instanceof Error ? thrownError.message : String(thrownError)], followUpPrompt };
     }
   }
 

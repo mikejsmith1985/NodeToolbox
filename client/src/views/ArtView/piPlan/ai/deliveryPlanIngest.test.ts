@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseDeliveryPlanReply } from './deliveryPlanIngest.ts';
+import { buildDeliveryPlanFollowUpPrompt, parseDeliveryPlanReply } from './deliveryPlanIngest.ts';
 import type { Bottleneck, PiPlanningFactSheet } from '../piPlanTypes.ts';
 
 function factSheet(): PiPlanningFactSheet {
@@ -84,6 +84,83 @@ describe('parseDeliveryPlanReply', () => {
   it('rejects a reply whose kind is a different surface', () => {
     const result = parseDeliveryPlanReply(JSON.stringify({ kind: 'piReview', items: [] }), factSheet(), []);
     expect(result.error).toMatch(/piReview/);
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ──
+
+const AI_MODE_REPLY = [
+  'Here is the PI delivery plan based on the fact sheet you provided.',
+  '',
+  'DELIVERY_PLAN_STORIES:',
+  '| Feature key | Feature | Story | Repos | Acceptance hints |',
+  '|---|---|---|---|---|',
+  '| **DENP-100** | Feature | Enrollment API | api | Accepts a member, returns an id; Rejects duplicates |',
+  '| DENP-100 | Feature | Enrollment screen | ui, api | Shows the new id |',
+  '',
+  '| Bottleneck id | Bottleneck | Mitigation |',
+  '|---|---|---|',
+  '| sl-throughput-s2 | x | Time-box SL test. |',
+  '',
+  'If you share the team calendar, I can refine the mitigations.',
+].join('\n');
+
+describe('parseDeliveryPlanReply with an AI Mode reply', () => {
+  it('reads both markdown tables, wrapped in an intro and a closing offer, into the same Stories and mitigations', () => {
+    const result = parseDeliveryPlanReply(AI_MODE_REPLY, factSheet(), [bottleneck]);
+    expect(result.error).toBeNull();
+    expect(result.stories).toEqual([
+      { featureKey: 'DENP-100', summary: 'Enrollment API', repos: ['api'], acHints: ['Accepts a member, returns an id', 'Rejects duplicates'] },
+      { featureKey: 'DENP-100', summary: 'Enrollment screen', repos: ['ui', 'api'], acHints: ['Shows the new id'] },
+    ]);
+    expect(result.mitigationsById).toEqual({ 'sl-throughput-s2': 'Time-box SL test.' });
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('reads a table pasted from the web page as tab-separated cells', () => {
+    const tabReply = 'Feature key\tStory\tRepos\nDENP-100\tEnrollment API\tapi';
+    const result = parseDeliveryPlanReply(tabReply, factSheet(), []);
+    expect(result.stories).toEqual([{ featureKey: 'DENP-100', summary: 'Enrollment API', repos: ['api'], acHints: [] }]);
+  });
+
+  it('still rejects an invented repo or Feature key written into the table', () => {
+    const reply = 'Feature key | Story | Repos\nDENP-100 | Bad | api, secret-repo\nZZZ-1 | Ghost | api';
+    const result = parseDeliveryPlanReply(reply, factSheet(), []);
+    expect(result.stories).toEqual([]);
+    expect(result.rejected.map((rejection) => rejection.reason)).toEqual([
+      'repo "secret-repo" is not in the fact sheet\'s repo allowlist', 'unknown Feature key "ZZZ-1"',
+    ]);
+  });
+
+  it('skips a pre-filled Story row left blank rather than rejecting it', () => {
+    const result = parseDeliveryPlanReply('Feature key | Feature | Story | Repos\nDENP-100 | Feature | ___ | ___', factSheet(), []);
+    expect(result.error).toBeNull();
+    expect(result.stories).toEqual([]);
+    expect(result.rejected).toEqual([]);
+  });
+});
+
+describe('buildDeliveryPlanFollowUpPrompt', () => {
+  it('offers nothing when every Feature and bottleneck was answered', () => {
+    const result = parseDeliveryPlanReply(AI_MODE_REPLY, factSheet(), [bottleneck]);
+    expect(buildDeliveryPlanFollowUpPrompt(factSheet(), [bottleneck], result)).toBe('');
+  });
+
+  it('asks for both tables again when the reply could not be read', () => {
+    const result = parseDeliveryPlanReply('DENP-100 should be two stories.', factSheet(), [bottleneck]);
+    const followUp = buildDeliveryPlanFollowUpPrompt(factSheet(), [bottleneck], result);
+    expect(followUp).toMatch(/^Your last reply was not in the form I need/);
+    expect(followUp).toContain('DENP-100 | Feature | ___');
+    expect(followUp).toContain('sl-throughput-s2 | x | ___');
+  });
+
+  it('asks for only what was left out — never guessing it', () => {
+    const storiesOnly = 'Feature key | Story | Repos\nDENP-100 | Enrollment API | api';
+    const result = parseDeliveryPlanReply(storiesOnly, factSheet(), [bottleneck]);
+    const followUp = buildDeliveryPlanFollowUpPrompt(factSheet(), [bottleneck], result);
+    expect(followUp).toContain('no usable answer for sl-throughput-s2');
+    expect(followUp).toContain('sl-throughput-s2 | x | ___');
+    expect(followUp).not.toContain('DELIVERY_PLAN_STORIES:');
   });
 });
 

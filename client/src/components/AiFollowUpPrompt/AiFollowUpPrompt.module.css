@@ -1,0 +1,47 @@
+/* AiFollowUpPrompt.module.css — The follow-up box an AI round shows when a reply strayed from the asked-for form. */
+
+.followUp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.label {
+  color: var(--color-text-primary, #e6edf3);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.hint {
+  color: var(--color-text-secondary, #8b949e);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.textArea {
+  min-height: 120px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  background: var(--color-surface-2, #0d1117);
+  color: var(--color-text-primary, #e6edf3);
+  border: 1px solid var(--color-border, #30363d);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.copyButton {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #30363d);
+  background: var(--color-surface-1, #161b22);
+  color: var(--color-text-primary, #e6edf3);
+  cursor: pointer;
+}

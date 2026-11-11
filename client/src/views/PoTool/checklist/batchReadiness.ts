@@ -7,8 +7,27 @@
 //
 // Pure. The fetching lives elsewhere; everything here is text in, text out, which is what makes a twenty-Epic
 // review testable without touching Jira.
+//
+// The team's assistant is Google's AI Mode, which ignores JSON instructions (GH #499). So each part ends with a
+// fill-in table — one row per Epic × criterion, both prefilled — and the reader turns it back into the same
+// {kind, items[]} JSON the checks below validate. A JSON reply is still read. A reply that is unreadable or leaves
+// rows out gets a follow-up for the same chat asking only for the table or only for the missing rows.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  isUnreadableRecordReply,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
+import {
+  buildMissingRowsFollowUpPrompt,
+  EVIDENCE_ANSWER_HINT,
+  isBlankAnswerRow,
+  readCriterionStatus,
+  STATUS_ANSWER_HINT,
+  WHAT_IS_MISSING_ANSWER_HINT,
+} from './checklistAiAssist.ts';
 import { DEFINITION_LABELS, type ReadinessCriterion } from './dorCriteria.ts';
 import {
   buildReadinessReport,
@@ -45,6 +64,19 @@ export const DEFAULT_MAX_VERDICTS_PER_PART = 22;
 /** How much of one Epic's description a batch prompt carries. A batch trades depth per Epic for breadth. */
 const MAX_DESCRIPTION_CHARS_PER_EPIC = 1500;
 
+/** The fill-in table a batch part is answered in: one row per Epic and criterion, both filled in by the prompt. */
+export const BATCH_REPLY_SPEC: ReplyRecordSpec = {
+  kind: BATCH_INGEST_KIND,
+  replyMarker: 'READINESS_BATCH_TABLE:',
+  columns: [
+    { field: 'key', header: 'Epic key' },
+    { field: 'criterionId', header: 'Criterion id' },
+    { field: 'status', header: 'Status', answerHint: STATUS_ANSWER_HINT },
+    { field: 'evidence', header: 'Evidence', answerHint: EVIDENCE_ANSWER_HINT },
+    { field: 'whatIsMissing', header: 'What is missing', answerHint: WHAT_IS_MISSING_ANSWER_HINT },
+  ],
+};
+
 /** One Epic in the batch, with the children found for it. */
 export interface BatchEpic {
   source: EpicChecklistSource;
@@ -72,8 +104,18 @@ function buildEpicBlock(epic: BatchEpic): string {
   ].join('\n');
 }
 
+/** The prefilled cells of one part's table: every Epic key against every criterion id, Epic by Epic. */
+function buildPartRowCells(issueKeys: readonly string[], criterionIds: readonly string[]): string[][] {
+  return issueKeys.flatMap((issueKey) => criterionIds.map((criterionId) => [issueKey, criterionId]));
+}
+
 /** The instructions repeated in every part, so a part is a complete brief on its own. */
-function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: string, epicBlocks: string): string {
+function buildPromptShell(
+  criteria: readonly ReadinessCriterion[],
+  partLabel: string,
+  epicBlocks: string,
+  partIssueKeys: readonly string[],
+): string {
   const criteriaLines = (['dor', 'dod'] as const).flatMap((definition) => {
     const definitionCriteria = criteria.filter((criterion) => criterion.definition === definition);
     if (definitionCriteria.length === 0) {
@@ -100,26 +142,25 @@ function buildPromptShell(criteria: readonly ReadinessCriterion[], partLabel: st
     '  "missing"   — the Epic says nothing that meets it.',
     '',
     'Rules:',
-    '  • "evidence" must quote or closely paraphrase words from THAT Epic. A criterion cannot be "satisfied"',
+    '  • "Evidence" must quote or closely paraphrase words from THAT Epic. A criterion cannot be "satisfied"',
     '    without evidence, and evidence from one Epic never counts for another.',
-    '  • "whatIsMissing" is the useful half of this review, so make it an instruction the Product Owner can act',
+    '  • "What is missing" is the useful half of this review, so make it an instruction the Product Owner can act',
     '    on without asking you a follow-up question. Start it with a verb and name the specific thing to write:',
     '    "Name the two upstream systems this depends on", not "dependencies should be identified". Leave it',
     '    empty ONLY for a satisfied criterion.',
     '  • Judge only what is written here. An Epic\'s status, its age and the existence of children are not',
     '    evidence on their own.',
     '  • Answer every Epic in this part against every criterion. Use only the keys and ids given.',
-    '  • Keep "evidence" and "whatIsMissing" under 25 words each. A long answer that gets cut off part way',
+    '  • Keep "Evidence" and "What is missing" under 25 words each. A long answer that gets cut off part way',
     '    through is worth less than a short one that finishes.',
     '',
     'Epics:',
     '',
     epicBlocks,
     '',
-    'Reply with ONLY this JSON (every Epic in this part, keyed by its Jira key):',
-    // The example quotes a criterion id that is actually in this prompt, so it cannot suggest one that is not.
-    `{"kind":"${BATCH_INGEST_KIND}","items":[{"key":"DENP-1436","criterionId":"${criteria[0]?.id ?? 'criterion-id'}",`
-      + '"status":"partial","evidence":"...","whatIsMissing":"..."}]}',
+    '',
+    // Every row this part needs is already listed, so the assistant cannot add, drop or mis-key an Epic.
+    buildRecordReplyInstructions(BATCH_REPLY_SPEC, buildPartRowCells(partIssueKeys, criteria.map((criterion) => criterion.id))),
   ].filter((line) => line !== '').join('\n');
 }
 
@@ -135,6 +176,24 @@ export function buildBatchReadinessPrompts(
   /** How many verdicts one part may ask for. Lower it for an assistant that cuts long replies short. */
   maxVerdictsPerPart: number = DEFAULT_MAX_VERDICTS_PER_PART,
 ): string[] {
+  const partGroups = groupBatchEpicsIntoParts(epics, criteria, maxVerdictsPerPart);
+  return partGroups.map((group, groupIndex) => buildPromptShell(
+    criteria,
+    partGroups.length === 1 ? '' : `Part ${groupIndex + 1} of ${partGroups.length}.`,
+    group.map(buildEpicBlock).join('\n\n'),
+    group.map((epic) => epic.source.issueKey),
+  ));
+}
+
+/**
+ * The Epics each part covers, in the order the prompts are built. The panel reads a part's reply against its own
+ * Epics, so a follow-up asks only for rows that part was meant to answer.
+ */
+export function groupBatchEpicsIntoParts(
+  epics: readonly BatchEpic[],
+  criteria: readonly ReadinessCriterion[],
+  maxVerdictsPerPart: number = DEFAULT_MAX_VERDICTS_PER_PART,
+): BatchEpic[][] {
   if (epics.length === 0) {
     return [];
   }
@@ -143,32 +202,54 @@ export function buildBatchReadinessPrompts(
   // At least one, always — a team with more criteria than the budget still gets one Epic per part rather than none.
   const maxEpicsPerPart = Math.max(1, Math.floor(maxVerdictsPerPart / Math.max(1, criteria.length)));
 
-  const epicBlocks = epics.map(buildEpicBlock);
-  const shellLength = buildPromptShell(criteria, 'Part 99 of 99.', '').length;
-  const groupedBlocks: string[][] = [];
-  let currentGroup: string[] = [];
+  const shellLength = buildPromptShell(criteria, 'Part 99 of 99.', '', []).length;
+  const groupedEpics: BatchEpic[][] = [];
+  let currentGroup: BatchEpic[] = [];
   let currentLength = shellLength;
 
-  epicBlocks.forEach((epicBlock) => {
+  epics.forEach((epic) => {
+    // An Epic costs its own text plus its rows in the fill-in table.
+    const epicLength = buildEpicBlock(epic).length + measureTableRowsLength(epic.source.issueKey, criteria);
     const isOverEpicBudget = currentGroup.length >= maxEpicsPerPart;
-    const isOverCharBudget = currentLength + epicBlock.length > MAX_CHARS_PER_PROMPT;
+    const isOverCharBudget = currentLength + epicLength > MAX_CHARS_PER_PROMPT;
     if (currentGroup.length > 0 && (isOverEpicBudget || isOverCharBudget)) {
-      groupedBlocks.push(currentGroup);
+      groupedEpics.push(currentGroup);
       currentGroup = [];
       currentLength = shellLength;
     }
-    currentGroup.push(epicBlock);
-    currentLength += epicBlock.length;
+    currentGroup.push(epic);
+    currentLength += epicLength;
   });
   if (currentGroup.length > 0) {
-    groupedBlocks.push(currentGroup);
+    groupedEpics.push(currentGroup);
   }
+  return groupedEpics;
+}
 
-  return groupedBlocks.map((group, groupIndex) => buildPromptShell(
-    criteria,
-    groupedBlocks.length === 1 ? '' : `Part ${groupIndex + 1} of ${groupedBlocks.length}.`,
-    group.join('\n\n'),
-  ));
+/** How many characters one Epic's rows add to the fill-in table. */
+function measureTableRowsLength(issueKey: string, criteria: readonly ReadinessCriterion[]): number {
+  return buildPartRowCells([issueKey], criteria.map((criterion) => criterion.id))
+    .map((rowCells) => buildRecordReplyInstructions(BATCH_REPLY_SPEC, [rowCells]).split('\n').pop() ?? '')
+    .reduce((totalLength, rowLine) => totalLength + rowLine.length + 1, 0);
+}
+
+/**
+ * The follow-up to paste into the same chat after reading one part's reply: the part's whole table again when the
+ * reply was unreadable, only the rows it left out when it was partial, or '' when every row came back.
+ */
+export function buildBatchReadinessFollowUpPrompt(
+  responseText: string,
+  partIssueKeys: readonly string[],
+  criterionIds: readonly string[],
+  partVerdictsByIssueKey: Readonly<Record<string, CriterionVerdict[]>>,
+): string {
+  const allRowCells = buildPartRowCells(partIssueKeys, criterionIds);
+  if (isUnreadableRecordReply(responseText, BATCH_REPLY_SPEC)) {
+    return buildRecordFormatFixPrompt(BATCH_REPLY_SPEC, allRowCells);
+  }
+  const missingRowCells = allRowCells.filter(([issueKey, criterionId]) => !(partVerdictsByIssueKey[issueKey.toUpperCase()] ?? [])
+    .some((verdict) => verdict.criterionId === criterionId));
+  return missingRowCells.length === 0 ? '' : buildMissingRowsFollowUpPrompt(BATCH_REPLY_SPEC, missingRowCells);
 }
 
 /** Verdicts read out of a batch reply, grouped by the Epic they belong to. */
@@ -180,12 +261,6 @@ export interface BatchIngestResult {
 /** Coerces anything to a trimmed string. */
 function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-/** Reads the status, or null when it is not one of the three. */
-function readStatus(value: unknown): CriterionVerdict['status'] | null {
-  const statusText = readTrimmedString(value).toLowerCase();
-  return (['satisfied', 'partial', 'missing'] as const).find((allowed) => allowed === statusText) ?? null;
 }
 
 /**
@@ -202,7 +277,7 @@ export function parseBatchReadinessIngest(
 ): BatchIngestResult {
   let payload: Record<string, unknown>;
   try {
-    const parsed: unknown = JSON.parse(extractJsonPayload(responseText));
+    const parsed: unknown = JSON.parse(extractRecordReplyPayload(responseText, BATCH_REPLY_SPEC));
     if (typeof parsed !== 'object' || parsed === null) {
       return { verdictsByIssueKey: {}, errors: ['The assistant response was not valid JSON.'] };
     }
@@ -232,6 +307,10 @@ export function parseBatchReadinessIngest(
     const candidateItem = candidate as Record<string, unknown>;
     const issueKey = readTrimmedString(candidateItem.key).toUpperCase();
     const criterionId = readTrimmedString(candidateItem.criterionId);
+    // A row whose blanks were all left in is unanswered, not "missing" — the report says not reviewed.
+    if (allowedKeys.has(issueKey) && allowedCriteria.has(criterionId) && isBlankAnswerRow(candidateItem)) {
+      return;
+    }
 
     if (!allowedKeys.has(issueKey)) {
       errors.push(`"${issueKey || '(no key)'}" is not one of the Epics in this review, so it was ignored.`);
@@ -249,7 +328,7 @@ export function parseBatchReadinessIngest(
     seenPairs.add(pairKey);
 
     const evidence = readTrimmedString(candidateItem.evidence);
-    const claimedStatus = readStatus(candidateItem.status);
+    const claimedStatus = readCriterionStatus(candidateItem.status);
     const isUnevidencedPass = claimedStatus === 'satisfied' && evidence === '';
 
     (verdictsByIssueKey[issueKey] ??= []).push({

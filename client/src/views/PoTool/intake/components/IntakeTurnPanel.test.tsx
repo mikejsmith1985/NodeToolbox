@@ -171,6 +171,19 @@ describe('IntakeTurnPanel', () => {
     expect(request).toContain('DENP-10');
   });
 
+  it('offers a follow-up for the same chat when an AI Mode answer could not be read (GH #499)', async () => {
+    const user = userEvent.setup();
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    render(<IntakeTurnPanel intake={buildSortNotesIntake()} isAiUnlocked onChange={vi.fn()} jiraDeps={buildJiraDepsStub()} nowIso={() => NOW_ISO} />);
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+    await user.click(screen.getByLabelText(/paste the assistant/i));
+    await user.paste('These look like Enrollment work. If you provide sizes I can say more.');
+    await user.click(screen.getByRole('button', { name: /read the reply/i }));
+
+    const followUp = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUp.value).toContain('INTAKE_SORTING_TABLE:');
+  });
+
   it('asks only where a stray line belongs — never kind, owner or label questions', () => {
     const intake = { ...buildConfirmLabelsIntake(), lines: [buildLine(1, 'Member portal work'), buildLine(2, 'A stray line')] };
 

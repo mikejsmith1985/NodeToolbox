@@ -134,4 +134,28 @@ describe('ForecastAiPanel', () => {
     ingestIntoFirstPanel('sorry, I cannot help with that');
     expect(screen.getByRole('alert')).toHaveTextContent(/No JSON object/);
   });
+
+  it('shows a follow-up for the same AI chat when the reply cannot be read (GH #499)', () => {
+    render(<ForecastAiPanel forecast={FORECAST} />);
+    ingestIntoFirstPanel('ENC-1 looks late to me.');
+
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('where-we-are | ___');
+  });
+
+  it('reads an AI Mode table reply into a narrative', () => {
+    render(<ForecastAiPanel forecast={FORECAST} />);
+    ingestIntoFirstPanel([
+      'Here is your narrative.',
+      '| Section | Headline | Narrative | Issue keys | People |',
+      '|---|---|---|---|---|',
+      '| where-we-are | One issue is late | ENC-1 should have started. | ENC-1 | ___ |',
+      'Let me know if you want more detail.',
+    ].join('\n'));
+
+    expect(screen.getByText('One issue is late')).toBeInTheDocument();
+    // Three required sections were left out, so a follow-up asks for only those.
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('who-has-room | ___');
+  });
 });

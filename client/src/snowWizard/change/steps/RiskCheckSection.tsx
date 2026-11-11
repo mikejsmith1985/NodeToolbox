@@ -75,13 +75,14 @@ interface InlineRoundProps {
 /**
  * One Risk Check round drawn on the page, like every other AI round in the Wizard — never Toolbox's pop-up (owner:
  * "embedded or a pop-up, not both"). A reply that is used closes the round by itself; one that is not stays open with
- * the reason, and "Close this round" is there for a change of mind.
+ * the reason, and "Close this round" is there for a change of mind. A reply that left rows out or strayed from the form
+ * keeps the round open with a follow-up for the same AI chat (GH #499), whose reply is read here too.
  */
 function InlineRound({ promptSession, onClose, onApplied }: InlineRoundProps) {
   const readReply = (replyText: string) => {
-    const { statusMessage, wasApplied } = promptSession.applyReply(replyText);
-    if (wasApplied) onApplied(statusMessage);
-    return statusMessage;
+    const { statusMessage, wasApplied, followUpPrompt = '' } = promptSession.applyReply(replyText);
+    if (wasApplied && followUpPrompt === '') onApplied(statusMessage);
+    return { message: statusMessage, followUpPrompt };
   };
   return (
     <div>

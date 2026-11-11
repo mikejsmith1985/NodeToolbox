@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
 import styles from '../SprintDashboardView.module.css';
@@ -23,6 +24,7 @@ import {
   type StatusSummaryWriteOutcome,
 } from './releasePriorityApply.ts';
 import {
+  buildReleasePriorityFormatFixPrompt,
   buildReleasePriorityPrompt,
   buildStatusSummaryPlan,
   calculateAgeDays,
@@ -41,7 +43,7 @@ const CONTEXT_FAILED_MESSAGE =
   'Could not read ages, due dates or Feature dates — the prompt below ranks on Priority and status alone.';
 const UNRANKED_ROW_NOTE = 'not ranked by the assistant — appended in its original order';
 const INSTRUCTIONS =
-  'Copy this prompt into AI Assist, paste the JSON reply below, review the order, then write it. '
+  'Copy this prompt into AI Assist, paste its reply (the filled-in table) below, review the order, then write it. '
   + 'Status Summary "01" is the most important item; the last number is the least.';
 
 /** An empty context: every signal unknown. What the prompt uses when the reads fail. */
@@ -103,6 +105,8 @@ interface ReleasePriorityRun {
   rankResult: ReleasePriorityRankResult | null;
   plan: StatusSummaryPlanEntry[];
   errorMessage: string | null;
+  /** A follow-up for the same AI chat when the reply was unreadable or left issues unranked (GH #499). */
+  followUpPrompt: string;
   outcomeByKey: Record<string, StatusSummaryWriteOutcome>;
   isWriting: boolean;
   loadRanking: () => void;
@@ -142,10 +146,12 @@ function useReleasePriorityRun(props: Omit<ReleasePriorityPanelProps, 'onClose'>
   const [replyText, setReplyText] = useState('');
   const [rankResult, setRankResult] = useState<ReleasePriorityRankResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [unreadableFollowUpPrompt, setUnreadableFollowUpPrompt] = useState('');
   const [outcomeByKey, setOutcomeByKey] = useState<Record<string, StatusSummaryWriteOutcome>>({});
   const [isWriting, setIsWriting] = useState(false);
 
   const issueKeys = useMemo(() => issues.map((issue) => issue.key), [issues]);
+  const summaryByKey = useMemo(() => new Map(issues.map((issue) => [issue.key, issue.fields.summary ?? ''])), [issues]);
   const featureKeys = useMemo(
     () => [...new Set(issueKeys.map((issueKey) => featureKeyByIssueKey.get(issueKey) ?? null))]
       .filter((featureKey): featureKey is string => featureKey !== null),
@@ -168,14 +174,18 @@ function useReleasePriorityRun(props: Omit<ReleasePriorityPanelProps, 'onClose'>
 
   const loadRanking = useCallback(() => {
     setErrorMessage(null);
+    setUnreadableFollowUpPrompt('');
     setOutcomeByKey({});
     try {
-      setRankResult(parseReleasePriorityReply(replyText, issueKeys));
+      setRankResult(parseReleasePriorityReply(replyText, issueKeys, summaryByKey));
     } catch (parseError) {
       setRankResult(null);
       setErrorMessage(parseError instanceof Error ? parseError.message : 'Could not read the AI reply.');
+      setUnreadableFollowUpPrompt(buildReleasePriorityFormatFixPrompt(
+        issueKeys.map((issueKey) => ({ issueKey, summary: summaryByKey.get(issueKey) ?? '' })),
+      ));
     }
-  }, [issueKeys, replyText]);
+  }, [issueKeys, replyText, summaryByKey]);
 
   const writeRanking = useCallback(async () => {
     setIsWriting(true);
@@ -193,6 +203,7 @@ function useReleasePriorityRun(props: Omit<ReleasePriorityPanelProps, 'onClose'>
   return {
     contextState, context, prompt, replyText, setReplyText, rankResult, plan,
     errorMessage, outcomeByKey, isWriting, loadRanking, writeRanking,
+    followUpPrompt: rankResult?.followUpPrompt ?? unreadableFollowUpPrompt,
   };
 }
 
@@ -231,7 +242,7 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
         </div>
 
         <label className={styles.releasePromptInstructions} htmlFor="release-priority-reply">
-          Paste the assistant&apos;s JSON reply here
+          Paste the assistant&apos;s reply here (its table, or JSON)
         </label>
         <textarea
           aria-label="Release priority reply"
@@ -252,6 +263,8 @@ export function ReleasePriorityPanel({ onClose, todayIso = new Date().toISOStrin
         </div>
 
         {run.errorMessage && <p className={styles.errorMessage} role="alert">{run.errorMessage}</p>}
+        {/* An unranked issue's follow-up reply is pasted UNDER the first reply, so both tables are read as one. */}
+        <AiFollowUpPrompt fieldId="release-priority-follow-up" followUpPrompt={run.followUpPrompt} />
 
         {run.rankResult && (
           <RankingPreview
@@ -306,6 +319,7 @@ function RankingPreview({ rankResult, plan, context, summaryByKey, outcomeByKey,
       {rankResult.unrankedKeys.length > 0 && (
         <p className={styles.errorMessage}>
           The assistant did not rank {rankResult.unrankedKeys.join(', ')} — appended at the bottom in original order.
+          {' '}Copy the follow-up below into the same AI chat, paste its reply under the first one, and load the ranking again.
         </p>
       )}
       <div className={styles.releaseNotesTableShell}>

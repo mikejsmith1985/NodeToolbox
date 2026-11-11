@@ -11,10 +11,10 @@
 import { useState } from 'react';
 
 import BatchReadinessPanel from './BatchReadinessPanel.tsx';
-import PoAiPanel from '../ai/PoAiPanel.tsx';
+import PoAiPanel, { type PoAiIngestOutcome } from '../ai/PoAiPanel.tsx';
 import { loadHygieneFieldConfig } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { jiraGet } from '../../../services/jiraApi.ts';
-import { buildChecklistPrompt, parseChecklistIngest } from './checklistAiAssist.ts';
+import { buildChecklistFollowUpPrompt, buildChecklistPrompt, parseChecklistIngest } from './checklistAiAssist.ts';
 import {
   fetchChecklistFromIssueProperties,
   fetchEpicChecklistSource,
@@ -149,7 +149,7 @@ export default function EpicChecklistTab() {
   }
 
   /** Turns the reviewed answer into the report. */
-  function handleIngest(responseText: string): { acceptedCount: number; errors: string[] } {
+  function handleIngest(responseText: string): PoAiIngestOutcome {
     if (!loadedEpic) {
       return { acceptedCount: 0, errors: ['Load an Epic first.'] };
     }
@@ -167,7 +167,9 @@ export default function EpicChecklistTab() {
     setStatusMessage(null);
     setCopiedFlavour(null);
 
-    return { acceptedCount: verdicts.length, errors };
+    // An unreadable or partial reply gets a follow-up for the same chat — the unanswered rows are never guessed.
+    const followUpPrompt = buildChecklistFollowUpPrompt(responseText, loadedEpic.criteria, verdicts);
+    return { acceptedCount: verdicts.length, errors, followUpPrompt };
   }
 
   /** The satisfied criteria that are also unticked checklist items — the only ones a save could tick. */

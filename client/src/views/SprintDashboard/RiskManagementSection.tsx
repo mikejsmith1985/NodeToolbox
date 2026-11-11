@@ -3,12 +3,18 @@
 // provides a hidden AI-assist workflow that builds an AI Assist prompt and writes refined risk
 // descriptions back to Jira on paste-back. The unlock itself belongs to the app-level
 // AiAssistUnlockGate; this panel only reads the shared unlock state.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format, so the prompt ends with a
+// pre-filled table (one column per template part) and aiReply/riskAiAssistReply.ts reads it back. A reply that is
+// unreadable or leaves risks out gets a follow-up for the same AI chat; nothing missing is ever written.
 
 import { useEffect, useState } from 'react';
 
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
+import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
+import { buildRiskReplyFormLines, parseRiskAiReply } from './aiReply/riskAiAssistReply.ts';
 import styles from './SprintDashboardView.module.css';
 
 // ── Constants ──
@@ -45,14 +51,6 @@ const NO_RISK_LOAD_RESULT: RiskLoadResult = { requestKey: '', issues: NO_RISK_IS
 type RiskSaveProgress = 'idle' | 'saving' | 'saved' | 'error';
 
 // ── Types ──
-
-/** A single risk update returned by AI Assist after AI-assisted refinement. */
-interface AiAssistRiskItem {
-  key: string;
-  description: string;
-  riskResponse?: string;
-  priority?: string;
-}
 
 export interface RiskManagementSectionProps {
   projectKey: string;
@@ -119,68 +117,16 @@ Mitigation Plan: <summary of the strategy to reduce or eliminate the risk and ta
 Leadership Ask: <describe what leadership support is needed to accomplish the above>"
 
 Also provide:
-- riskResponse: the ROAM disposition — one of: Resolve, Own, Accept, Mitigate
-- priority: urgency level — one of: Highest, High, Medium, Low, Lowest
+- ROAM response: the ROAM disposition — one of: Resolve, Own, Accept, Mitigate
+- Priority: urgency level — one of: Highest, High, Medium, Low, Lowest
 
 RISKS TO REFINE:
 
 ${riskSummaries}
 
-Return ONLY a valid JSON array with no prose, no explanation, and no markdown code fences:
-[
-  {
-    "key": "PROJ-123",
-    "description": "There is a risk that: ...\\nProbability: H\\nImpact if Realized: ...\\nDue to: ...\\nMitigation Plan: ...\\nLeadership Ask: ...",
-    "riskResponse": "Mitigate",
-    "priority": "High"
-  }
-]`;
-}
+Give each template section its own column in the table below — Toolbox joins them into the description.
 
-// ── Response parser ──
-
-/** Extracts and validates the JSON array from AI Assist's response text. */
-function parseAiAssistRiskResponse(
-  responseText: string,
-  validRiskKeys: ReadonlySet<string>,
-): { items: AiAssistRiskItem[]; errorMessage: string | null } {
-  const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    return { items: [], errorMessage: 'No JSON array found in the response. Paste the full AI Assist output.' };
-  }
-
-  let parsedItems: unknown;
-  try {
-    parsedItems = JSON.parse(jsonMatch[0]);
-  } catch {
-    return { items: [], errorMessage: 'Response contains invalid JSON. Check the pasted text.' };
-  }
-
-  if (!Array.isArray(parsedItems)) {
-    return { items: [], errorMessage: 'Expected a JSON array at the top level.' };
-  }
-
-  const validItems: AiAssistRiskItem[] = [];
-  for (const parsedItem of parsedItems) {
-    if (typeof parsedItem !== 'object' || parsedItem === null) continue;
-    const candidate = parsedItem as Record<string, unknown>;
-    const issueKey = typeof candidate.key === 'string' ? candidate.key.trim().toUpperCase() : '';
-    const description = typeof candidate.description === 'string' ? candidate.description.trim() : '';
-    if (!issueKey || !validRiskKeys.has(issueKey) || !description) continue;
-
-    validItems.push({
-      key: issueKey,
-      description,
-      riskResponse: typeof candidate.riskResponse === 'string' ? candidate.riskResponse.trim() : undefined,
-      priority: typeof candidate.priority === 'string' ? candidate.priority.trim() : undefined,
-    });
-  }
-
-  if (validItems.length === 0) {
-    return { items: [], errorMessage: 'No valid risk updates found. Check that the issue keys match this PI.' };
-  }
-
-  return { items: validItems, errorMessage: null };
+${buildRiskReplyFormLines(risks.map((risk) => risk.key))}`;
 }
 
 // ── Field readers ──
@@ -240,6 +186,10 @@ export default function RiskManagementSection({
   const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
   const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
   const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
+  // A follow-up for the same AI chat, and the risks still awaiting an answer — so a follow-up's reply,
+  // pasted on its own, is checked only against the risks it was asked about (GH #499).
+  const [riskFollowUpPrompt, setRiskFollowUpPrompt] = useState('');
+  const [pendingRiskKeys, setPendingRiskKeys] = useState<string[]>([]);
 
   const [isCopied, setIsCopied] = useState(false);
 
@@ -306,6 +256,8 @@ export default function RiskManagementSection({
     );
     setAiAssistResponseInput('');
     setAiAssistResponseParseError(null);
+    setRiskFollowUpPrompt('');
+    setPendingRiskKeys(riskIssues.map((issue) => issue.key));
     setIsCopied(false);
     setIsAiAssistModalVisible(true);
   }
@@ -316,19 +268,27 @@ export default function RiskManagementSection({
     setTimeout(() => setIsCopied(false), 2000);
   }
 
-  /** Parses AI Assist's JSON, writes all refined risk fields back to Jira, and tracks per-row save state. */
+  /** Reads AI Assist's reply, writes every complete refined risk back to Jira, and tracks per-row save state. */
   async function applyAiAssistResponse(responseText: string) {
-    const validRiskKeys = new Set(riskIssues.map((issue) => issue.key));
-    const { items, errorMessage } = parseAiAssistRiskResponse(responseText, validRiskKeys);
+    const validRiskKeys = new Set(riskIssues.map((issue) => issue.key.toUpperCase()));
+    const { items, errorMessage, followUpPrompt } = parseRiskAiReply(responseText, validRiskKeys, pendingRiskKeys);
+    setRiskFollowUpPrompt(followUpPrompt);
 
     if (errorMessage) {
       setAiAssistResponseParseError(errorMessage);
       return;
     }
 
-    setIsAiAssistModalVisible(false);
-    setAiAssistResponseInput('');
-    setAiAssistResponseParseError(null);
+    // Risks the reply left out stay open: the modal keeps their follow-up on screen; the complete ones are written.
+    const writtenKeys = new Set(items.map((item) => item.key));
+    setPendingRiskKeys((previousKeys) => previousKeys.filter((riskKey) => !writtenKeys.has(riskKey.toUpperCase())));
+    if (followUpPrompt === '') {
+      setIsAiAssistModalVisible(false);
+      setAiAssistResponseInput('');
+      setAiAssistResponseParseError(null);
+    } else {
+      setAiAssistResponseParseError(`Writing ${items.length} refined risk(s). Some risks were left out or incomplete — copy the follow-up below into the same AI chat, then paste its reply here.`);
+    }
 
     await Promise.allSettled(
       items.map(async (item) => {
@@ -489,7 +449,7 @@ export default function RiskManagementSection({
 
             <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 2</strong> — Paste AI Assist's JSON response below. Toolbox will write the
+                <strong>Step 2</strong> — Paste AI Assist's reply (its filled-in table) below. Toolbox will write the
                 refined descriptions and ROAM dispositions directly to each Jira Risk issue.
               </p>
               <textarea
@@ -499,12 +459,13 @@ export default function RiskManagementSection({
                   setAiAssistResponseInput(changeEvent.target.value);
                   setAiAssistResponseParseError(null);
                 }}
-                placeholder={'[\n  { "key": "PROJ-123", "description": "...", "riskResponse": "Mitigate", "priority": "High" },\n  ...\n]'}
+                placeholder={'Issue key | There is a risk that | Probability | …\nPROJ-123 | … | H | …'}
                 value={aiAssistResponseInput}
               />
               {aiAssistResponseParseError ? (
                 <p className={styles.errorMessage}>{aiAssistResponseParseError}</p>
               ) : null}
+              <AiFollowUpPrompt fieldId="risk-ai-follow-up" followUpPrompt={riskFollowUpPrompt} />
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}

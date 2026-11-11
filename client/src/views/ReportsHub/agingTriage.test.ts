@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAgingTriageFollowUpPrompt,
   buildAgingTriagePrompt,
+  findMissingTriageKeys,
   parseAgingTriageResponse,
   type AgingTriageIssue,
 } from './agingTriage.ts';
@@ -31,13 +33,16 @@ function makeIssue(overrides: Partial<AgingTriageIssue> = {}): AgingTriageIssue 
 }
 
 describe('buildAgingTriagePrompt', () => {
-  it('names the issues, lists the three verdicts, and demands JSON only', () => {
+  it('names the issues, lists the three verdicts, and ends with a pre-filled table (GH #499)', () => {
     const prompt = buildAgingTriagePrompt([makeIssue()]);
     expect(prompt).toContain('ENCUC-100');
     expect(prompt).toContain('cancel-safe');
     expect(prompt).toContain('review');
     expect(prompt).toContain('must-remain');
-    expect(prompt).toContain('valid JSON');
+    // Google AI Mode ignores a JSON reply format but completes a table that already lists every issue.
+    expect(prompt).toContain('TRIAGE_TABLE:');
+    expect(prompt).toContain('ENCUC-100 | Add export button | ___ | ___');
+    expect(prompt).not.toContain('valid JSON');
   });
 
   it('surfaces the decision signals — age, recent activity, importance, and the related feature + its status', () => {
@@ -127,5 +132,71 @@ describe('parseAgingTriageResponse', () => {
   it('rejects an item missing its issue key', () => {
     const reply = JSON.stringify({ kind: 'agingTriage', items: [{ verdict: 'review', rationale: 'x' }] });
     expect(() => parseAgingTriageResponse(reply)).toThrow(/issueKey/i);
+  });
+});
+
+describe('parseAgingTriageResponse — Google AI Mode replies (GH #499)', () => {
+  const ISSUES = [makeIssue(), makeIssue({ issueKey: 'ENCUC-101', summary: 'Old spike' })];
+  const EXPECTED = [
+    { issueKey: 'ENCUC-100', verdict: 'cancel-safe', rationale: 'Feature is Done.' },
+    { issueKey: 'ENCUC-101', verdict: 'must-remain', rationale: 'Active work.' },
+  ];
+
+  it('reads a markdown table wrapped in an intro and a closing offer into the same verdicts', () => {
+    const replyText = [
+      'Here is the triage of your backlog.',
+      '',
+      '| Issue key | Summary | Verdict | Rationale |',
+      '| :--- | :--- | :--- | :--- |',
+      '| **ENCUC-100** | Add export button | Cancel safe | Feature is Done. |',
+      '| ENCUC-101 | Old spike | must-remain | Active work. |',
+      '',
+      'If you provide sprint data, I can refine these verdicts.',
+    ].join('\n');
+
+    expect(parseAgingTriageResponse(replyText)).toEqual(EXPECTED);
+  });
+
+  it('reads a tab-separated table copied from the AI Mode page', () => {
+    const replyText = [
+      'Issue key\tSummary\tVerdict\tRationale',
+      'ENCUC-100\tAdd export button\tcancel-safe\tFeature is Done.',
+      'ENCUC-101\tOld spike\tMust remain\tActive work.',
+    ].join('\n');
+
+    expect(parseAgingTriageResponse(replyText)).toEqual(EXPECTED);
+  });
+
+  it('still refuses a verdict outside the three, even from a table', () => {
+    const replyText = ['Issue key | Summary | Verdict | Rationale', 'ENCUC-100 | x | archive | Old.'].join('\n');
+
+    expect(() => parseAgingTriageResponse(replyText)).toThrow(/Invalid verdict/);
+  });
+
+  it('treats a row left blank as unanswered and asks a follow-up for only that issue', () => {
+    const replyText = [
+      'Issue key | Summary | Verdict | Rationale',
+      'ENCUC-100 | Add export button | cancel-safe | Feature is Done.',
+      'ENCUC-101 | Old spike | ___ | ___',
+    ].join('\n');
+
+    const suggestions = parseAgingTriageResponse(replyText);
+    const missingKeys = findMissingTriageKeys(ISSUES, suggestions);
+    const followUpPrompt = buildAgingTriageFollowUpPrompt(ISSUES, missingKeys, false);
+
+    expect(suggestions).toHaveLength(1);
+    expect(missingKeys).toEqual(['ENCUC-101']);
+    expect(followUpPrompt).toContain('ENCUC-101 | Old spike | ___ | ___');
+    expect(followUpPrompt).not.toContain('ENCUC-100 |');
+    expect(buildAgingTriageFollowUpPrompt(ISSUES, [], false)).toBe('');
+  });
+
+  it('throws on prose with no table, and the format fix re-asks every issue', () => {
+    expect(() => parseAgingTriageResponse('Most of these look stale to me.')).toThrow(/No JSON object found/);
+
+    const followUpPrompt = buildAgingTriageFollowUpPrompt(ISSUES, [], true);
+    expect(followUpPrompt).toContain('could not be read');
+    expect(followUpPrompt).toContain('ENCUC-100 | Add export button | ___ | ___');
+    expect(followUpPrompt).toContain('ENCUC-101 | Old spike | ___ | ___');
   });
 });

@@ -7,7 +7,7 @@ import type { ReferencedSource } from '../../sources/sourceModel.ts';
 import { readItemDisplayTitle } from '../epicIntakeModel.ts';
 import { GH387_NOTES_TEXT } from '../gh387Notes.fixture.ts';
 import { startEpicIntake } from '../startIntake.ts';
-import { buildClassifyRequests, CLASSIFY_REPLY_KIND, MAX_SEARCH_TERMS_PER_ITEM, parseClassifyReply } from './intakeClassifyRound.ts';
+import { buildClassifyRequests, CLASSIFY_REPLY_KIND, CLASSIFY_TABLE_SPEC, MAX_SEARCH_TERMS_PER_ITEM, parseClassifyReply } from './intakeClassifyRound.ts';
 
 const NOW_ISO = '2026-09-18T12:00:00.000Z';
 
@@ -26,7 +26,7 @@ describe('buildClassifyRequests', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0].text).toContain('o\t(1.2M) XL Enrollment');
     expect(requests[0].text).toMatch(/\[\d+\] •\tCore Integration \(denp-632\)/);
-    expect(requests[0].text).toContain(`"kind":"${CLASSIFY_REPLY_KIND}"`);
+    expect(requests[0].text).toContain(CLASSIFY_TABLE_SPEC.replyMarker);
   });
 
   it('does not ask for a share where the stated sizes already decided the owner', () => {

@@ -4,11 +4,11 @@
 
 import { useRef, useState } from 'react';
 
-import PoAiPanel from '../../ai/PoAiPanel.tsx';
+import PoAiPanel, { type PoAiIngestOutcome } from '../../ai/PoAiPanel.tsx';
 import compositionStyles from '../../FeatureCompositionTab.module.css';
-import { applyClassifyOutcome } from '../ai/intakeClassifyApply.ts';
-import { buildClassifyRequests, parseClassifyReply } from '../ai/intakeClassifyRound.ts';
-import { applyResolveOutcome, buildResolveRequests, parseResolveReply } from '../ai/intakeResolveRound.ts';
+import { buildClassifyRequests } from '../ai/intakeClassifyRound.ts';
+import { buildResolveRequests } from '../ai/intakeResolveRound.ts';
+import { readStepAnswer } from '../ai/intakeStepAnswer.ts';
 import { runDuplicateSearch, type DuplicateSearchDeps } from '../duplicateSearch.ts';
 import type { EpicCreateDeps } from '../epicCreate.ts';
 import type { EpicIntake, IngestRejection, IntakeStepId } from '../epicIntakeModel.ts';
@@ -72,6 +72,8 @@ interface IngestResult {
   updated: EpicIntake;
   acceptedCount: number;
   rejected: readonly IngestRejection[];
+  /** The follow-up for the same chat when the answer could not be read or left items out; '' when none. */
+  followUpPrompt: string;
 }
 
 /** The requests for this step: the sorting request (sort + owners), or the resolve request (match, label, draft). */
@@ -81,14 +83,11 @@ function buildStepRequests(intake: EpicIntake, isSorting: boolean): StepRequest[
 
 /** Applies one pasted answer through the round it was asked in, and reports what was used and what was not. */
 function ingestStepReply(intake: EpicIntake, replyText: string, asked: AskedRequest, isSorting: boolean, nowIso: string): IngestResult {
-  const position = { partIndex: asked.partIndex, partCount: asked.partCount };
-  const updated = isSorting
-    ? applyClassifyOutcome(intake, parseClassifyReply(replyText, intake, asked.itemIds), asked.itemIds, position, nowIso)
-    : applyResolveOutcome(intake, parseResolveReply(replyText, intake, asked.itemIds), asked.itemIds, position, nowIso);
+  const { updated, followUpPrompt } = readStepAnswer(intake, replyText, asked, isSorting, nowIso);
   // Both rounds record the full picture — including per-field problems found while applying — in the round's audit
   // line, so that line (not the parser's first pass) is what the PO is shown.
   const roundRecord = updated.roundHistory[updated.roundHistory.length - 1];
-  return { updated, acceptedCount: roundRecord?.acceptedCount ?? 0, rejected: roundRecord?.rejected ?? [] };
+  return { updated, acceptedCount: roundRecord?.acceptedCount ?? 0, rejected: roundRecord?.rejected ?? [], followUpPrompt };
 }
 
 /** Lets the PO pick which part of a long request to copy, when it had to be split. */
@@ -121,10 +120,10 @@ function AssistantTurn({ intake, assistantStep, onChange, nowIso }: AssistantTur
     return request.text;
   }
 
-  function ingest(replyText: string): { acceptedCount: number; errors: string[] } {
+  function ingest(replyText: string): PoAiIngestOutcome {
     const result = ingestStepReply(intake, replyText, askedRef.current, isSorting, nowIso());
     onChange(result.updated);
-    return { acceptedCount: result.acceptedCount, errors: describeRejections(result.rejected) };
+    return { acceptedCount: result.acceptedCount, errors: describeRejections(result.rejected), followUpPrompt: result.followUpPrompt };
   }
 
   return (

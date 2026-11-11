@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCorpusBriefFollowUpPrompt,
   buildCorpusBriefPrompt,
+  listMissingCorpusBriefSections,
   MAX_EXTRACT_CHARS_PER_PROMPT,
   parseCorpusBriefReply,
   renderCorpusBrief,
@@ -70,8 +72,10 @@ describe('buildCorpusBriefPrompt', () => {
   it('asks for the reply shape it will actually parse', () => {
     const prompt = buildCorpusBriefPrompt([extract('A'), extract('B')]);
 
-    expect(prompt).toContain('"kind":"corpusBrief"');
-    expect(prompt).toContain('conflicts');
+    // AI Mode follows labelled headings and bullet lists, not a JSON template (GH #499).
+    expect(prompt).toContain('CONFLICTS:');
+    expect(prompt).toContain('[Doc A; Doc B]');
+    expect(prompt).not.toContain('"kind"');
   });
 
   it('says nothing for a single extract, which is already its own brief', () => {
@@ -231,5 +235,90 @@ describe('renderCorpusBrief', () => {
 
     expect(rendered).not.toContain('Open questions:');
     expect(rendered).not.toContain('CONFLICTS');
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ──
+
+describe('parseCorpusBriefReply — an AI Mode document', () => {
+  const extracts = [extract('Billing Grid'), extract('Cutover Email')];
+  const aiModeReply = [
+    'Here is the consolidated brief across both documents.',
+    '',
+    '## Overview',
+    'Billing for LIS members is moving to consolidated statements.',
+    '',
+    '## Conflicts',
+    '* **Runout ownership**',
+    '    * Blue owns runout [Billing Grid]',
+    '    * Purple owns runout [Cutover Email]',
+    '',
+    '## Decisions',
+    '* Consolidated statements [Billing Grid; Cutover Email]',
+    '* Paper invoices retire (Sources: Billing Grid, Invented Standard)',
+    '',
+    '## Requirements',
+    '- Support LIS-to-Subscriber [Billing Grid]',
+    '',
+    '## Open Questions',
+    '- None',
+    '',
+    'Let me know if you want this as a table.',
+  ].join('\n');
+
+  it('reads each point with the documents behind it', () => {
+    const parsed = parseCorpusBriefReply(aiModeReply, extracts, 'now');
+
+    expect(parsed.overview).toBe('Billing for LIS members is moving to consolidated statements.');
+    expect(parsed.decisions[0]).toEqual({ text: 'Consolidated statements', sourceTitles: ['Billing Grid', 'Cutover Email'] });
+    expect(parsed.requirements).toEqual([{ text: 'Support LIS-to-Subscriber', sourceTitles: ['Billing Grid'] }]);
+    expect(parsed.openQuestions).toEqual([]);
+  });
+
+  it('still drops a source title no document had', () => {
+    const parsed = parseCorpusBriefReply(aiModeReply, extracts, 'now');
+
+    expect(parsed.decisions[1]).toEqual({ text: 'Paper invoices retire', sourceTitles: ['Billing Grid'] });
+  });
+
+  it('reads a conflict as its subject with the positions indented beneath it', () => {
+    const parsed = parseCorpusBriefReply(aiModeReply, extracts, 'now');
+
+    expect(parsed.conflicts).toEqual([{
+      subject: 'Runout ownership',
+      positions: [
+        { text: 'Blue owns runout', sourceTitles: ['Billing Grid'] },
+        { text: 'Purple owns runout', sourceTitles: ['Cutover Email'] },
+      ],
+    }]);
+  });
+
+  it('asks for no follow-up when every heading came back', () => {
+    expect(buildCorpusBriefFollowUpPrompt(aiModeReply)).toBe('');
+    expect(listMissingCorpusBriefSections(aiModeReply)).toEqual([]);
+  });
+
+  it('asks only for the headings a reply left out, and names them', () => {
+    const partialReply = '## Overview\nA brief.\n\n## Decisions\n- Ship it [Billing Grid]';
+
+    expect(listMissingCorpusBriefSections(partialReply)).toEqual(['CONFLICTS', 'REQUIREMENTS', 'OPEN_QUESTIONS']);
+    const followUp = buildCorpusBriefFollowUpPrompt(partialReply);
+    expect(followUp).toContain('CONFLICTS: [text]');
+    expect(followUp).not.toContain('OVERVIEW: [text]');
+  });
+
+  it('reads the first reply and its follow-up answer pasted together as one brief', () => {
+    const combinedReply = '## Overview\nA brief.\n\n## Decisions\n- Ship it [Billing Grid]\n\n'
+      + 'CONFLICTS:\n- None\nREQUIREMENTS:\n- Must ship [Cutover Email]\nOPEN_QUESTIONS:\n- None';
+
+    expect(listMissingCorpusBriefSections(combinedReply)).toEqual([]);
+    expect(parseCorpusBriefReply(combinedReply, extracts, 'now').requirements[0].text).toBe('Must ship');
+  });
+
+  it('asks for the whole form again when the reply could not be read', () => {
+    const followUp = buildCorpusBriefFollowUpPrompt('Here is your brief!');
+
+    expect(followUp).toContain('could not be read');
+    expect(followUp).toContain('OVERVIEW: [text]');
   });
 });

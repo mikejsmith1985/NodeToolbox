@@ -12,7 +12,7 @@ import type { JiraIssue } from '../../../types/jira.ts';
 import { isAssistantQuestion, PASTED_QUESTION_MESSAGE } from '../chgFormula/assistantReplyText.ts';
 import { fetchChangeJiraStories, findJiraKeysInChangeText } from '../chgFormula/changeJiraStories.ts';
 import { describeTaskPeople, type ChgPromptContext } from '../chgFormula/chgPromptContext.ts';
-import { buildChgGapFixPrompt, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
+import { buildChgGapFixPrompt, buildGapFixFollowUp, resolveFixableFields } from '../chgFormula/chgGapFixPrompt.ts';
 import { buildChgRiskCheckPrompt, splitRiskCheckReply, type ChgTextFieldValues } from '../chgFormula/chgRiskCheckPrompt.ts';
 import { fetchChangeAttachmentFileNames, fetchReviewedCtasks, saveCtaskFix } from '../chgFormula/ctaskReviewApi.ts';
 import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
@@ -32,6 +32,7 @@ import {
   mergeRecheckIntoReview,
 } from '../chgFormula/gapFocus.ts';
 import { parseRiskCheckReview, type RiskCheckFinding } from '../chgFormula/riskCheckReview.ts';
+import { appendRoundReply, buildRiskCheckFollowUp, listFullCheckItems } from '../chgFormula/riskCheckTable.ts';
 import { applyTeamStandards } from '../chgFormula/teamStandards.ts';
 import { checkOutageRule, fetchChangeOutages, type ChangeOutage } from '../outage/changeOutageRecord.ts';
 import { describeEstimatesForPrompt, readEstimatesFromText, rollUpEstimates, type DurationEstimates } from '../ctaskDurations.ts';
@@ -64,6 +65,10 @@ interface OpenGaps {
   changeGaps: RiskCheckFinding[];
   backoutGaps: RiskCheckFinding[];
 }
+
+// Shown when a pasted review or re-check holds no answer Toolbox can read; the follow-up beside it asks for the table.
+const UNREADABLE_REVIEW_MESSAGE = 'No answers could be read from the pasted reply — paste the follow-up below into the same AI chat.';
+const PARTIAL_REVIEW_MESSAGE = 'Review captured, but some rows were left unanswered — paste the follow-up below into the same AI chat.';
 
 /** "1 task", "2 tasks". */
 function pluralise(count: number, singular: string, plural: string): string {
@@ -305,20 +310,33 @@ export function ExistingChgRiskCheck({
   }, [misalignedTasks, changeConfigItem, writeTaskFixes, reloadCtasks, readRuleFindings]);
 
   const handleOpenRiskCheck = useCallback(() => {
+    const checkPart = buildCtaskCheckPart(ctasks);
+    const askedItems = listFullCheckItems(checkPart?.tableItems);
+    // Every reply in this round is kept, so a follow-up's answers for the rows left blank add to the first (GH #499).
+    let roundReplies = '';
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to check the change AND every CTASK against the Release Manager\'s '
         + 'rules, then paste the reply below — one review covers them all.',
-      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, buildCtaskCheckPart(ctasks)),
+      promptText: buildChgRiskCheckPrompt(withTaskLines(promptContext, ctasks, jiraStories, attachmentFileNames), fieldValues, checkPart),
       applyButtonLabel: 'Use this review',
       applyReply: (replyText) => {
         const { reviewText: pastedReview, revisedFieldsText } = splitRiskCheckReply(replyText);
         if (!pastedReview && !revisedFieldsText) {
           return { statusMessage: 'The pasted review is empty.', wasApplied: false };
         }
-        setReviewText(applyTeamStandards(composeReviewWithRules(pastedReview, ruleFindings), readTaskDurationEstimates(ctasks), undefined, promptContext.changeOwnerLabel));
+        if (parseRiskCheckReview(pastedReview).findings.length === 0 && !revisedFieldsText) {
+          return { statusMessage: UNREADABLE_REVIEW_MESSAGE, wasApplied: false, followUpPrompt: buildRiskCheckFollowUp(replyText, askedItems) };
+        }
+        roundReplies = appendRoundReply(roundReplies, pastedReview);
+        setReviewText(applyTeamStandards(composeReviewWithRules(roundReplies, ruleFindings), readTaskDurationEstimates(ctasks), undefined, promptContext.changeOwnerLabel));
         const correctedCount = revisedFieldsText ? onApplyChangeFields(pickChangeFields(revisedFieldsText, resolveFixableFields([]))) : 0;
         setIsReviewOutOfDate(correctedCount > 0);
-        return { statusMessage: 'Review captured — it is shown below the CTASK checks.', wasApplied: true };
+        const followUpPrompt = buildRiskCheckFollowUp(roundReplies, askedItems);
+        return {
+          statusMessage: followUpPrompt === '' ? 'Review captured — it is shown below the CTASK checks.' : PARTIAL_REVIEW_MESSAGE,
+          wasApplied: true,
+          followUpPrompt,
+        };
       },
     });
   }, [promptContext, ctasks, jiraStories, attachmentFileNames, fieldValues, ruleFindings, onApplyChangeFields]);
@@ -342,10 +360,14 @@ export function ExistingChgRiskCheck({
         const changeFields = changeGaps.length > 0 ? pickChangeFields(changeReplyText, resolveFixableFields(changeGaps)) : {};
         const changeFieldCount = Object.keys(changeFields).length > 0 ? onApplyChangeFields(changeFields) : 0;
         if (changeFieldCount === 0 && backoutPlansByNumber.size === 0) {
-          return {
-            statusMessage: isAssistantQuestion(replyText) ? PASTED_QUESTION_MESSAGE : 'No fixes were recognised in the pasted reply.',
-            wasApplied: false,
-          };
+          // The assistant's question is answered in its chat; a reply in some other shape gets the labelled form again.
+          return isAssistantQuestion(replyText)
+            ? { statusMessage: PASTED_QUESTION_MESSAGE, wasApplied: false }
+            : {
+              statusMessage: 'No fixes were recognised in the pasted reply.',
+              wasApplied: false,
+              followUpPrompt: buildGapFixFollowUp(changeGaps.length > 0 ? resolveFixableFields(changeGaps) : [], askedNumbers),
+            };
         }
         setPendingPlans((currentPlans) => new Map([...currentPlans, ...backoutPlansByNumber]));
         setIsReviewOutOfDate(true);
@@ -403,24 +425,31 @@ export function ExistingChgRiskCheck({
       setStatusMessage('Re-checked the CTASK rules — nothing is left for AI Assist to judge.');
       return;
     }
+    const askedItems = [...changeGaps, ...backoutGaps].map((finding) => finding.field);
+    let roundReplies = '';
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to re-check just the open gaps, then paste the reply below.',
       promptText: buildGapRecheckPrompt(withTaskLines(promptContext, freshTasks, jiraStories, attachmentFileNames), fieldValues, changeGaps,
         backoutGaps.length > 0 ? buildCtaskRecheckPart(freshTasks, backoutGaps) : undefined),
       applyButtonLabel: 'Use this re-check',
       applyReply: (replyText) => {
-        const { closedCount, stillOpenCount } = countRecheckOutcome(replyText);
-        if (closedCount + stillOpenCount === 0) {
-          return { statusMessage: 'No PASS / GAP lines found in the pasted re-check.', wasApplied: false };
+        if (parseRiskCheckReview(replyText).findings.length === 0) {
+          return { statusMessage: UNREADABLE_REVIEW_MESSAGE, wasApplied: false, followUpPrompt: buildRiskCheckFollowUp(replyText, askedItems) };
         }
+        roundReplies = appendRoundReply(roundReplies, replyText);
+        const { closedCount, stillOpenCount } = countRecheckOutcome(roundReplies);
         setReviewText(applyTeamStandards(
-          composeReviewWithRules(mergeRecheckIntoReview(baseReview, replyText), freshRules),
+          composeReviewWithRules(mergeRecheckIntoReview(baseReview, roundReplies), freshRules),
           readTaskDurationEstimates(freshTasks),
           undefined,
           promptContext.changeOwnerLabel,
         ));
         setIsReviewOutOfDate(false);
-        return { statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`, wasApplied: true };
+        return {
+          statusMessage: `Re-checked: ${closedCount} closed, ${stillOpenCount} still open.`,
+          wasApplied: true,
+          followUpPrompt: buildRiskCheckFollowUp(roundReplies, askedItems),
+        };
       },
     });
   }, [pendingPlans, writePendingPlans, reloadCtasks, readRuleFindings, reviewText, promptContext, jiraStories, attachmentFileNames, fieldValues]);

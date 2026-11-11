@@ -62,15 +62,15 @@ const SAMPLE_PROMPT_INPUT: ReleaseAiAssistPromptInput = {
 };
 
 describe('releaseAiAssistNotes', () => {
-  it('builds a strict JSON-oriented release prompt with normalized Jira details', () => {
+  it('builds a fill-in-form release prompt with normalized Jira details', () => {
     const promptText = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
 
-    expect(promptText).toContain('Respond ONLY with valid JSON.');
+    expect(promptText).toContain('RELEASE_NOTES_TABLE:');
     expect(promptText).toContain('Release Name: Release 26.3');
     expect(promptText).toContain('Issue Key: TBX-101');
     expect(promptText).toContain('Description: Generate the release note payload.');
     expect(promptText).toContain('Acceptance Criteria: Given a pasted AI Assist response, render a release table.');
-    expect(promptText).toContain('"releaseSummary": "2-4 sentence overview of what this release delivers"');
+    expect(promptText).toContain('RELEASE_SUMMARY: ___ (2-4 sentences on what this release delivers)');
   });
 
   it('parses a raw JSON response into a release-notes document', () => {
@@ -173,11 +173,14 @@ describe('releaseAiAssistNotes', () => {
     expect(parsedDocument.items[0].issueKey).toBe('TBX-201');
   });
 
-  it('instructs the assistant to emit only the JSON object with no surrounding text', () => {
+  it('ends with a form listing every item and Feature, asking for nothing before or after it', () => {
     const promptText = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
 
-    expect(promptText).toContain('Output the JSON object only');
-    expect(promptText).toContain('Do not add any text before or after the JSON');
+    expect(promptText).toContain('Write nothing before or after the form');
+    expect(promptText).toContain('TBX-101 | ___ | ___ | ___ | ___ | ___ | ___');
+    expect(promptText).toContain('FEATURE_NARRATIVES:');
+    expect(promptText).toContain('TBX-1 | ___');
+    expect(promptText).not.toContain('Respond ONLY with valid JSON');
   });
 
   it('builds a release-notes heading from the team name and fix version', () => {
@@ -273,7 +276,7 @@ describe('release notes carry the Feature each item delivers', () => {
     const prompt = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
 
     expect(prompt).toContain('Do NOT decide which item belongs to which Feature');
-    expect(prompt).toContain('featureNarratives');
+    expect(prompt).toContain('FEATURE_NARRATIVES');
   });
 });
 

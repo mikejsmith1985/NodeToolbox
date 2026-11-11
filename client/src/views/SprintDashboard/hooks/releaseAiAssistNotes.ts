@@ -1,6 +1,19 @@
 // releaseAiAssistNotes.ts — Builds and parses the hidden AI Assist release-notes workflow payload.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format, so the prompt ends with a
+// fill-in form (a summary line and two pre-filled tables, see aiReply/releaseAiAssistReply.ts). A JSON reply from any
+// other assistant is still read. A reply that is neither, or that leaves rows out, gets a follow-up instead.
 
+import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import {
+  buildReleaseAiAssistReplyExpectation,
+  buildReleaseReplyFollowUpPrompt,
+  buildReleaseReplyFormatFixPrompt,
+  buildReleaseReplyFormLines,
+  readReleaseReplyForm,
+  type ReleaseAiAssistReplyExpectation,
+} from '../aiReply/releaseAiAssistReply.ts';
 import { describeGroupHeading, isGroupingWorthShowing } from './releaseNotesGrouping.ts';
 import type { ReleaseNotesGroup } from './releaseNotesGrouping.ts';
 
@@ -61,10 +74,6 @@ export interface ReleaseAiAssistTableDocument {
    */
   featureNarratives?: ReleaseAiAssistFeatureNarrative[];
 }
-
-// Matches a Markdown code fence with an optional language tag (```json or a bare ```),
-// capturing whatever the assistant placed between the opening and closing fences.
-const CODE_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
 
 // The fixed suffix every release-notes report heading ends with.
 const RELEASE_NOTES_HEADING_SUFFIX = 'Release Notes';
@@ -213,7 +222,7 @@ function buildPromptIssueSection(releaseIssue: ReleaseAiAssistPromptIssue): stri
 
 /**
  * Builds the copy-paste AI Assist prompt for one Team Dashboard release.
- * The prompt requires a strict JSON response so Toolbox can render a release-notes table reliably.
+ * The prompt ends with a fill-in form listing every item and Feature, so the reply cannot drop or invent one.
  */
 export function buildReleaseAiAssistPrompt(input: ReleaseAiAssistPromptInput): string {
   const issuesSection = input.issues.length > 0
@@ -223,9 +232,6 @@ export function buildReleaseAiAssistPrompt(input: ReleaseAiAssistPromptInput): s
   return [
     'You are helping write software release notes for a Team Dashboard release in NodeToolbox.',
     'Use the release context and Jira issue details below to draft concise, customer-readable release notes.',
-    'Respond ONLY with valid JSON. Do not wrap the response in markdown commentary.',
-    'Output the JSON object only. Do not add any text before or after the JSON.',
-    'Do not place the JSON inside a markdown code fence and do not include a greeting or sign-off.',
     '',
     `Project Key: ${input.projectKey}`,
     `Release Name: ${input.releaseName}`,
@@ -236,64 +242,30 @@ export function buildReleaseAiAssistPrompt(input: ReleaseAiAssistPromptInput): s
     'Jira release items, grouped by the Feature they deliver:',
     issuesSection,
     '',
-    'Return EXACTLY this JSON shape:',
-    '{',
-    '  "releaseName": "string",',
-    '  "releaseSummary": "2-4 sentence overview of what this release delivers",',
-    '  "items": [',
-    '    {',
-    '      "issueKey": "Jira key from the supplied list",',
-    '      "title": "Plain-language title for this release item",',
-    '      "releaseNote": "What changed in one concise sentence",',
-    '      "customerImpact": "Why users or stakeholders care",',
-    '      "technicalDetails": "Key implementation or rollout detail",',
-    '      "risks": "Known risk, dependency, or follow-up, or \\"None.\\"",',
-    '      "validation": "How this item was validated or will be validated"',
-    '    }',
-    '  ],',
-    '  "featureNarratives": [',
-    '    {',
-    '      "featureKey": "Feature key from the supplied list",',
-    '      "narrative": "1-2 sentences on what this Feature amounts to in this release"',
-    '    }',
-    '  ]',
-    '}',
-    '',
     'Rules:',
-    '- Include one item for every supplied Jira issue key.',
-    '- Keep issueKey values exactly as provided.',
-    '- Include one featureNarratives entry for each DISTINCT Feature named above, and no others.',
+    '- Write one row for every supplied Jira issue key, keeping each key exactly as provided.',
+    '- Write one FEATURE_NARRATIVES row for each DISTINCT Feature named above, and no others.',
     '- Do NOT decide which item belongs to which Feature — that is already settled above and any',
     '  regrouping would be wrong. Write only what each Feature amounts to.',
     '- Use complete sentences.',
     '- If a risk is negligible, say "None." rather than leaving it blank.',
     '- If validation is unknown, say "Validation details pending."',
+    '',
+    buildReleaseReplyFormLines(buildReleaseAiAssistReplyExpectation(input)),
   ].join('\n');
 }
 
 /**
- * Pulls the JSON object out of a raw assistant reply.
- *
- * AI Assist returned clean JSON, but Copilot and other assistants routinely wrap the
- * payload in chatter — a greeting before it, a "let me know if you need changes"
- * after it, or a Markdown code fence around it. This helper recovers the JSON in
- * all of those shapes so a stray sentence no longer breaks the release-notes import:
- *   1. If a code fence is present, work with its inner contents.
- *   2. Narrow to the outermost { ... } so any prose outside the object is discarded.
+ * Pulls the JSON object out of a raw assistant reply with the shared reader, which copes with a greeting before
+ * it, a sign-off after it, a code fence around it and the common LLM JSON defects. A reply with no object at all
+ * is reported in this round's own words, as it always was.
  */
-function extractJsonPayload(responseText: string): string {
-  const codeFenceMatch = responseText.match(CODE_FENCE_PATTERN);
-  const candidatePayload = (codeFenceMatch?.[1] ?? responseText).trim();
-
-  // Drop any conversational text surrounding the object by keeping only the span
-  // from the first opening brace to the last closing brace.
-  const firstBraceIndex = candidatePayload.indexOf('{');
-  const lastBraceIndex = candidatePayload.lastIndexOf('}');
-  if (firstBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
-    return candidatePayload.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+function readJsonReplyPayload(responseText: string): string {
+  try {
+    return extractJsonPayload(responseText);
+  } catch {
+    throw new Error('AI Assist response is not valid JSON.');
   }
-
-  return candidatePayload;
 }
 
 function readRequiredString(value: unknown, fieldName: string): string {
@@ -352,7 +324,7 @@ function readReleaseRow(value: unknown, rowIndex: number): ReleaseAiAssistTableR
  * Accepts either raw JSON or a fenced ```json block copied from chat.
  */
 export function parseReleaseAiAssistResponse(responseText: string): ReleaseAiAssistTableDocument {
-  const payloadText = extractJsonPayload(responseText);
+  const payloadText = readJsonReplyPayload(responseText);
   let parsedPayload: unknown;
 
   try {
@@ -377,3 +349,51 @@ export function parseReleaseAiAssistResponse(responseText: string): ReleaseAiAss
     featureNarratives: readFeatureNarratives(payloadRecord.featureNarratives),
   };
 }
+
+// ── Reading a reply in either form ──
+
+/** A pasted reply's outcome: the document to show (when any), the message to show, and a follow-up for the chat. */
+export interface ReleaseAiAssistReplyReading {
+  /** The release notes read, or null when nothing usable came back. Complete rows only. */
+  document: ReleaseAiAssistTableDocument | null;
+  /** Why nothing could be read, or which parts are still missing; null when the reply was complete. */
+  message: string | null;
+  /** For the same AI chat — the form again, or only the parts left out. '' when nothing needs asking. */
+  followUpPrompt: string;
+}
+
+const FORM_PARTIAL_MESSAGE = 'Some release items or the summary were left out or left blank, and are not shown. Copy '
+  + 'the follow-up below into the same AI chat, then paste its reply under this one and render again.';
+
+/** The filled-in form's reading as a document — null until it has a summary and at least one complete row. */
+function readFormReply(responseText: string, expectation: ReleaseAiAssistReplyExpectation): ReleaseAiAssistReplyReading {
+  const formReading = readReleaseReplyForm(responseText, expectation);
+  const followUpPrompt = buildReleaseReplyFollowUpPrompt(formReading);
+  const hasDocument = formReading.releaseSummary !== '' && formReading.items.length > 0;
+  return {
+    document: hasDocument
+      ? { releaseName: expectation.releaseName, releaseSummary: formReading.releaseSummary, items: formReading.items, featureNarratives: formReading.featureNarratives }
+      : null,
+    message: followUpPrompt === '' ? null : FORM_PARTIAL_MESSAGE,
+    followUpPrompt,
+  };
+}
+
+/**
+ * Reads a pasted reply for one release: the fill-in form first (what the prompt asks for), then the old JSON
+ * object. A reply that is neither gets the whole form back as a follow-up; a form with rows left out gets a
+ * follow-up for only those. Nothing missing is ever filled in by Toolbox.
+ */
+export function readReleaseAiAssistReply(responseText: string, expectation: ReleaseAiAssistReplyExpectation): ReleaseAiAssistReplyReading {
+  if (readReleaseReplyForm(responseText, expectation).hasItemsTable) {
+    return readFormReply(responseText, expectation);
+  }
+  try {
+    return { document: parseReleaseAiAssistResponse(responseText), message: null, followUpPrompt: '' };
+  } catch (caughtError) {
+    const message = caughtError instanceof Error ? caughtError.message : 'Unable to parse the AI Assist response.';
+    return { document: null, message, followUpPrompt: buildReleaseReplyFormatFixPrompt(expectation) };
+  }
+}
+
+export { buildReleaseAiAssistReplyExpectation, type ReleaseAiAssistReplyExpectation };

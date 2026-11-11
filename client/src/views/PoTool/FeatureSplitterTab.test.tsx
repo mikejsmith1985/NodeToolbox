@@ -466,6 +466,31 @@ describe('FeatureSplitterTab — AI assist, gate UNLOCKED (Scenario E)', () => {
     expect(await screen.findByText(/No JSON object found/)).toBeInTheDocument();
   });
 
+  it('offers a follow-up for the same AI chat when the reply could not be read (GH #499)', async () => {
+    render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
+    await loadFeature();
+
+    await ingestReply('You could split this by workflow step.');
+
+    const followUpBox = await screen.findByLabelText(/follow-up for the same ai chat/i);
+    expect((followUpBox as HTMLTextAreaElement).value).toContain('SPLIT_TABLE:');
+  });
+
+  it('reads an AI Mode table reply into unaccepted increments (GH #499)', async () => {
+    render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
+    await loadFeature();
+
+    await ingestReply([
+      'Here is a proposed split:',
+      '| Increment | Summary | Description | Acceptance criteria | Rationale |',
+      '|---|---|---|---|---|',
+      '| 1 | Table-read increment | Delivers one thing. | It works | Happy path |',
+      'Let me know if you want more detail.',
+    ].join('\n'));
+
+    expect(await screen.findByDisplayValue('Table-read increment')).toBeInTheDocument();
+  });
+
   it('keeps the good proposals and reports the bad one (INV-3)', async () => {
     render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
     await loadFeature();

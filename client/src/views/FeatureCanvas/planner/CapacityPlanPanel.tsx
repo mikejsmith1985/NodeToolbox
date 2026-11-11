@@ -18,7 +18,8 @@ import { copyToClipboard } from '../ai/clipboard.ts';
 import { createProvisionalContainer } from '../overlay/containerFactory.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
-import { buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
+import { buildPlanIngestFollowUpPrompt, buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
@@ -203,6 +204,8 @@ export function CapacityPlanPanel({
 }: CapacityPlanPanelProps): React.JSX.Element {
   const [ingestText, setIngestText] = useState('');
   const [ingestMessage, setIngestMessage] = useState<string | null>(null);
+  // The follow-up for the same assistant chat when a reply strayed from the table or had rejected rows ('' = none).
+  const [ingestFollowUpPrompt, setIngestFollowUpPrompt] = useState('');
   // Whether the write-back may also propose new assignees. Off by default so the operator opts in
   // deliberately before any reassignment can be staged — reassignments are the riskier write.
   const [includeReassignments, setIncludeReassignments] = useState(false);
@@ -294,12 +297,13 @@ export function CapacityPlanPanel({
   const rosterNames = useMemo(() => rosterMembers.map((member) => member.displayName), [rosterMembers]);
 
   /**
-   * Parses Copilot's ingest JSON and stages it onto the canvas: each valid assignment moves its story (or
+   * Parses the assistant's plan table (or JSON) and stages it onto the canvas: each valid assignment moves its story (or
    * feature) into a sprint box named for the target sprint, creating a provisional box when none exists.
    * Nothing reaches Jira here — the operator commits via Review & Commit. Reports what applied and skipped.
    */
   const handleApplyIngest = (): void => {
     const parsed = parsePlanIngest(ingestText, { validSprintNames, allowAssignee: includeReassignments });
+    setIngestFollowUpPrompt(buildPlanIngestFollowUpPrompt(ingestText, parsed, validSprintNames, rosterNames, { allowAssignee: includeReassignments }));
     const { placements, unknownIssueKeys } = resolveIngestPlacements(parsed.assignments, canvasNodes);
 
     // Reuse an existing sprint box by name; otherwise create a provisional one (committed later).
@@ -513,10 +517,10 @@ export function CapacityPlanPanel({
             📤 Copy translate prompt
           </button>
           <textarea
-            aria-label="Paste plan JSON to ingest"
+            aria-label="Paste plan reply to ingest"
             value={ingestText}
             onChange={(event) => setIngestText(event.target.value)}
-            placeholder="Paste Copilot's capacityPlanIngest JSON here"
+            placeholder="Paste the assistant's plan table (or JSON) here"
             rows={4}
             style={{ width: '100%', marginTop: 6, fontSize: 11 }}
           />
@@ -530,6 +534,7 @@ export function CapacityPlanPanel({
             📥 Apply to canvas
           </button>
           {ingestMessage !== null && <p style={{ margin: '6px 0 0', fontSize: 11 }}>{ingestMessage}</p>}
+          <AiFollowUpPrompt fieldId="capacity-plan-ingest-follow-up" followUpPrompt={ingestFollowUpPrompt} />
         </section>
       )}
 

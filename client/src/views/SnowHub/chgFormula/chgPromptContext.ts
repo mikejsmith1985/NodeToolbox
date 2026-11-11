@@ -141,6 +141,8 @@ export interface ExtraPromptPart {
   gapLines?: readonly string[];
   /** Extra reply lines or markers the assistant must answer with. */
   replyLines: readonly string[];
+  /** Extra rows a check or re-check's fill-in table lists, each named exactly as the reply must name it (GH #499). */
+  tableItems?: readonly string[];
 }
 
 /** How every release moves to production. The Test Plan must be written against this path. */

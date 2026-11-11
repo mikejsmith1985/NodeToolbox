@@ -106,4 +106,28 @@ describe('EpicDatePlanPanel', () => {
     expect(readProposedDates('DENP-3')).toEqual(['2026-10-12', '2026-10-13']);
     expect(screen.getByText('Unblocks the others.')).toBeInTheDocument();
   });
+
+  it('reads an AI Mode table reply, and asks the same chat about the Epics it left unplaced (GH #499)', () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText(/Propose the Epic order reply/), {
+      target: { value: 'Here is the order.\nEPICS_AT_ONCE: 1\n| Epic key | Position | Why it goes here |\n|---|---|---|\n| DENP-3 | 1 | Unblocks the others. |\nLet me know if you want changes.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Use this order/ }));
+
+    expect(readProposedDates('DENP-3')).toEqual(['2026-10-12', '2026-10-13']);
+    expect(screen.getByLabelText('Epics worked at once')).toHaveValue(1);
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/no position for DENP-1/);
+  });
+
+  it('offers a follow-up for the same AI chat when the reply could not be read', () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    renderPanel();
+
+    fireEvent.change(screen.getByLabelText(/Propose the Epic order reply/), { target: { value: 'Do DENP-3 first.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Use this order/ }));
+
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/not in the form I need/);
+  });
 });

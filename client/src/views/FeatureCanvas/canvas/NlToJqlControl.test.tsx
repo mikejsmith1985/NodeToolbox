@@ -39,8 +39,25 @@ describe('NlToJqlControl', () => {
     fireEvent.change(screen.getByLabelText(/Paste reply/), { target: { value: 'not json' } });
     fireEvent.click(screen.getByRole('button', { name: /Get JQL/ }));
 
-    expect(screen.getByText(/No JSON object/)).toBeInTheDocument();
+    expect(screen.getByText(/No JQL query found/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use this query/ })).not.toBeInTheDocument();
     expect(onAcceptJql).not.toHaveBeenCalled();
+    // A follow-up for the same AI chat asks for just the JQL line.
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toContain('JQL: [text]');
+  });
+
+  it('proposes only the query from an AI Mode reply with an intro, a ```jql block and a closing offer (GH #499)', () => {
+    act(() => setAiAssistUnlocked(true));
+    const onAcceptJql = vi.fn();
+    render(<NlToJqlControl projectKey="ENCUC" piName="PI 26.3" onAcceptJql={onAcceptJql} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Ask/ }));
+    fireEvent.change(screen.getByLabelText(/Paste reply/), {
+      target: { value: 'Use this query to find them.\n\nJQL:\n```jql\nproject = ENCUC AND labels = ENCUC\n```\nIf you want, I can add a status filter.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Get JQL/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Use this query/ }));
+
+    expect(onAcceptJql).toHaveBeenCalledWith('project = ENCUC AND labels = ENCUC');
   });
 });

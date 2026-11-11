@@ -8,7 +8,8 @@
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import { CODE_BLOCK_REPLY_INSTRUCTION } from '../chgFormula/assistantReplyText.ts';
-import { parseAiAssistChgResponse } from '../hooks/useAiAssist.ts';
+import type { ChgTextFieldKey } from '../chgFormula/formulaCard.ts';
+import { buildChgFieldsFollowUp, parseAiAssistChgResponse } from '../hooks/useAiAssist.ts';
 import type { RcpChangeFacts } from './rcpChangeFacts.ts';
 import { findNextApprovedWindow } from './rcpRules.ts';
 
@@ -22,6 +23,8 @@ export interface RcpChangeFix {
 
 const MILLISECONDS_PER_MINUTE = 60_000;
 const RCP_LAST_DAY_LABEL = 'Jan 19, 2027';
+// The one change field the RCP rewrite round asks for.
+const RCP_ASKED_FIELD_KEYS: readonly ChgTextFieldKey[] = ['justification'];
 
 /** An ISO instant in ServiceNow's stored date-time format, which is UTC: "2026-10-10 00:00:00". */
 function toSnowUtcDateTime(instantIso: string): string {
@@ -74,14 +77,25 @@ export function buildRcpJustificationPrompt(facts: RcpChangeFacts): string {
     '',
     'Keep every correct fact already in it. Be concise — a short paragraph or a few bullets. Never invent names, dates, '
       + 'counts or impacts: where a fact is missing, write [CONFIRM: <what is needed>] so the owner can fill it in.',
-    'Reply with exactly one marker and the whole rewritten justification beneath it:',
-    'JUSTIFICATION:',
-    '',
     CODE_BLOCK_REPLY_INSTRUCTION,
+    // The labelled form comes last, so the reply's shape is the final thing the assistant reads (GH #499).
+    'Reply with exactly this label, starting its own line, and the whole rewritten justification after it:',
+    'JUSTIFICATION: [the whole rewritten justification]',
   ].join('\n');
 }
 
-/** The rewritten justification from a pasted reply, or '' when the reply carries none. */
+/**
+ * The rewritten justification from a pasted reply, or '' when the reply carries none. Its label or a heading such as
+ * "Rewritten Justification" is read; an intro sentence and a closing offer to help further are left out (GH #499).
+ */
 export function readRcpJustificationReply(replyText: string): string {
   return parseAiAssistChgResponse(replyText).justification?.trim() ?? '';
+}
+
+/**
+ * The follow-up for the same AI chat when a reply carries no readable justification, or '' when it does. It asks for
+ * the labelled form only — the rewrite is never taken from unlabelled prose, which may be the assistant's own commentary.
+ */
+export function buildRcpJustificationFollowUp(replyText: string): string {
+  return buildChgFieldsFollowUp(replyText, RCP_ASKED_FIELD_KEYS);
 }

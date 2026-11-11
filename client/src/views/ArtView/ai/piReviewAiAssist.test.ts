@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { buildPiReviewAiPrompt, parsePiReviewAiReply } from './piReviewAiAssist.ts'
+import { buildPiReviewAiFollowUpPrompt, buildPiReviewAiPrompt, parsePiReviewAiReply } from './piReviewAiAssist.ts'
 import type { PiReviewAiColumnAvailability } from './piReviewAiAssist.ts'
 import type { PiReviewAiFeatureContext } from './piReviewAiFetch.ts'
 
@@ -30,6 +30,12 @@ function context(overrides: Partial<PiReviewAiFeatureContext> = {}): PiReviewAiF
     currentTestSupport: '',
     ...overrides,
   }
+}
+
+/** The fill-in table's header row: the line after the table's marker. */
+function readTableHeader(prompt: string): string {
+  const promptLines = prompt.split('\n')
+  return promptLines[promptLines.indexOf('PI_REVIEW_TABLE:') + 1] ?? ''
 }
 
 // ── The prompt (FR-013 … FR-017, FR-031) ──
@@ -68,8 +74,8 @@ describe('buildPiReviewAiPrompt', () => {
   it('asks for a size and never a point number — the model cannot contradict the rubric (FR-017)', () => {
     const prompt = buildPiReviewAiPrompt([context()], columns())
 
-    expect(prompt).toMatch(/"size"/)
-    expect(prompt).not.toMatch(/"points"/)
+    expect(readTableHeader(prompt)).toContain('Size')
+    expect(readTableHeader(prompt)).not.toMatch(/points/i)
     expect(prompt).toMatch(/do not .*point number|never .*point number/i)
   })
 
@@ -79,12 +85,15 @@ describe('buildPiReviewAiPrompt', () => {
     expect(prompt).toMatch(/only the issue keys listed|never invent/i)
   })
 
-  it('asks for the reply envelope the parser expects (FR-016)', () => {
-    const prompt = buildPiReviewAiPrompt([context()], columns())
+  it('ends with a fill-in table listing every Feature by key and summary, not a JSON shape (FR-016, GH #499)', () => {
+    const prompt = buildPiReviewAiPrompt([context(), context({ issueKey: 'ALPHA-2', summary: 'Card | wallet' })], columns())
 
-    expect(prompt).toContain('"kind": "piReview"')
-    expect(prompt).toContain('"items"')
-    expect(prompt).toContain('"issueKey"')
+    expect(prompt).not.toContain('"kind"')
+    expect(prompt.split('\n').slice(-3)).toEqual([
+      'Issue key | Feature | Size | Dev work | Test support | Risk note | Dependency note | Implementation note | Why this size',
+      'ALPHA-1 | Enrollment support | ___ | ___ | ___ | ___ | ___ | ___ | ___',
+      'ALPHA-2 | Card   wallet | ___ | ___ | ___ | ___ | ___ | ___ | ___',
+    ])
   })
 
   it('covers EVERY Feature on the page in one prompt (FR-031)', () => {
@@ -106,7 +115,7 @@ describe('buildPiReviewAiPrompt', () => {
   it('asks whether the team must BUILD it — the Dev Work box', () => {
     const prompt = buildPiReviewAiPrompt([context()], columns())
 
-    expect(prompt).toContain('"devWork"')
+    expect(readTableHeader(prompt)).toContain('Dev work')
     expect(prompt).toMatch(/dev work/i)
     // The distinction the PO actually draws: does OUR team write the code?
     expect(prompt).toMatch(/development .*by (the|our) team|team .*must build|requires development/i)
@@ -115,7 +124,7 @@ describe('buildPiReviewAiPrompt', () => {
   it(`asks whether the team is ONLY supporting another team's testing — the Test Support box`, () => {
     const prompt = buildPiReviewAiPrompt([context()], columns())
 
-    expect(prompt).toContain('"testSupport"')
+    expect(readTableHeader(prompt)).toContain('Test support')
     expect(prompt).toMatch(/test support/i)
     // "only" is the whole point — this is the case where we do NOT build it.
     expect(prompt).toMatch(/only .*support(ing)? (the )?test/i)
@@ -126,18 +135,18 @@ describe('buildPiReviewAiPrompt', () => {
     // These are OPTIONAL columns. Asking for a value the table cannot hold would produce a
     // suggestion that silently goes nowhere.
     const withoutDevWork = buildPiReviewAiPrompt([context()], columns({ hasDevWorkColumn: false }))
-    expect(withoutDevWork).not.toContain('"devWork"')
-    expect(withoutDevWork).toContain('"testSupport"')
+    expect(readTableHeader(withoutDevWork)).not.toContain('Dev work')
+    expect(readTableHeader(withoutDevWork)).toContain('Test support')
 
     const withoutTestSupport = buildPiReviewAiPrompt([context()], columns({ hasTestSupportColumn: false }))
-    expect(withoutTestSupport).not.toContain('"testSupport"')
-    expect(withoutTestSupport).toContain('"devWork"')
+    expect(readTableHeader(withoutTestSupport)).not.toContain('Test support')
+    expect(readTableHeader(withoutTestSupport)).toContain('Dev work')
 
     const withNeither = buildPiReviewAiPrompt([context()], columns({ hasDevWorkColumn: false, hasTestSupportColumn: false }))
-    expect(withNeither).not.toContain('"devWork"')
-    expect(withNeither).not.toContain('"testSupport"')
+    expect(readTableHeader(withNeither)).not.toContain('Dev work')
+    expect(readTableHeader(withNeither)).not.toContain('Test support')
     // The rest of the prompt is unaffected.
-    expect(withNeither).toContain('"size"')
+    expect(readTableHeader(withNeither)).toContain('Size')
   })
 
   it('shows the model what each box says today, so it can disagree with intent', () => {
@@ -347,5 +356,99 @@ describe('parsePiReviewAiReply', () => {
     )
 
     expect(result.suggestions.map((suggestion) => suggestion.issueKey)).toEqual(['ALPHA-1', 'ALPHA-2'])
+  })
+})
+
+// ── Google AI Mode replies (GH #499) ──
+
+/** A reply the way AI Mode writes it: an intro, a markdown table with its own bold marks, and a closing offer. */
+const AI_MODE_MARKDOWN_REPLY = [
+  'Here is the completed PI Review table based on the Features you provided.',
+  '',
+  '| Issue key | Feature | Size | Dev work | Test support | Risk note | Dependency note | Implementation note | Why this size |',
+  '|---|---|---|---|---|---|---|---|---|',
+  '| **ALPHA-1** | Enrollment support | M | Yes | No | Vendor SLA unconfirmed. | ___ | ___ | Two integrations. |',
+  '| ALPHA-2 | Card wallet | XXL | No | Yes | ___ | Auth shim must land first. | ___ | Whole new flow. |',
+  '',
+  'If you provide the acceptance criteria for ALPHA-2, I can refine its size.',
+].join('\n')
+
+describe('parsePiReviewAiReply with an AI Mode reply', () => {
+  it('reads a markdown table wrapped in an intro and a closing offer into the same suggestions', () => {
+    const result = parsePiReviewAiReply(AI_MODE_MARKDOWN_REPLY, KNOWN_KEYS)
+
+    expect(result.suggestions).toEqual([
+      expect.objectContaining({
+        issueKey: 'ALPHA-1', size: 'M', derivedPoints: expect.any(Number), devWork: true, testSupport: false,
+        riskNote: 'Vendor SLA unconfirmed.', dependencyNote: null, rationale: 'Two integrations.', state: 'pending',
+      }),
+      expect.objectContaining({
+        issueKey: 'ALPHA-2', size: 'XXL', derivedPoints: null, devWork: false, testSupport: true,
+        dependencyNote: 'Auth shim must land first.', state: 'needsPoints',
+      }),
+    ])
+  })
+
+  it('reads a table pasted from the web page as tab-separated cells', () => {
+    const tabReply = [
+      'Issue key\tFeature\tSize\tDev work\tRisk note',
+      'ALPHA-1\tEnrollment support\tL\tYes\tTight PI.',
+    ].join('\n')
+
+    const result = parsePiReviewAiReply(tabReply, KNOWN_KEYS)
+
+    expect(result.suggestions).toEqual([
+      expect.objectContaining({ issueKey: 'ALPHA-1', size: 'L', devWork: true, testSupport: null, riskNote: 'Tight PI.' }),
+    ])
+  })
+
+  it('still derives points from the size, ignoring a point number written into the table', () => {
+    const replyWithPoints = 'Issue key | Size | Points\nALPHA-1 | S | 999'
+
+    const [suggestion] = parsePiReviewAiReply(replyWithPoints, KNOWN_KEYS).suggestions
+
+    expect(suggestion.derivedPoints).not.toBe(999)
+  })
+
+  it('still reports a key the table invented, and never applies it', () => {
+    const result = parsePiReviewAiReply('Issue key | Size\nGHOST-9 | M\nALPHA-1 | S', KNOWN_KEYS)
+
+    expect(result.unknownKeys).toEqual(['GHOST-9'])
+    expect(result.suggestions.map((suggestion) => suggestion.issueKey)).toEqual(['ALPHA-1'])
+  })
+})
+
+describe('buildPiReviewAiFollowUpPrompt', () => {
+  const contexts = [context(), context({ issueKey: 'ALPHA-2', summary: 'Card wallet' })]
+
+  it('offers nothing when every Feature got a usable answer', () => {
+    const runResult = parsePiReviewAiReply(AI_MODE_MARKDOWN_REPLY, KNOWN_KEYS)
+
+    expect(buildPiReviewAiFollowUpPrompt(contexts, columns(), runResult)).toBe('')
+  })
+
+  it('asks for the whole table again when the reply could not be read', () => {
+    const followUp = buildPiReviewAiFollowUpPrompt(contexts, columns(), null)
+
+    expect(followUp).toMatch(/^Your last reply was not in the form I need/)
+    expect(followUp).toContain('ALPHA-1 | Enrollment support | ___')
+    expect(followUp).toContain('ALPHA-2 | Card wallet | ___')
+  })
+
+  it('asks for only the Features the reply left out — never guessing their answers', () => {
+    const runResult = parsePiReviewAiReply('Issue key | Size\nALPHA-1 | M\nALPHA-2 | ___', KNOWN_KEYS)
+
+    const followUp = buildPiReviewAiFollowUpPrompt(contexts, columns(), runResult)
+
+    expect(runResult.suggestions.map((suggestion) => suggestion.issueKey)).toEqual(['ALPHA-1'])
+    expect(followUp).toContain('no usable answer for ALPHA-2')
+    expect(followUp).toContain('ALPHA-2 | Card wallet | ___')
+    expect(followUp).not.toContain('ALPHA-1 | Enrollment support')
+  })
+
+  it('keeps asking only for the boxes the page can record', () => {
+    const followUp = buildPiReviewAiFollowUpPrompt(contexts, columns({ hasTestSupportColumn: false }), null)
+
+    expect(followUp).not.toContain('Test support')
   })
 })

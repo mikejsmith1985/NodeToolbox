@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildChgGapFixPrompt } from './chgGapFixPrompt.ts';
+import { buildChgGapFixPrompt, buildGapFixFollowUp } from './chgGapFixPrompt.ts';
 import type { RiskCheckFinding } from './riskCheckReview.ts';
 
 const SAMPLE_CONTEXT = {
@@ -96,5 +96,30 @@ describe('questions are asked in the chat, not in the code block (GH #415)', () 
     expect(prompt).toMatch(/Ask your questions as normal chat messages — never in a code block/);
     expect(prompt).toMatch(/only your FINAL reply — the fields — goes in ONE code block/i);
     expect(prompt).not.toContain('Write nothing outside the code block.');
+  });
+});
+
+describe('the fix round with Google AI Mode (GH #499)', () => {
+  it('ends with the labelled form, so the reply\'s shape is the last thing the assistant reads', () => {
+    const prompt = buildChgGapFixPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS, SAMPLE_GAPS);
+
+    expect(prompt.trim().split('\n').slice(-2)).toEqual([
+      'TEST_PLAN: [the whole field as it should now read]',
+      'BACKOUT_PLAN: [the whole field as it should now read]',
+    ]);
+  });
+
+  it('offers a follow-up asking for the same labels — the fields and the task plans — when nothing could be read', () => {
+    const followUp = buildGapFixFollowUp(['testPlan', 'backoutPlan'], ['CTASK0012345']);
+
+    expect(followUp).toMatch(/could not be read/);
+    expect(followUp).toContain('TEST_PLAN: [text]');
+    expect(followUp).toContain('BACKOUT_PLAN: [text]');
+    expect(followUp).toContain('CTASK0012345_BACKOUT_PLAN: [text]');
+    expect(followUp).not.toContain('SHORT_DESCRIPTION');
+  });
+
+  it('offers no follow-up when nothing was asked for', () => {
+    expect(buildGapFixFollowUp([], [])).toBe('');
   });
 });

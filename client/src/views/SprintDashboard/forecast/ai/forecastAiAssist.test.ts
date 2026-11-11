@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildForecastDailyPrompt,
+  buildForecastFormatFixPrompt,
   buildScopeCutPrompt,
   buildTestCapacityPrompt,
   parseForecastAiReply,
@@ -140,8 +141,11 @@ describe('the prompts', () => {
 
   it('spells out the reply shape and forbids any other property', () => {
     const prompt = buildForecastDailyPrompt(forecastOf([issue()]));
-    expect(prompt).toContain('"kind":"forecastDaily"');
-    expect(prompt).toMatch(/No other properties are permitted/);
+    // A fill-in table, one row per section (GH #499 — AI Mode ignores JSON), with no column for a figure.
+    expect(prompt).toContain('FORECAST_NARRATIVE:');
+    expect(prompt).toContain('Section | Headline | Narrative | Issue keys | People');
+    expect(prompt).toContain('who-has-room | ___ | ___ | ___ | ___');
+    expect(prompt).toMatch(/No other columns are permitted/);
   });
 
   it('gives the scope-cut prompt the shortfall and every person load', () => {
@@ -434,5 +438,105 @@ describe('the daily prompt answers the question people open it for', () => {
     const prompt = buildForecastDailyPrompt(forecastWithRoster([issue({ key: 'ENC-1' })]));
 
     expect(prompt).toMatch(/NOT NEGOTIABLE/);
+  });
+});
+
+describe('the ingest — Google AI Mode replies (GH #499)', () => {
+  const ALLOWED_ISSUES = ['ENC-1', 'ENC-2'];
+  const ALLOWED_PEOPLE = ['Smith, Jane (CTR)', 'Jones, Ann'];
+  const TABLE_ROWS = [
+    '| where-we-are | ENC-1 must start today | ENC-1 has no slack left. | ENC-1 | Smith, Jane (CTR) |',
+    '| who-is-overloaded | Jane is over | Jane is over by the figure shown. | ENC-1; ENC-2 | Smith, Jane (CTR) |',
+    '| who-has-room | Ann has room | Ann holds nothing in scope. | ___ | Jones, Ann |',
+    '| back-on-track | Move ENC-2 to Ann | Shift ENC-2 from Jane to Ann. | ENC-2 | Smith, Jane (CTR); Jones, Ann |',
+  ];
+
+  it('reads a markdown table wrapped in an intro and a closing offer into the same items', () => {
+    const replyText = [
+      'Here is the forecast narrative for your team.',
+      '',
+      '| Section | Headline | Narrative | Issue keys | People |',
+      '|---|---|---|---|---|',
+      ...TABLE_ROWS,
+      '',
+      'If you provide next sprint\'s capacity I can refine the plan.',
+    ].join('\n');
+
+    const ingest = parseForecastAiReply(replyText, 'forecastDaily', ALLOWED_ISSUES, ALLOWED_PEOPLE);
+
+    expect(ingest.rejectedItems).toEqual([]);
+    expect(ingest.items.map((item) => item.id)).toEqual(['where-we-are', 'who-is-overloaded', 'who-has-room', 'back-on-track']);
+    expect(ingest.items[1].issueKeys).toEqual(['ENC-1', 'ENC-2']);
+    // Names carry a comma, so the People cell splits on ";" only.
+    expect(ingest.items[3].personKeys).toEqual(['Smith, Jane (CTR)', 'Jones, Ann']);
+    expect(ingest.followUpPrompt).toBe('');
+  });
+
+  it('reads a tab-separated table copied from the AI Mode page', () => {
+    const replyText = [
+      'Section\tHeadline\tNarrative\tIssue keys\tPeople',
+      'where-we-are\tENC-1 must start today\tENC-1 has no slack left.\tENC-1\tSmith, Jane (CTR)',
+    ].join('\n');
+
+    const ingest = parseForecastAiReply(replyText, 'forecastDaily', ALLOWED_ISSUES, ALLOWED_PEOPLE);
+
+    expect(ingest.items).toEqual([{
+      id: 'where-we-are', headline: 'ENC-1 must start today', narrative: 'ENC-1 has no slack left.',
+      issueKeys: ['ENC-1'], personKeys: ['Smith, Jane (CTR)'],
+    }]);
+  });
+
+  it('asks a follow-up for only the required sections the table left out or blank — guessing none', () => {
+    const replyText = [
+      'Section | Headline | Narrative | Issue keys | People',
+      TABLE_ROWS[0],
+      '| who-has-room | ___ | ___ | ___ | ___ |',
+    ].join('\n');
+
+    const ingest = parseForecastAiReply(replyText, 'forecastDaily', ALLOWED_ISSUES, ALLOWED_PEOPLE);
+
+    expect(ingest.items).toHaveLength(1);
+    expect(ingest.rejectedItems).toEqual([]);
+    expect(ingest.missingSectionIds).toEqual(['who-is-overloaded', 'who-has-room', 'back-on-track']);
+    expect(ingest.followUpPrompt).toContain('who-has-room | ___ | ___ | ___ | ___');
+    expect(ingest.followUpPrompt).not.toContain('where-we-are |');
+  });
+
+  it('leaves optional scope-cut steps blank without chasing them', () => {
+    const replyText = [
+      'Section | Headline | Narrative | Issue keys | People',
+      '| step-1 | Drop ENC-2 | Dropping ENC-2 recovers the days shown. | ENC-2 | ___ |',
+      '| step-2 | ___ | ___ | ___ | ___ |',
+    ].join('\n');
+
+    const ingest = parseForecastAiReply(replyText, 'forecastScopeCut', ALLOWED_ISSUES, ALLOWED_PEOPLE);
+
+    expect(ingest.items).toHaveLength(1);
+    expect(ingest.followUpPrompt).toBe('');
+  });
+
+  it('never reads a figure from a column the assistant added on its own', () => {
+    const replyText = [
+      'Section | Headline | Narrative | Days | Issue keys | People',
+      '| where-we-are | Late | ENC-1 is late. | 14 | ENC-1 | ___ |',
+    ].join('\n');
+
+    const ingest = parseForecastAiReply(replyText, 'forecastDaily', ALLOWED_ISSUES, ALLOWED_PEOPLE);
+
+    expect(ingest.items[0]).not.toHaveProperty('days');
+  });
+
+  it('still rejects a table row naming an issue the prompt never mentioned', () => {
+    const replyText = ['Section | Headline | Narrative | Issue keys | People', '| where-we-are | H | N | FAKE-1 | ___ |'].join('\n');
+
+    expect(parseForecastAiReply(replyText, 'forecastDaily', ALLOWED_ISSUES, ALLOWED_PEOPLE).rejectedItems[0].reason).toContain('FAKE-1');
+  });
+
+  it('builds a format-fix follow-up listing every section when the reply cannot be read', () => {
+    const formatFixPrompt = buildForecastFormatFixPrompt('forecastTestCapacity');
+
+    expect(formatFixPrompt).toContain('could not be read');
+    expect(formatFixPrompt).toContain('reduce-scope | ___');
+    expect(formatFixPrompt).toContain('recommendation | ___');
   });
 });

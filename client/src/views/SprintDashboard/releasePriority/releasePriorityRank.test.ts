@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildReleasePriorityFormatFixPrompt,
   buildReleasePriorityPrompt,
   buildStatusSummaryPlan,
   calculateAgeDays,
@@ -89,7 +90,10 @@ describe('buildReleasePriorityPrompt', () => {
   });
 
   it('asks for the envelope the parser accepts, with rank 1 as the top', () => {
-    expect(prompt).toContain(`"kind": "${RELEASE_PRIORITY_REPLY_KIND}"`);
+    // A pre-filled table, one row per issue (GH #499 — AI Mode ignores JSON); the parser reads it back.
+    expect(prompt).toContain('RELEASE_PRIORITY_TABLE:');
+    expect(prompt).toContain('Issue key | Summary | Rank | Rationale');
+    expect(prompt).not.toContain(`"kind": "${RELEASE_PRIORITY_REPLY_KIND}"`);
     expect(prompt).toContain('Rank 1 is the most important item');
   });
 });
@@ -216,5 +220,87 @@ describe('buildStatusSummaryPlan', () => {
       { issueKey: 'ENCUC-1', rank: 2, value: '02' },
       { issueKey: 'ENCUC-2', rank: 3, value: '03' },
     ]);
+  });
+});
+
+describe('parseReleasePriorityReply — Google AI Mode replies (GH #499)', () => {
+  const KNOWN_KEYS = ['ENCUC-1', 'ENCUC-2', 'ENCUC-3'];
+  const SUMMARIES = new Map([['ENCUC-1', 'Login'], ['ENCUC-2', 'Billing | invoices'], ['ENCUC-3', 'Reports']]);
+
+  it('reads a markdown table wrapped in an intro and a closing offer, ordering by rank', () => {
+    const replyText = [
+      'Here is the prioritised release order.',
+      '',
+      '| Issue key | Summary | Rank | Rationale |',
+      '|---|---|---|---|',
+      '| ENCUC-1 | Login | 3 | Newest. |',
+      '| ENCUC-2 | Billing / invoices | 1 | Overdue. |',
+      '| ENCUC-3 | Reports | 2 | Feature due first. |',
+      '',
+      'If you provide the team capacity I can also suggest sprint placement.',
+    ].join('\n');
+
+    const result = parseReleasePriorityReply(replyText, KNOWN_KEYS, SUMMARIES);
+
+    expect(result.rankedItems.map((item) => [item.issueKey, item.rank, item.rationale])).toEqual([
+      ['ENCUC-2', 1, 'Overdue.'], ['ENCUC-3', 2, 'Feature due first.'], ['ENCUC-1', 3, 'Newest.'],
+    ]);
+    expect(result.unrankedKeys).toEqual([]);
+    expect(result.followUpPrompt).toBe('');
+  });
+
+  it('reads a tab-separated table copied from the AI Mode page', () => {
+    const replyText = [
+      'Issue key\tSummary\tRank\tRationale',
+      'ENCUC-3\tReports\t1\tFirst.',
+      'ENCUC-1\tLogin\t2\tSecond.',
+      'ENCUC-2\tBilling\t3\tThird.',
+    ].join('\n');
+
+    expect(parseReleasePriorityReply(replyText, KNOWN_KEYS).rankedItems.map((item) => item.issueKey))
+      .toEqual(['ENCUC-3', 'ENCUC-1', 'ENCUC-2']);
+  });
+
+  it('never reads a blank rank as a rank — the row is unranked and a follow-up asks for only it', () => {
+    const replyText = [
+      'Issue key | Summary | Rank | Rationale',
+      'ENCUC-1 | Login | 1 | Top.',
+      'ENCUC-2 | Billing | 2 | Next.',
+      'ENCUC-3 | Reports | ___ | ___',
+    ].join('\n');
+
+    const result = parseReleasePriorityReply(replyText, KNOWN_KEYS, SUMMARIES);
+
+    expect(result.unrankedKeys).toEqual(['ENCUC-3']);
+    expect(result.rankedItems[2]).toMatchObject({ issueKey: 'ENCUC-3', wasRankedByAssistant: false });
+    expect(result.followUpPrompt).toContain('ENCUC-3 | Reports | ___ | ___');
+    expect(result.followUpPrompt).toContain('WHOLE release list');
+    expect(result.followUpPrompt).not.toContain('ENCUC-1 | Login');
+  });
+
+  it('reads a follow-up table pasted under the first reply as one ranking', () => {
+    const replyText = [
+      'Issue key | Summary | Rank | Rationale',
+      'ENCUC-1 | Login | 1 | Top.',
+      'ENCUC-2 | Billing | 3 | Last.',
+      '',
+      'Issue key | Summary | Rank | Rationale',
+      'ENCUC-3 | Reports | 2 | Middle.',
+    ].join('\n');
+
+    const result = parseReleasePriorityReply(replyText, KNOWN_KEYS);
+
+    expect(result.rankedItems.map((item) => item.issueKey)).toEqual(['ENCUC-1', 'ENCUC-3', 'ENCUC-2']);
+    expect(result.followUpPrompt).toBe('');
+  });
+
+  it('throws on prose with no table and no JSON, and the format fix re-lists every row with "|" made safe', () => {
+    expect(() => parseReleasePriorityReply('Put billing first.', KNOWN_KEYS)).toThrow(/No JSON object found/);
+
+    const formatFixPrompt = buildReleasePriorityFormatFixPrompt(
+      KNOWN_KEYS.map((issueKey) => ({ issueKey, summary: SUMMARIES.get(issueKey) ?? '' })),
+    );
+    expect(formatFixPrompt).toContain('could not be read');
+    expect(formatFixPrompt).toContain('ENCUC-2 | Billing / invoices | ___ | ___');
   });
 });

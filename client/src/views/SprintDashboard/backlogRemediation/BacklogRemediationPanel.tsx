@@ -23,7 +23,9 @@ import { AgingBulkClosePanel } from '../../ReportsHub/AgingBulkClosePanel.tsx';
 import { AgingTriageActionTable } from '../../ReportsHub/AgingTriageActionTable.tsx';
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
 import {
+  buildAgingTriageFollowUpPrompt,
   buildAgingTriagePrompt,
+  findMissingTriageKeys,
   parseAgingTriageResponse,
   type AgingTriageIssue,
   type AgingTriageSuggestion,
@@ -156,6 +158,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the reply was unreadable or left shown items out (GH #499).
+  const [triageFollowUpPrompt, setTriageFollowUpPrompt] = useState('');
   // True while the on-load detail hydration is in flight — drives the per-item "Loading context…" note so no
   // action button is ever shown next to a blank context region (FR-016, FR-017).
   const [isHydratingDetails, setIsHydratingDetails] = useState(false);
@@ -294,8 +298,10 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       const parsed = parseAgingTriageResponse(responseText).filter((item) => shownKeys.has(item.issueKey));
       ingestVerdicts(parsed);
       setIngestError(null);
+      setTriageFollowUpPrompt(buildAgingTriageFollowUpPrompt(actionableSignals, findMissingTriageKeys(actionableSignals, parsed), false));
     } catch (caughtError) {
       setIngestError(caughtError instanceof Error ? caughtError.message : 'Could not read the response.');
+      setTriageFollowUpPrompt(buildAgingTriageFollowUpPrompt(actionableSignals, [], true));
     }
   };
 
@@ -493,6 +499,8 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
         ingestLabel="Ingest verdicts"
         onIngest={handleIngest}
         error={ingestError}
+        followUpPrompt={triageFollowUpPrompt}
+        followUpFieldId="backlog-remediation-follow-up"
       />
     </>
   );

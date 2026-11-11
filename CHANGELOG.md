@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     somebody filled since the preview.
 
 ### Fixed
+- **Every AI Assist round now works with Google's AI Mode, not only Copilot (GH #499).** AI Mode is a search answer
+  engine: it ignores reply formats and answers as a document or a table. Every round across SNow Hub, the SNow Wizard,
+  PO Tool, Agile Hub, Feature Canvas, Hygiene, Reports and the Team Dashboard now works the way CTASK timing already does:
+  - Each prompt ends with the table or labelled sections to fill in, with every item already listed, so the assistant
+    cannot add or drop one.
+  - Replies are read by column header or section heading. That covers markdown tables, tables copied from a web page
+    (tabs), and headings such as "Backout Plan" written instead of `BACKOUT_PLAN:`. The intro sentence and the closing
+    "If you provide…" offer are dropped. JSON and marker replies from other assistants are still read.
+  - A reply that cannot be read, or that leaves items out, gets **Copy the follow-up**. It goes into the same AI chat
+    and asks only for the form or the missing items. A missing value is never guessed.
 - **CTASK timing works with Google's AI Mode, not only Copilot (GH #499).** AI Mode answers in its own shape: a
   schedule with start/end times, one duration per task and tasks it made up. Both the SNow Wizard's "Time the tasks
   with AI" and Toolbox's "Plan the CTASK timeline" (Create and Modify) now:

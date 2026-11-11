@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildChecklistPrompt, listSatisfiedCriterionIds, parseChecklistIngest } from './checklistAiAssist.ts';
+import {
+  buildChecklistFollowUpPrompt,
+  buildChecklistPrompt,
+  listSatisfiedCriterionIds,
+  parseChecklistIngest,
+} from './checklistAiAssist.ts';
 import type { EpicChecklistSource } from './checklistField.ts';
 import { DEFAULT_DOR_CRITERIA, DEFAULT_READINESS_CRITERIA } from './dorCriteria.ts';
 
@@ -150,5 +155,96 @@ describe('parseChecklistIngest', () => {
     expect(parseChecklistIngest('I could not do that.', CRITERION_IDS).errors).toHaveLength(1);
     expect(parseChecklistIngest(JSON.stringify({ kind: 'featureCompositionIngest', items: [] }), CRITERION_IDS).errors[0])
       .toContain('is not epicReadinessReview');
+  });
+});
+
+describe('the fill-in table, for Google AI Mode (GH #499)', () => {
+  const TWO_CRITERIA = DEFAULT_DOR_CRITERIA.slice(0, 2);
+  const TWO_IDS = TWO_CRITERIA.map((criterion) => criterion.id);
+
+  it('ends the prompt with a table listing every criterion, instead of asking for JSON', () => {
+    const prompt = buildChecklistPrompt(EPIC, TWO_CRITERIA);
+
+    expect(prompt).not.toContain('Respond ONLY with valid JSON');
+    expect(prompt).toContain('READINESS_REVIEW_TABLE:');
+    expect(prompt).toContain('Criterion id | Criterion | Status | Evidence | What is missing');
+    expect(prompt).toContain(`${FIRST_DOR_ID} | ${TWO_CRITERIA[0].text} | ___ | ___ | ___`);
+    expect(prompt).toContain(`${SECOND_DOR_ID} | `);
+  });
+
+  it('reads an AI Mode markdown table wrapped in an intro and a closing offer', () => {
+    const reply = [
+      'Here is the readiness review of DENP-1436 against your criteria.',
+      '',
+      '| Criterion id | Criterion | Status | Evidence | What is missing |',
+      '| --- | --- | --- | --- | --- |',
+      `| **${FIRST_DOR_ID}** | Business objective | Satisfied | Stakeholders signed off the objective on 12 August. | ___ |`,
+      `| ${SECOND_DOR_ID} | Something | Partly satisfied | Members enrol through AEP. | Name the measures of success. |`,
+      '',
+      'If you provide the child stories, I can refine the delivery criteria.',
+    ].join('\n');
+
+    const { verdicts, errors } = parseChecklistIngest(reply, TWO_IDS);
+
+    expect(errors).toEqual([]);
+    expect(verdicts).toEqual([
+      { criterionId: FIRST_DOR_ID, status: 'satisfied', evidence: 'Stakeholders signed off the objective on 12 August.', whatIsMissing: '' },
+      { criterionId: SECOND_DOR_ID, status: 'partial', evidence: 'Members enrol through AEP.', whatIsMissing: 'Name the measures of success.' },
+    ]);
+  });
+
+  it('reads a tab-separated table pasted from the web page', () => {
+    const reply = [
+      'Criterion id\tCriterion\tStatus\tEvidence\tWhat is missing',
+      `${FIRST_DOR_ID}\tBusiness objective\tMissing\t\tState the objective.`,
+      `${SECOND_DOR_ID}\tSomething\tsatisfied\tSigned off.\t`,
+    ].join('\n');
+
+    const { verdicts } = parseChecklistIngest(reply, TWO_IDS);
+
+    expect(verdicts.map((verdict) => verdict.status)).toEqual(['missing', 'satisfied']);
+    expect(verdicts[0].whatIsMissing).toBe('State the objective.');
+  });
+
+  it('reports a row left blank as unanswered — never as missing', () => {
+    const reply = [
+      'Criterion id | Criterion | Status | Evidence | What is missing',
+      `${FIRST_DOR_ID} | Business objective | satisfied | Signed off. | ___`,
+      `${SECOND_DOR_ID} | Something | ___ | ___ | ___`,
+    ].join('\n');
+
+    const { verdicts, errors } = parseChecklistIngest(reply, TWO_IDS);
+
+    expect(verdicts.map((verdict) => verdict.criterionId)).toEqual([FIRST_DOR_ID]);
+    expect(errors.join(' ')).toContain(`"${SECOND_DOR_ID}" was not answered`);
+  });
+
+  it('offers the whole table again for an unreadable reply', () => {
+    const reply = 'This Epic looks mostly ready, but the objective is vague. Let me know if you want more.';
+
+    const followUp = buildChecklistFollowUpPrompt(reply, TWO_CRITERIA, parseChecklistIngest(reply, TWO_IDS).verdicts);
+
+    expect(followUp).toContain('could not be read');
+    expect(followUp).toContain(`${FIRST_DOR_ID} | `);
+    expect(followUp).toContain(`${SECOND_DOR_ID} | `);
+  });
+
+  it('asks only for the rows a partial reply left out', () => {
+    const reply = [
+      'Criterion id | Criterion | Status | Evidence | What is missing',
+      `${FIRST_DOR_ID} | Business objective | satisfied | Signed off. | ___`,
+    ].join('\n');
+
+    const followUp = buildChecklistFollowUpPrompt(reply, TWO_CRITERIA, parseChecklistIngest(reply, TWO_IDS).verdicts);
+
+    expect(followUp).toContain('left 1 row(s) out');
+    expect(followUp).toContain(`${SECOND_DOR_ID} | `);
+    expect(followUp).not.toContain(`${FIRST_DOR_ID} | `);
+  });
+
+  it('offers no follow-up when every criterion came back', () => {
+    const reply = buildReply(TWO_IDS.map((criterionId) => ({ criterionId, status: 'missing', evidence: '', whatIsMissing: 'Add it.' })));
+
+    expect(buildChecklistFollowUpPrompt(reply, TWO_CRITERIA, parseChecklistIngest(reply, TWO_IDS).verdicts)).toBe('');
   });
 });

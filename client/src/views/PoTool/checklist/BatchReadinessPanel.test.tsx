@@ -197,6 +197,22 @@ describe('BatchReadinessPanel', () => {
     expect(promptText).not.toContain('dor-business-objective');
   });
 
+  it('offers a follow-up for the same chat asking only for the Epic a partial reply left out', async () => {
+    installJira();
+    const user = userEvent.setup();
+    render(<BatchReadinessPanel />);
+    await runQuery(user);
+
+    await user.click(screen.getByRole('button', { name: 'Build the prompt' }));
+    await user.click(screen.getByLabelText(/Paste the assistant/i));
+    await user.paste(buildPartialReply());
+    await user.click(screen.getByRole('button', { name: 'Read the reply' }));
+
+    const followUp = (await screen.findByLabelText(/follow-up for the same ai chat/i)) as HTMLTextAreaElement;
+    expect(followUp.value).toContain(`DENP-2 | ${DEFAULT_DOR_CRITERIA[0].id} | ___`);
+    expect(followUp.value).not.toContain(`DENP-1 | ${DEFAULT_DOR_CRITERIA[0].id}`);
+  });
+
   it('never writes to Jira — this mode only reports', async () => {
     installJira();
     const user = userEvent.setup();

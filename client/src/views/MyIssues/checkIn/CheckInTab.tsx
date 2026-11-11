@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
 import { useCopyFeedback } from '../../../hooks/useCopyFeedback.ts';
-import { buildCheckInPrompt, parseCheckInReply, type CheckInReply } from './checkInPrompt.ts';
+import { buildCheckInFollowUpPrompt, buildCheckInPrompt, parseCheckInReply, type CheckInReply } from './checkInPrompt.ts';
 import { buildCheckInMessage, describeCheckInMessage } from './checkInMessage.ts';
 import { useCheckInIssues } from './useCheckInIssues.ts';
 import type { CheckInIssue } from './checkInModel.ts';
@@ -56,6 +56,8 @@ export default function CheckInTab({ subject, memberIdentifiers, subjectName }: 
   );
   const [reply, setReply] = useState<CheckInReply | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the reply was unreadable or left issues out (GH #499).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [editedMessage, setEditedMessage] = useState<string | null>(null);
   const { hasCopied, confirmCopy } = useCopyFeedback();
 
@@ -74,8 +76,10 @@ export default function CheckInTab({ subject, memberIdentifiers, subjectName }: 
       // A fresh reply replaces an edit, because the edit was of a message that no longer exists.
       setEditedMessage(null);
       setIngestError(null);
+      setFollowUpPrompt(buildCheckInFollowUpPrompt(issues, parsedReply.missingIssueKeys, false));
     } catch (caughtError) {
       setIngestError(caughtError instanceof Error ? caughtError.message : 'That reply could not be read.');
+      setFollowUpPrompt(buildCheckInFollowUpPrompt(issues, [], true));
     }
   }
 
@@ -165,6 +169,8 @@ export default function CheckInTab({ subject, memberIdentifiers, subjectName }: 
             ingestLabel="Read the reply"
             onIngest={handleIngest}
             error={ingestError}
+            followUpFieldId="check-in-follow-up"
+            followUpPrompt={followUpPrompt}
             hint="optional · advisory only, writes nothing to Jira and sends nothing"
           >
             {reply === null ? null : (

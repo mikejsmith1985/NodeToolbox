@@ -1,12 +1,19 @@
 // readinessAiAssist.ts — The readiness AI prompt, and the parser that reads the reply back.
 //
-// Two pure functions, no React and no I/O (the piReviewAiAssist model). One prompt covers the active
-// lens's features; the reply is the shared {kind, items[]} envelope so extractJsonPayload works
-// unmodified and a reply pasted from another surface is caught by the kind guard. Only estimate,
+// Pure functions, no React and no I/O (the piReviewAiAssist model). One prompt covers the active
+// lens's features and ends with a fill-in table listing each one — Google's AI Mode, the team's only
+// assistant (GH #499), ignores JSON but completes a table. The shared record reader turns the table
+// back into the {kind, items[]} envelope (a JSON reply is still read), so a reply pasted from another
+// surface is still caught by the kind guard. Only estimate,
 // target-end, and due-date are writable on accept; ownership and insight are display-only guidance —
 // the model cannot know valid account identities, so a wrong-owner write is never armed.
 
-import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  type ReplyRecordSpec,
+} from '../../../../utils/aiReplyRecords.ts';
 import type { ReadinessFeature } from '../readinessScan.ts';
 
 /** The envelope kind. A reply echoing anything else is a wrong reply, not a partial one. */
@@ -15,6 +22,23 @@ export const READINESS_REPLY_KIND = 'featureReadiness';
 /** Longest note text the model may contribute, matching the house cap used by other AI surfaces. */
 const MAX_NOTE_LENGTH = 300;
 const BLANKISH_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--', 'tbd', 'unknown']);
+// A "|" or line break inside a summary would split its table row, so it is written as a space.
+const TABLE_CELL_BREAKING_PATTERN = /[|\r\n]+/g;
+
+/** The fill-in table: every Feature by key and summary, each suggestion left blank. */
+const READINESS_REPLY_SPEC: ReplyRecordSpec = {
+  kind: READINESS_REPLY_KIND,
+  replyMarker: 'READINESS_TABLE:',
+  columns: [
+    { field: 'issueKey', header: 'Issue key' },
+    { field: 'summary', header: 'Feature', isNamingOnly: true },
+    { field: 'estimateSuggestion', header: 'Estimate', answerHint: 'a size/estimate, only when the Feature has none' },
+    { field: 'targetEndSuggestion', header: 'Target end', answerHint: 'YYYY-MM-DD, only when missing or clearly wrong' },
+    { field: 'dueDateSuggestion', header: 'Due date', answerHint: 'YYYY-MM-DD, only when missing or clearly wrong' },
+    { field: 'ownershipSuggestion', header: 'Ownership', answerHint: 'who should own it — text only, never an account id' },
+    { field: 'insight', header: 'Insight', answerHint: 'one line on risk or readiness' },
+  ],
+};
 
 /** One AI proposal for one feature. Only the three date/estimate fields are writable on accept. */
 export interface ReadinessAiProposal {
@@ -33,6 +57,8 @@ export interface ReadinessAiRunResult {
   proposals: ReadinessAiProposal[];
   unknownKeys: string[];
   unparsedCount: number;
+  /** Features the reply listed but left every suggestion blank for — an answer ("no basis"), not a gap. */
+  blankKeys: string[];
 }
 
 // ── Prompt ──
@@ -54,15 +80,15 @@ export function buildReadinessAiPrompt(features: readonly ReadinessFeature[]): s
   return `You are helping an RTE assess feature readiness for ${features.length} SAFe Features.
 
 For each Feature below, where the data supports it, suggest:
-  1. "estimateSuggestion": a size/estimate when the Feature has none and the material implies one.
-  2. "targetEndSuggestion": an ISO date (YYYY-MM-DD) when the target end is missing or clearly wrong.
-  3. "dueDateSuggestion": an ISO date (YYYY-MM-DD) when the due date is missing or clearly wrong.
-  4. "ownershipSuggestion": guidance on who should own it — TEXT ONLY, the app never writes this.
-  5. "insight": one line on risk or readiness the RTE should hear.
+  1. Estimate: a size/estimate when the Feature has none and the material implies one.
+  2. Target end: an ISO date (YYYY-MM-DD) when the target end is missing or clearly wrong.
+  3. Due date: an ISO date (YYYY-MM-DD) when the due date is missing or clearly wrong.
+  4. Ownership: guidance on who should own it — TEXT ONLY, the app never writes this.
+  5. Insight: one line on risk or readiness the RTE should hear.
 
 Rules:
   - Use only the issue keys listed below. Never invent a Feature or a key.
-  - Omit any field you have no basis for — saying nothing is better than a guess a person must catch.
+  - Leave ___ in any cell you have no basis for — saying nothing is better than a guess a person must catch.
   - Keep every note under ${MAX_NOTE_LENGTH} characters.
   - Do not suggest an owner account id; ownership is guidance for a human, not a value to write.
 
@@ -71,20 +97,37 @@ ${featureBlocks}
 
 Issue keys you may use: ${issueKeyList}
 
-Reply with this JSON object and nothing else:
-{
-  "kind": "${READINESS_REPLY_KIND}",
-  "items": [
-    {
-      "issueKey": "<one of the keys above>",
-      "estimateSuggestion": "<size/estimate, or omit>",
-      "targetEndSuggestion": "<YYYY-MM-DD, or omit>",
-      "dueDateSuggestion": "<YYYY-MM-DD, or omit>",
-      "ownershipSuggestion": "<who should own it, or omit>",
-      "insight": "<one line, or omit>"
-    }
-  ]
-}`;
+${buildRecordReplyInstructions(READINESS_REPLY_SPEC, listFeatureRowNamingCells(features))}`;
+}
+
+/** One pre-filled row per Feature — its key and summary — so the reply cannot invent or drop a Feature. */
+function listFeatureRowNamingCells(features: readonly ReadinessFeature[]): string[][] {
+  return features.map((feature) => [feature.key, feature.summary.replace(TABLE_CELL_BREAKING_PATTERN, ' ')]);
+}
+
+/**
+ * The follow-up to paste into the same AI chat, or '' when the reply needs none. An unreadable reply gets
+ * the whole table again; a reply that dropped Features gets a table of just those. A Feature listed with
+ * every cell blank was answered ("no basis") and is not asked about again — nothing is ever guessed.
+ *
+ * @param runResult - The parsed reply, or null when the reply could not be read at all.
+ */
+export function buildReadinessAiFollowUpPrompt(
+  features: readonly ReadinessFeature[],
+  runResult: ReadinessAiRunResult | null,
+): string {
+  if (runResult === null) {
+    return buildRecordFormatFixPrompt(READINESS_REPLY_SPEC, listFeatureRowNamingCells(features));
+  }
+  const answeredKeys = new Set([...runResult.proposals.map((proposal) => proposal.issueKey), ...runResult.blankKeys]);
+  const missingFeatures = features.filter((feature) => !answeredKeys.has(feature.key.toUpperCase()));
+  if (missingFeatures.length === 0) {
+    return '';
+  }
+  return [
+    `Your last reply left out ${missingFeatures.map((feature) => feature.key).join(', ')}. Answer only those now, in this table.`,
+    buildRecordReplyInstructions(READINESS_REPLY_SPEC, listFeatureRowNamingCells(missingFeatures)),
+  ].join('\n');
 }
 
 // ── Parsing ──
@@ -116,12 +159,13 @@ function readProposal(rawItem: Record<string, unknown>, issueKey: string): Readi
 }
 
 /**
- * Parses an AI reply into proposals plus an honest account of what could not be used. Throws only for
- * a wholly wrong reply (not JSON, or another surface's kind); every other problem degrades — an
+ * Parses an AI reply — the filled-in table (markdown or tab-separated) or JSON — into proposals plus an
+ * honest account of what could not be used. Throws only for a wholly wrong reply (neither a table nor
+ * JSON, or another surface's kind); every other problem degrades — an
  * unknown key drops the item, an empty item is counted unparsed.
  */
 export function parseReadinessAiReply(replyText: string, knownIssueKeys: readonly string[]): ReadinessAiRunResult {
-  const parsedEnvelope = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>;
+  const parsedEnvelope = JSON.parse(extractRecordReplyPayload(replyText, READINESS_REPLY_SPEC)) as Record<string, unknown>;
   if (parsedEnvelope.kind !== READINESS_REPLY_KIND) {
     throw new Error(`Response kind "${String(parsedEnvelope.kind)}" does not match the requested "${READINESS_REPLY_KIND}".`);
   }
@@ -131,6 +175,7 @@ export function parseReadinessAiReply(replyText: string, knownIssueKeys: readonl
 
   const proposalsByKey = new Map<string, ReadinessAiProposal>();
   const unknownKeys: string[] = [];
+  const blankKeys: string[] = [];
   let unparsedCount = 0;
 
   for (const rawItem of rawItems) {
@@ -141,7 +186,7 @@ export function parseReadinessAiReply(replyText: string, knownIssueKeys: readonl
     if (!knownKeysUpper.includes(rawKey)) { unknownKeys.push(rawKey); continue; }
 
     const proposal = readProposal(item, rawKey);
-    if (proposal === null) { unparsedCount += 1; continue; }
+    if (proposal === null) { unparsedCount += 1; blankKeys.push(rawKey); continue; }
     proposalsByKey.set(rawKey, proposal);
   }
 
@@ -149,5 +194,5 @@ export function parseReadinessAiReply(replyText: string, knownIssueKeys: readonl
     .map((issueKey) => proposalsByKey.get(issueKey))
     .filter((proposal): proposal is ReadinessAiProposal => proposal !== undefined);
 
-  return { proposals, unknownKeys, unparsedCount };
+  return { proposals, unknownKeys, unparsedCount, blankKeys };
 }

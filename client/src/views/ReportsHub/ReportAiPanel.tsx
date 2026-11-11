@@ -9,9 +9,14 @@
 // Callers whose results CAN reach Jira (the PI Review panel, whose accepted estimates arm the
 // existing write-back) must override `hint`: the default advisory wording would otherwise state
 // the opposite.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — often answers in its own shape. A caller whose reply was
+// unreadable or left items out passes `followUpPrompt`, and the panel shows it for the operator to paste into the SAME
+// AI chat, so the assistant's work is kept rather than redone.
 
 import { useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
 import styles from './ReportsHubView.module.css';
@@ -34,6 +39,13 @@ export interface ReportAiPanelProps {
    * by a caller for which it is untrue.
    */
   hint?: string;
+  /**
+   * A follow-up for the same AI chat, shown under the error when the last reply was unreadable or incomplete. Omitted
+   * or '' shows nothing, so callers that never pass it render exactly as before.
+   */
+  followUpPrompt?: string;
+  /** The follow-up box's id — one per surface so two panels on a page are told apart. */
+  followUpFieldId?: string;
   /** The caller's results UI (verdict rows, coaching narrative), rendered under the ingest controls. */
   children?: React.ReactNode;
 }
@@ -49,6 +61,8 @@ export function ReportAiPanel({
   onIngest,
   error,
   hint = DEFAULT_ADVISORY_HINT,
+  followUpPrompt = '',
+  followUpFieldId,
   children,
 }: ReportAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
@@ -75,7 +89,7 @@ export function ReportAiPanel({
       <textarea
         value={responseText}
         onChange={(event) => setResponseText(event.target.value)}
-        placeholder="Paste the assistant's JSON reply here"
+        placeholder="Paste the assistant's JSON reply or filled-in table here"
         rows={5}
         className={styles.aiTextarea}
         aria-label={`${title} reply`}
@@ -91,6 +105,7 @@ export function ReportAiPanel({
         </button>
       </div>
       {error !== null && <p role="alert" className={styles.warningText}>{error}</p>}
+      <AiFollowUpPrompt followUpPrompt={followUpPrompt} fieldId={followUpFieldId} />
       {children}
     </section>
   );

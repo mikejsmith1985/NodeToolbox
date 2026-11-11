@@ -1,4 +1,4 @@
-// replyTable.test.ts — Proves table-shaped assistant replies are read however the assistant lays them out.
+// aiReplyTable.test.ts — Proves table-shaped assistant replies are read however the assistant lays them out.
 //
 // Built from what Google's AI Mode really returned (GH #499): a table pasted as tabs or pipes, with a header row,
 // bold marks and lengths in hours. The reader must find the asked-for columns by name and never guess a missing one.
@@ -12,7 +12,7 @@ import {
   findHeaderColumns,
   readDurationCellMinutes,
   splitReplyCells,
-} from './replyTable.ts';
+} from './aiReplyTable.ts';
 
 describe('splitReplyCells', () => {
   it('reads pipes with or without the outer ones, and drops bold and code marks', () => {

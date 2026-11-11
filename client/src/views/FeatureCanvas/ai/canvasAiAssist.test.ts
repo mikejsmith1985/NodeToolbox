@@ -2,13 +2,24 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildCanvasAiPrompt, describeSuggestionAction, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseMasterPlan, parseScopeQueryResponse } from './canvasAiAssist.ts';
+import {
+  buildCanvasAiFollowUpPrompt, buildCanvasAiPrompt, buildScopeQueryFollowUpPrompt, describeSuggestionAction, buildScopeQueryPrompt,
+  extractJsonPayload, parseCanvasAiResponse, parseMasterPlan, parseScopeQueryResponse, type AiPromptIssue,
+} from './canvasAiAssist.ts';
 
 describe('canvasAiAssist', () => {
-  it('builds a prompt that names the issues and demands JSON only', () => {
-    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null, priority: null }]);
-    expect(prompt).toContain('DENP-1');
-    expect(prompt).toContain('valid JSON');
+  it('builds a prompt that names the issues and ends with a fill-in table, one pre-filled row per issue (GH #499)', () => {
+    const prompt = buildCanvasAiPrompt('priorityOrder', [
+      { issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null, priority: null },
+      { issueKey: 'DENP-2', summary: 'Log | out', status: 'To Do', storyPoints: 3, businessValue: null, priority: null },
+    ]);
+    expect(prompt).not.toContain('"kind"');
+    expect(prompt.split('\n').slice(-4)).toEqual([
+      'PRIORITY_TABLE:',
+      'Issue key | Feature | MoSCoW bucket | Why',
+      'DENP-1 | Login | ___ | ___',
+      'DENP-2 | Log   out | ___ | ___',
+    ]);
   });
 
   it('includes the Business Value tag and prioritization guidance when a score is present', () => {
@@ -90,9 +101,7 @@ describe('canvasAiAssist', () => {
       [{ issueKey: 'DENP-1', summary: 'x', status: 'In Progress', storyPoints: 3, businessValue: null, priority: null }],
       { wipLimit: 2, inProgressCount: 3, daysRemainingInPi: 24, piName: 'PI 26.3' },
     );
-    expect(prompt).toContain('"size"');
-    expect(prompt).toContain('"triage"');
-    expect(prompt).toContain('"sprint"');
+    expect(prompt).toContain('Issue key | Feature | Size | MoSCoW bucket | Triage | Sprint | Reason');
     expect(prompt).toContain('24 day(s) left'); // PI context
     expect(prompt).toContain('WIP limit: 2'); // WIP context
   });
@@ -177,6 +186,53 @@ describe('canvasAiAssist', () => {
     expect(() => extractJsonPayload('no json here')).toThrow(/No JSON object/);
   });
 
+  it('reads an AI Mode markdown table — intro and closing offer — into the same size suggestions (GH #499)', () => {
+    const reply = [
+      'Here are the t-shirt sizes based on the scope shown.',
+      '',
+      '| Issue key | Feature | Size | Why |',
+      '| --- | --- | --- | --- |',
+      '| **DENP-1** | Login | M | Three stories. |',
+      '| DENP-2 | Logout | ___ | ___ |',
+      '',
+      'If you provide the acceptance criteria, I can refine these.',
+    ].join('\n');
+    const set = parseCanvasAiResponse('sizeEstimate', reply);
+    expect(set.items).toEqual([{ issueKey: 'DENP-1', proposedValue: 'M', rationale: 'Three stories.', accepted: false }]);
+  });
+
+  it('reads a tab-separated table pasted from the web page, and still rejects a bad enum in it', () => {
+    const reply = 'Issue key\tFeature\tMoSCoW bucket\tWhy\nDENP-1\tLogin\tMust\tblocks work';
+    expect(parseCanvasAiResponse('priorityOrder', reply).items).toEqual([
+      { issueKey: 'DENP-1', proposedValue: 'Must', rationale: 'blocks work', accepted: false },
+    ]);
+    expect(() => parseCanvasAiResponse('priorityOrder', 'Issue key\tMoSCoW bucket\nDENP-1\tUrgent')).toThrow(/Invalid bucket/);
+  });
+
+  it('reads triage, sprint and master-plan tables; a blank triage action means the feature stays active', () => {
+    const triage = parseCanvasAiResponse('parkCandidates', 'Issue key | Action | Reason\nDENP-1 | park | stale\nDENP-2 | ___ | ___');
+    expect(triage.items).toEqual([{ issueKey: 'DENP-1', proposedValue: 'park', rationale: 'stale', accepted: false }]);
+    const sprints = parseCanvasAiResponse('sprintGrouping', 'Issue key | Feature | Sprint\nDENP-1 | Login | Sprint 25\nDENP-2 | Logout | ___');
+    expect(sprints.items).toEqual([{ issueKey: 'DENP-1', proposedValue: 'Sprint 25', rationale: '', accepted: false }]);
+    const plan = parseMasterPlan('Issue key | Size | MoSCoW bucket | Triage | Sprint | Reason\nDENP-1 | L | Must | keep | 1 | core');
+    expect(plan).toEqual([{ issueKey: 'DENP-1', size: 'L', bucket: 'Must', triage: 'keep', sprint: '1', reason: 'core' }]);
+  });
+
+  it('builds a follow-up: the whole table for an unreadable reply, only the unanswered rows for a partial one', () => {
+    const issues: AiPromptIssue[] = [
+      { issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null, priority: null },
+      { issueKey: 'DENP-2', summary: 'Logout', status: 'To Do', storyPoints: 2, businessValue: null, priority: null },
+    ];
+    expect(buildCanvasAiFollowUpPrompt('sizeEstimate', issues, null)).toMatch(/^Your last reply was not in the form I need[\s\S]*DENP-2 \| Logout/);
+    const partial = buildCanvasAiFollowUpPrompt('sizeEstimate', issues, ['DENP-1']);
+    expect(partial).toContain('no usable answer for DENP-2');
+    expect(partial).toContain('DENP-2 | Logout | ___');
+    expect(partial).not.toContain('DENP-1 | Login');
+    expect(buildCanvasAiFollowUpPrompt('sizeEstimate', issues, ['DENP-1', 'DENP-2'])).toBe('');
+    // Triage rows are optional — a feature left blank stays active, so it is never chased.
+    expect(buildCanvasAiFollowUpPrompt('parkCandidates', issues, ['DENP-1'])).toBe('');
+  });
+
   it('flattens a sprintGrouping reply into per-issue suggestions', () => {
     const set = parseCanvasAiResponse('sprintGrouping', '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["DENP-1","DENP-2"]}]}');
     expect(set.items.map((item) => item.issueKey)).toEqual(['DENP-1', 'DENP-2']);
@@ -186,10 +242,34 @@ describe('canvasAiAssist', () => {
 
 
 describe('scopeQuery NL→JQL round-trip', () => {
-  it('builds a prompt that carries the description and demands JSON only', () => {
+  it('builds a prompt that carries the description and asks for one "JQL:" line', () => {
     const prompt = buildScopeQueryPrompt({ projectKey: 'ENCUC', piName: 'PI 26.3', description: 'features with the ENCUC label' });
     expect(prompt).toContain('ENCUC label');
-    expect(prompt).toContain('valid JSON');
+    expect(prompt).toContain('"JQL:"');
+  });
+
+  it('reads the query from an AI Mode reply — intro, a JQL label, a ```jql block and a closing offer', () => {
+    const reply = [
+      'To find the features for this PI with the ENCUC label, use the following query.',
+      '',
+      '**JQL Query**',
+      '```jql',
+      'project = ENCUC AND labels = ENCUC AND issuetype = Feature',
+      '```',
+      'This query selects every Feature carrying the label.',
+      'If you would like, I can also narrow it by status.',
+    ].join('\n');
+    expect(parseScopeQueryResponse(reply).jql).toBe('project = ENCUC AND labels = ENCUC AND issuetype = Feature');
+  });
+
+  it('reads a "JQL:" line with inline code marks, and a bare code block with no label', () => {
+    expect(parseScopeQueryResponse('Sure.\nJQL: `project = ENCUC`\nLet me know if you need more.').jql).toBe('project = ENCUC');
+    expect(parseScopeQueryResponse('Here you go:\n```\nlabels = ENCUC\n```\nHope this helps.').jql).toBe('labels = ENCUC');
+  });
+
+  it('throws when a prose reply holds no query, and offers a follow-up asking for the JQL line', () => {
+    expect(() => parseScopeQueryResponse('I need more detail about which project you mean.')).toThrow(/No JQL query found/);
+    expect(buildScopeQueryFollowUpPrompt()).toMatch(/not in the form I need[\s\S]*JQL: \[text\]/);
   });
 
   it('parses a valid reply into the proposed JQL', () => {

@@ -44,4 +44,18 @@ describe('ProductionPaperworkStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Read the email' }));
     expect(screen.getByDisplayValue('Hello Dana, please approve.')).toBeTruthy();
   });
+
+  it('reads an AI Mode email without its intro or closing offer, and never takes a question for the email (GH #499)', () => {
+    render(<Harness paperworkNeed={NEEDED} updateSession={vi.fn()} isProduction />);
+
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'Is Park, Alex the Director?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the email' }));
+    expect(screen.getByText(/answer it in its chat/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), {
+      target: { value: 'Here is your email.\n\nSubject: RCP approval\n\nHello Dana, please approve.\n\nWould you like me to shorten it?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the email' }));
+    expect(screen.getByDisplayValue('Subject: RCP approval\n\nHello Dana, please approve.', { normalizer: (text) => text })).toBeTruthy();
+  });
 });

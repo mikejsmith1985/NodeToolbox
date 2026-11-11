@@ -108,3 +108,45 @@ describe('readAiDraftReply', () => {
     expect(draftReply.message).toContain('does not look like');
   });
 });
+
+describe('readAiDraftReply with Google AI Mode (GH #499)', () => {
+  const AI_MODE_REPLY = [
+    'Here are the drafted ServiceNow Change Request fields.',
+    '',
+    'Short Description',
+    'Portal | deploy | login fix | 1.2 | PRD',
+    '',
+    'Description',
+    'Fixes login.',
+    '',
+    'Implementation Plan',
+    '1. Deploy',
+    '',
+    'If you provide the test results, I can refine the test plan.',
+  ].join('\n');
+
+  it('reads the texts from headings, without the intro or the closing offer', () => {
+    const draftReply = readAiDraftReply(AI_MODE_REPLY, buildDraft());
+
+    expect(draftReply.suggestions.map((suggestion) => [suggestion.fieldLabel, suggestion.suggestedText])).toEqual([
+      ['Short Description', 'Portal | deploy | login fix | 1.2 | PRD'], ['Description', 'Fixes login.'], ['Implementation Plan', '1. Deploy'],
+    ]);
+  });
+
+  it('offers a follow-up for only the texts the reply left out — never a guess at them', () => {
+    const draftReply = readAiDraftReply(AI_MODE_REPLY, buildDraft());
+
+    expect(draftReply.followUpPrompt).toContain('JUSTIFICATION, RISK_AND_IMPACT, TEST_PLAN, BACKOUT_PLAN');
+    expect(draftReply.followUpPrompt).not.toContain('SHORT_DESCRIPTION:');
+    expect(draftReply.message).toMatch(/left out/);
+  });
+
+  it('asks for the whole form again when the reply could not be read', () => {
+    expect(readAiDraftReply('Sure! Here is a poem.', buildDraft()).followUpPrompt).toMatch(/could not be read/);
+  });
+
+  it('needs no follow-up once every text is in', () => {
+    const allTexts = 'SHORT_DESCRIPTION: a\nDESCRIPTION: b\nJUSTIFICATION: c\nRISK_AND_IMPACT: d\nIMPLEMENTATION_PLAN: e\nTEST_PLAN: f\nBACKOUT_PLAN: g';
+    expect(readAiDraftReply(allTexts, buildDraft()).followUpPrompt).toBe('');
+  });
+});

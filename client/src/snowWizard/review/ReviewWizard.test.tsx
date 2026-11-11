@@ -103,19 +103,21 @@ describe('ReviewWizard', () => {
     expect(screen.getByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
   });
 
-  it('turns the note agreed with Copilot into the coaching note, and can put the Wizard\'s own back', async () => {
+  it('turns the note agreed with the AI assistant into the coaching note, and can put the Wizard\'s own back', async () => {
     mockedRunChangeReview.mockResolvedValue(buildReview());
     render(<ReviewWizard onExit={vi.fn()} />);
     await findChange('CHG0012345');
     const replyField = screen.getByLabelText(/Paste the assistant/);
 
     fireEvent.change(replyField, { target: { value: 'Which environment is this?' } });
-    fireEvent.click(screen.getByRole('button', { name: "Use Copilot's note" }));
-    expect(screen.getByText(/has no note between "COACHING NOTE START"/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: "Use the assistant's note" }));
+    expect(screen.getByText(/That reply holds no coaching note/)).toBeTruthy();
+    // A follow-up for the same AI chat asks for the note between the markers (GH #499).
+    expect((screen.getByLabelText(/Follow-up for the same AI chat/) as HTMLTextAreaElement).value).toContain('COACHING NOTE START');
 
     fireEvent.change(replyField, { target: { value: 'COACHING NOTE START\nHi Jane,\n1. Link the outage.\nCOACHING NOTE END' } });
-    fireEvent.click(screen.getByRole('button', { name: "Use Copilot's note" }));
-    expect(screen.getByText(/now holds what you agreed with Copilot/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: "Use the assistant's note" }));
+    expect(screen.getByText(/now holds what you agreed with your AI assistant/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Write the note' }));
     const noteField = screen.getByLabelText('Note for Smith, Jane') as HTMLTextAreaElement;

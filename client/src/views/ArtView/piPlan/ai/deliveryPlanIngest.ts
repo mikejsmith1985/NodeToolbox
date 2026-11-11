@@ -3,10 +3,20 @@
 // Feature key or a repo NOT in the fact sheet is rejected with a reason and nothing is written for it; any
 // mitigation whose bottleneckId is not engine-flagged is rejected; any AI-supplied date/assignee/sprint is
 // ignored. Propose-only — nothing writes until per-item accept downstream.
+//
+// The reply is read from the prompt's two fill-in tables first (what Google's AI Mode answers with, GH #499),
+// then from JSON as before; either way it lands in the same object, so the firewall below is unchanged.
 
+import { readRecordTableItems, type ReplyRecordSpec } from '../../../../utils/aiReplyRecords.ts';
 import { extractJsonPayload, repairJsonPayload } from '../../../../utils/extractJsonPayload.ts';
 import type { Bottleneck, PiPlanningFactSheet } from '../piPlanTypes.ts';
-import { DELIVERY_PLAN_REPLY_KIND } from './deliveryPlanPrompt.ts';
+import {
+  AC_HINT_SEPARATOR,
+  DELIVERY_MITIGATION_SPEC,
+  DELIVERY_PLAN_REPLY_KIND,
+  DELIVERY_STORY_SPEC,
+  buildDeliveryPlanReplyTables,
+} from './deliveryPlanPrompt.ts';
 
 /** One Story accepted from the reply after allowlist validation — carries only what the engine needs. */
 export interface AcceptedPlanStory {
@@ -24,8 +34,46 @@ export interface DeliveryPlanIngestResult {
   error: string | null;
 }
 
-/** Reads the reply text (tolerant of prose/fences, auto-repairing malformed JSON) into a plain object. */
+/**
+ * Splits a reply into the text under each table's header row, so one table's rows are never read as the
+ * other's (the shared reader keeps reading every row after a header it has found). Prose before the first
+ * header — an answer engine's intro — belongs to neither.
+ */
+function splitReplyByTable(replyText: string): Map<ReplyRecordSpec, string[]> {
+  const linesBySpec = new Map<ReplyRecordSpec, string[]>([[DELIVERY_STORY_SPEC, []], [DELIVERY_MITIGATION_SPEC, []]]);
+  let currentLines: string[] | null = null;
+  for (const replyLine of replyText.split(/\r?\n/)) {
+    // A line that is a table's own header row starts that table's text.
+    const headedSpec = [...linesBySpec.keys()].find((spec) => readRecordTableItems(replyLine, spec) !== null);
+    if (headedSpec) currentLines = linesBySpec.get(headedSpec) ?? null;
+    currentLines?.push(replyLine);
+  }
+  return linesBySpec;
+}
+
+/** One Story table row as the JSON story the firewall reads. A row left wholly blank is an unanswered Feature. */
+function readStoryRow(row: Record<string, unknown>): Record<string, unknown> | null {
+  if (row.summary === undefined && row.repos === undefined) return null;
+  const acHints = typeof row.acHints === 'string'
+    ? row.acHints.split(AC_HINT_SEPARATOR).map((hint) => hint.trim()).filter((hint) => hint !== '')
+    : [];
+  return { featureKey: row.featureKey, summary: row.summary ?? '', repos: row.repos ?? [], acHints };
+}
+
+/** The reply's tables as the delivery-plan object, or null when it holds neither table. */
+function readReplyTables(replyText: string): Record<string, unknown> | null {
+  const linesBySpec = splitReplyByTable(replyText);
+  const storyRows = readRecordTableItems((linesBySpec.get(DELIVERY_STORY_SPEC) ?? []).join('\n'), DELIVERY_STORY_SPEC) ?? [];
+  const mitigationRows = readRecordTableItems((linesBySpec.get(DELIVERY_MITIGATION_SPEC) ?? []).join('\n'), DELIVERY_MITIGATION_SPEC) ?? [];
+  if (storyRows.length === 0 && mitigationRows.length === 0) return null;
+  const stories = storyRows.map(readStoryRow).filter((story): story is Record<string, unknown> => story !== null);
+  return { kind: DELIVERY_PLAN_REPLY_KIND, stories, mitigations: mitigationRows };
+}
+
+/** Reads the reply text — its tables, else JSON (tolerant of prose/fences, auto-repairing) — into a plain object. */
 function readReply(replyText: string): { parsed: unknown; error: string | null } {
+  const tableReply = readReplyTables(replyText);
+  if (tableReply !== null) return { parsed: tableReply, error: null };
   try {
     return { parsed: JSON.parse(repairJsonPayload(extractJsonPayload(replyText))), error: null };
   } catch (parseError) {
@@ -107,4 +155,33 @@ export function parseDeliveryPlanReply(
   });
 
   return { stories, mitigationsById, rejected, error: null };
+}
+
+/**
+ * The follow-up to paste into the same AI chat, or '' when the reply needs none. An unreadable reply gets both
+ * tables again; a reply that left new Features without an accepted Story, or flagged bottlenecks without a
+ * mitigation, gets tables of just those. Nothing missing is ever guessed — the assistant is asked.
+ */
+export function buildDeliveryPlanFollowUpPrompt(
+  factSheet: PiPlanningFactSheet,
+  bottlenecks: Bottleneck[],
+  ingestResult: DeliveryPlanIngestResult,
+): string {
+  // Carryover Features are reconciled, never decomposed, so they are never asked for.
+  const newFeatures = factSheet.features.filter((feature) => !feature.isCarryover);
+  if (ingestResult.error !== null) {
+    return [
+      'Your last reply was not in the form I need, so it could not be read. Keep what you already proposed, but put it in these tables.',
+      ...buildDeliveryPlanReplyTables(newFeatures, bottlenecks),
+    ].join('\n');
+  }
+  const answeredFeatureKeys = new Set(ingestResult.stories.map((story) => story.featureKey));
+  const missingFeatures = newFeatures.filter((feature) => !answeredFeatureKeys.has(feature.key));
+  const missingBottlenecks = bottlenecks.filter((bottleneck) => ingestResult.mitigationsById[bottleneck.id] === undefined);
+  if (missingFeatures.length === 0 && missingBottlenecks.length === 0) return '';
+  const missingNames = [...missingFeatures.map((feature) => feature.key), ...missingBottlenecks.map((bottleneck) => bottleneck.id)];
+  return [
+    `Your last reply gave no usable answer for ${missingNames.join(', ')}. Answer only those now, in these tables.`,
+    ...buildDeliveryPlanReplyTables(missingFeatures, missingBottlenecks),
+  ].join('\n');
 }

@@ -272,3 +272,40 @@ describe('the change window, confirmed every time', () => {
     expect(doesRcpWindowMatchChange(confirmedWindow, null, null)).toBe(false);
   });
 });
+
+describe('readRcpEmailReply with Google AI Mode (GH #499)', () => {
+  it('reads an unmarked reply: the window from its bold Start / End lines, the email from its Subject line', () => {
+    const replyText = [
+      'Here is your completed RCP approval request email.',
+      '',
+      '**Confirmed window**',
+      '**Start:** 2026-10-09 19:30',
+      '**End:** 2026-10-10 03:00',
+      '',
+      '**Subject:** RCP approval request — CHG1',
+      '',
+      'Hello Park, Alex,',
+      'Let me know if you have any questions.',
+      'Thanks,',
+      'Mike',
+      '',
+      '---',
+      'If you would like, I can also draft a shorter version for Teams.',
+    ].join('\n');
+
+    expect(readRcpEmailReply(replyText)).toEqual({
+      windowText: 'Start: 2026-10-09 19:30\nEnd: 2026-10-10 03:00',
+      emailText: 'Subject: RCP approval request — CHG1\n\nHello Park, Alex,\nLet me know if you have any questions.\nThanks,\nMike',
+    });
+  });
+
+  it('drops the closing offer after a marked email too', () => {
+    const replyText = '=== EMAIL ===\nSubject: RCP\n\nHello.\n\nWould you like me to adjust the tone?';
+
+    expect(readRcpEmailReply(replyText).emailText).toBe('Subject: RCP\n\nHello.');
+  });
+
+  it('still tells the assistant\'s question apart from an email that ends by offering more help', () => {
+    expect(isRcpEmailQuestionReply('**Subject:** RCP\n\nHello.\n\nWould you like me to shorten it?')).toBe(false);
+  });
+});

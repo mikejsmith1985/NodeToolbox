@@ -18,13 +18,45 @@
 //
 // The brief is what the batch is re-written from. That makes its provenance load-bearing, not a nicety.
 //
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a request for JSON, so the prompt asks for five
+// labelled headings with one "- point [Source; Source]" line each, conflicts as a subject line with its positions
+// indented beneath. A JSON reply is still read.
+//
 // Pure: no fetch, no storage, no clock.
 
-import { extractJsonPayload } from '../../../../utils/extractJsonPayload.ts';
+import {
+  buildSectionsFollowUpPrompt,
+  listMissingSections,
+  readReplySections,
+  type ReplySection,
+} from '../../../../utils/aiReplySections.ts';
 import { renderDocumentExtract } from './documentExtract.ts';
 import type { DocumentExtract } from './documentExtract.ts';
+import { isEmptyListEntry, readKindedJsonReply, readListEntries, readListEntryText } from './replyListSections.ts';
 
 export const CORPUS_BRIEF_REPLY_KIND = 'corpusBrief';
+
+/** The five parts of a brief, as the reply's headings name them. */
+type BriefSectionKey = 'overview' | 'conflicts' | 'decisions' | 'requirements' | 'openQuestions';
+
+/** Each heading the prompt asks for, and the headings an answer engine writes for it instead. */
+const BRIEF_SECTIONS: readonly ReplySection<BriefSectionKey>[] = [
+  { key: 'overview', marker: 'OVERVIEW', headingPattern: /^(?:overview|summary|brief overview)$/i },
+  { key: 'conflicts', marker: 'CONFLICTS', headingPattern: /^(?:conflicts|contradictions|disagreements)$/i },
+  { key: 'decisions', marker: 'DECISIONS', headingPattern: /^(?:key )?decisions?(?: made)?$/i },
+  { key: 'requirements', marker: 'REQUIREMENTS', headingPattern: /^(?:key )?requirements$/i },
+  { key: 'openQuestions', marker: 'OPEN_QUESTIONS', headingPattern: /^open (?:questions|issues)$|^unresolved questions$/i },
+];
+
+/** The error shown when a reply is neither the headed lists nor JSON — the wording every round already uses. */
+const UNREADABLE_REPLY_MESSAGE = 'No JSON object found in the assistant response.';
+// Where a point names its documents: "[Doc A; Doc B]", "(Sources: Doc A, Doc B)", "— Source: Doc A".
+const BRACKETED_SOURCES_PATTERN = /\s*\[([^\]]+)\]\s*\.?$/;
+const LABELLED_SOURCES_PATTERN = /\s*(?:\(\s*(?:sources?|from)\s*:\s*([^)]+)\)|[—–-]\s*sources?\s*:\s*(.+))\s*\.?$/i;
+// A conflict's subject line may carry its own label: "Subject: Runout ownership".
+const SUBJECT_LABEL_PATTERN = /^(?:subject|topic|conflict)\s*:\s*/i;
+// A line indented under another, or marked as a sub-entry ("◦", "o"), is a position under the conflict above it.
+const NESTED_ENTRY_PATTERN = /^(?:\s{2,}|\t)|^\s*[◦o]\s+/;
 
 /**
  * The most extract text one consolidation prompt carries.
@@ -115,13 +147,24 @@ export function buildCorpusBriefPrompt(extracts: readonly DocumentExtract[]): st
     extractsText,
     '--- end of extracts ---',
     '',
-    'Reply with ONLY this JSON:',
-    `{"kind":"${CORPUS_BRIEF_REPLY_KIND}","overview":"...",`
-      + '"decisions":[{"text":"...","sources":["Doc A"]}],'
-      + '"requirements":[{"text":"...","sources":["Doc A"]}],'
-      + '"openQuestions":[{"text":"...","sources":["Doc A"]}],'
-      + '"conflicts":[{"subject":"...","positions":[{"text":"...","sources":["Doc A"]}]}]}',
+    ...describeBriefReplyForm(),
   ].join('\n');
+}
+
+/**
+ * The reply form: five labelled headings, one point per line with its documents in square brackets. An answer engine
+ * follows headings and bullet lists; it does not follow a JSON template.
+ */
+function describeBriefReplyForm(): string[] {
+  return [
+    'Answer with exactly these five labels, each on its own line and in this order. Under OVERVIEW write a few',
+    'sentences. Under each other label put one point per line, starting with "- " and ending with its document',
+    'titles in square brackets, separated by ";" — for example: - Statements are consolidated [Doc A; Doc B].',
+    'Under CONFLICTS put each subject on its own line starting with "- ", and each position on an indented line',
+    'beneath it: "    - what one document says [Doc A]". Under a label with nothing to record, write "- None".',
+    'Do not answer in JSON or a table, write nothing before the first label or after the last, and ask no questions.',
+    ...BRIEF_SECTIONS.map((section) => `${section.marker}:`),
+  ];
 }
 
 /** Coerces one reply entry into a point, keeping only source titles the extracts actually carried. */
@@ -174,6 +217,101 @@ function readConflicts(value: unknown, knownTitles: ReadonlySet<string>): BriefC
   return conflicts;
 }
 
+// ── Reading a headed-list reply ──
+
+/**
+ * One point line as the {text, sources} object the JSON form carried. Every candidate title is passed on — a title
+ * split on ";" and, in case the assistant used commas, on "," too — and readPoint keeps only titles a document had.
+ */
+function readPointLine(entryText: string): { text: string; sources: string[] } {
+  const sourcesMatch = BRACKETED_SOURCES_PATTERN.exec(entryText) ?? LABELLED_SOURCES_PATTERN.exec(entryText);
+  if (!sourcesMatch) return { text: entryText.trim(), sources: [] };
+  const sourcesText = sourcesMatch[1] ?? sourcesMatch[2] ?? '';
+  const sources = sourcesText.split(';').flatMap((sourcePiece) => [sourcePiece.trim(), ...sourcePiece.split(',').map((title) => title.trim())]);
+  return { text: entryText.slice(0, sourcesMatch.index).trim(), sources };
+}
+
+/** A section's lines as point objects. */
+function readPointLines(sectionText: string | undefined): { text: string; sources: string[] }[] {
+  return readListEntries(sectionText).map(readPointLine);
+}
+
+/** True when a conflict line is a position (indented, a sub-entry, or naming its documents) rather than a subject. */
+function isConflictPositionLine(replyLine: string, entryText: string): boolean {
+  return NESTED_ENTRY_PATTERN.test(replyLine) || BRACKETED_SOURCES_PATTERN.test(entryText) || LABELLED_SOURCES_PATTERN.test(entryText);
+}
+
+/**
+ * The conflicts section as {subject, positions} objects: a subject line, then the position lines beneath it. A
+ * position with no subject above it is dropped — readConflicts already refuses a conflict without a subject.
+ */
+function readConflictLines(sectionText: string | undefined): { subject: string; positions: { text: string; sources: string[] }[] }[] {
+  const conflicts: { subject: string; positions: { text: string; sources: string[] }[] }[] = [];
+  for (const replyLine of (sectionText ?? '').split(/\r?\n/)) {
+    const entryText = readListEntryText(replyLine);
+    if (entryText === '' || isEmptyListEntry(entryText)) continue;
+    if (isConflictPositionLine(replyLine, entryText)) {
+      conflicts[conflicts.length - 1]?.positions.push(readPointLine(entryText));
+      continue;
+    }
+    conflicts.push({ subject: entryText.replace(SUBJECT_LABEL_PATTERN, '').replace(/:$/, '').trim(), positions: [] });
+  }
+  return conflicts;
+}
+
+/**
+ * The reply as the same field object the JSON form carried: a JSON reply is checked for its kind, a headed-list reply
+ * is read section by section. Throws when the reply is neither, so the panel says it could not be read.
+ */
+function readBriefReplyFields(replyText: string): Record<string, unknown> {
+  const jsonPayload = readKindedJsonReply(replyText);
+  if (jsonPayload !== null) {
+    if (jsonPayload.kind !== CORPUS_BRIEF_REPLY_KIND) {
+      throw new Error(`Expected an AI reply with {"kind":"${CORPUS_BRIEF_REPLY_KIND}"}, got "${String(jsonPayload.kind)}".`);
+    }
+    return jsonPayload;
+  }
+  const sectionTexts = readReplySections(replyText, BRIEF_SECTIONS);
+  if (Object.keys(sectionTexts).length === 0) {
+    throw new Error(UNREADABLE_REPLY_MESSAGE);
+  }
+  return {
+    overview: readListEntries(sectionTexts.overview).join(' '),
+    conflicts: readConflictLines(sectionTexts.conflicts),
+    decisions: readPointLines(sectionTexts.decisions),
+    requirements: readPointLines(sectionTexts.requirements),
+    openQuestions: readPointLines(sectionTexts.openQuestions),
+  };
+}
+
+/**
+ * The follow-up for the same AI chat after a brief reply, or '' when none is needed.
+ *
+ * An unreadable reply gets the whole form again; a reply that left headings out gets only those. A brief REPLACES the
+ * one before it, so the panel does not build one from a partial reply: the answer to this follow-up is pasted under
+ * the first reply and the two are read together.
+ */
+export function buildCorpusBriefFollowUpPrompt(replyText: string): string {
+  if (readKindedJsonReply(replyText) !== null) return '';
+  const sectionTexts = readReplySections(replyText, BRIEF_SECTIONS);
+  const wasReplyUnreadable = Object.keys(sectionTexts).length === 0;
+  const missingSections = wasReplyUnreadable ? [...BRIEF_SECTIONS] : listMissingSections(sectionTexts, BRIEF_SECTIONS);
+  if (missingSections.length === 0) return '';
+  return [
+    buildSectionsFollowUpPrompt(missingSections, wasReplyUnreadable),
+    'Under each label put one point per line starting with "- " and ending with its document titles in square',
+    'brackets, or "- None" when there is nothing to record.',
+  ].join('\n');
+}
+
+/** The headings a brief reply left out, by label — so the panel can name them. Empty for a JSON reply. */
+export function listMissingCorpusBriefSections(replyText: string): string[] {
+  if (readKindedJsonReply(replyText) !== null) return [];
+  const sectionTexts = readReplySections(replyText, BRIEF_SECTIONS);
+  if (Object.keys(sectionTexts).length === 0) return [];
+  return listMissingSections(sectionTexts, BRIEF_SECTIONS).map((section) => section.marker);
+}
+
 /**
  * Parses one `{kind:'corpusBrief'}` reply.
  *
@@ -185,11 +323,7 @@ export function parseCorpusBriefReply(
   extracts: readonly DocumentExtract[],
   builtAtIso: string,
 ): CorpusBrief {
-  const parsed = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>;
-  if (parsed.kind !== CORPUS_BRIEF_REPLY_KIND) {
-    throw new Error(`Expected an AI reply with {"kind":"${CORPUS_BRIEF_REPLY_KIND}"}, got "${String(parsed.kind)}".`);
-  }
-
+  const parsed = readBriefReplyFields(replyText);
   const knownTitles = new Set(extracts.map((extract) => extract.sourceTitle));
 
   return {

@@ -45,13 +45,17 @@ describe('buildChgRiskCheckPrompt', () => {
     expect(prompt).toContain('Is success objective?');
   });
 
-  it('asks for one verdict line per field and an overall verdict, so the review reads as a checklist', () => {
+  it('ends with a fill-in table listing every card field and gate question, so the review reads as a checklist (GH #499)', () => {
     const prompt = buildChgRiskCheckPrompt(SAMPLE_CONTEXT, SAMPLE_FIELDS);
+    const tableText = prompt.slice(prompt.lastIndexOf('RISK_CHECK_TABLE:'));
 
-    expect(prompt).toContain('PASS |');
-    expect(prompt).toContain('GAP |');
-    expect(prompt).toContain('N/A |');
-    expect(prompt).toContain('VERDICT:');
+    expect(tableText.split('\n').slice(0, 3)).toEqual([
+      'RISK_CHECK_TABLE:', 'Item | Answer | Finding | Fix', 'Short Description | ___ | ___ | ___',
+    ]);
+    expect(tableText).toContain('Blast Radius | ___ | ___ | ___');
+    expect(prompt.trim().endsWith('Is success objective? | ___ | ___ | ___')).toBe(true);
+    expect(prompt).toContain('PASS, GAP, N/A, INFO or RECORD');
+    expect(prompt).not.toContain('VERDICT:');
   });
 
   it('judges testing against the team\'s Dev → INT → REL → PROD path', () => {
@@ -63,7 +67,7 @@ describe('buildChgRiskCheckPrompt', () => {
 
     expect(prompt).not.toContain(REVISED_FIELDS_HEADING);
     expect(prompt).not.toContain('IMPLEMENTATION_PLAN:');
-    expect(prompt.trim().endsWith('Write nothing outside the code block.')).toBe(true);
+    expect(prompt).toContain('Write nothing outside the code block.');
   });
 });
 
@@ -130,13 +134,13 @@ describe('the pass bar the check holds a change to', () => {
   });
 
   it('asks for facts only the owner has as INFO, never as a gap — including [CONFIRM] placeholders', () => {
-    expect(prompt).toContain('INFO |');
+    expect(prompt).toMatch(/INFO only when nothing given here meets the minimum/);
     expect(prompt).toMatch(/\[CONFIRM: \.\.\.\] placeholder is INFO/i);
     expect(prompt).not.toMatch(/placeholder as a GAP/i);
   });
 
   it('sends record fields to the change form, never to a text rewrite', () => {
-    expect(prompt).toContain('RECORD |');
+    expect(prompt).toMatch(/RECORD when the problem is a record field/);
   });
 });
 

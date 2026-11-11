@@ -1,11 +1,14 @@
 // useAiAssist.test.ts — Unit tests for the hidden AI Assist prompt generator hook.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { parseAiAssistChgResponse, useAiAssist } from './useAiAssist.ts';
+import { buildChgFieldsFollowUp, parseAiAssistChgResponse, useAiAssist } from './useAiAssist.ts';
 
 function createMockJiraIssue(issueKey: string, summary: string): JiraIssue {
   return {
@@ -368,5 +371,34 @@ describe('parseAiAssistChgResponse', () => {
 
   it('returns an empty object for non-string input', () => {
     expect(parseAiAssistChgResponse(undefined as unknown as string)).toEqual({});
+  });
+});
+
+describe('reading the document-shaped draft Google AI Mode writes (GH #499)', () => {
+  // The reply AI Mode really gave: an intro, header facts, readable headings, and a closing offer — no markers.
+  const aiModeReply = readFileSync(join(__dirname, '../../../utils/__fixtures__/aiModeChgDraftReply.txt'), 'utf8');
+
+  it('finds all seven fields by their headings, without the intro, the header facts or the closing offer', () => {
+    const parsedFields = parseAiAssistChgResponse(aiModeReply);
+    expect(Object.keys(parsedFields)).toHaveLength(7);
+    expect(parsedFields.shortDescription).toBe('ENFCT - Team - 11/20/2026');
+    expect(parsedFields.description).toMatch(/^Planned software release/);
+    expect(parsedFields.justification).toMatch(/^Planned release of ENFCT/);
+    expect(parsedFields.riskImpact).toMatch(/^• Impact: 1-High/);
+    expect(parsedFields.implementationPlan).toMatch(/^Aggregate Durations/);
+    expect(parsedFields.implementationPlan).toContain('Business Checkout - Transformers (20:15');
+    expect(parsedFields.testPlan).toMatch(/^• Validation Owner/);
+    expect(parsedFields.backoutPlan).toMatch(/^• Backout Decision-Maker/);
+    expect(parsedFields.backoutPlan).toContain('have returned to normal baseline.');
+    expect(parsedFields.backoutPlan).not.toContain('If you provide');
+    expect(parsedFields.description).not.toContain('Category: Software');
+    expect(buildChgFieldsFollowUp(aiModeReply, ['shortDescription', 'backoutPlan'])).toBe('');
+  });
+
+  it('asks the same chat for only the fields a reply left out', () => {
+    const followUp = buildChgFieldsFollowUp('Short Description\nENFCT release', ['shortDescription', 'testPlan', 'backoutPlan']);
+    expect(followUp).toContain('did not include TEST_PLAN, BACKOUT_PLAN');
+    expect(followUp).not.toContain('SHORT_DESCRIPTION: [text]');
+    expect(buildChgFieldsFollowUp('Sure, happy to help!', ['testPlan'])).toMatch(/^Your last reply was not in the form I need/);
   });
 });

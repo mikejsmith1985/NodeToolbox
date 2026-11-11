@@ -16,7 +16,8 @@ import {
   type ChgTextFieldKey,
 } from './formulaCard.ts';
 import { renderChangeText, REVIEW_STATUS_RULES } from './chgRiskCheckPrompt.ts';
-import { parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
+import { describeVerdict, parseRiskCheckReview, type RiskCheckFinding } from './riskCheckReview.ts';
+import { buildRiskCheckTableLines } from './riskCheckTable.ts';
 
 /** The seven drafted text fields as the change currently holds them. */
 type ChgTextFieldValues = Readonly<Record<ChgTextFieldKey, string>>;
@@ -101,7 +102,7 @@ function renderGapWithRule(finding: RiskCheckFinding): string {
 
 /**
  * The targeted re-check: only the gaps the last review left open, only the fields they live in, each judged
- * against its own card rule — a short prompt and a short reply.
+ * against its own card rule — a short prompt, ending with a fill-in table of just those items (GH #499).
  */
 export function buildGapRecheckPrompt(
   context: ChgPromptContext,
@@ -129,13 +130,11 @@ export function buildGapRecheckPrompt(
     ...gapFindings.map((finding) => renderGapWithRule(finding)),
     ...(extraPart?.gapLines ?? []),
     '',
-    'Reply with exactly one line per item above, using its exact name, judged by these rules:',
+    'Judge each item above by these rules:',
     ...REVIEW_STATUS_RULES,
-    'For a quality-gate question, answer YES | <question> or NO | <question> — <why>.',
-    'Then exactly one line: VERDICT: READY FOR APPROVAL, or VERDICT: NOT READY — <number> gap(s), counting only GAP '
-      + 'and NO lines.',
-    '',
     CODE_BLOCK_REPLY_INSTRUCTION,
+    '',
+    ...buildRiskCheckTableLines([...gapFindings.map((finding) => finding.field), ...(extraPart?.tableItems ?? [])]),
   ].join('\n');
 }
 
@@ -171,25 +170,9 @@ export function isUnsettledFinding(finding: RiskCheckFinding): boolean {
   return isOpenFinding(finding) || finding.status === 'INFO' || finding.status === 'RECORD';
 }
 
-/** "1 fact", "2 facts" — the verdict reads as a sentence. */
-function countWithNoun(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-/** The verdict from what is still unsettled: ready only when nothing is, otherwise each kind counted apart. */
+/** The verdict line from what is still unsettled — worded by the same count a table reply's verdict is. */
 function buildVerdictLine(findings: readonly RiskCheckFinding[]): string {
-  const gapCount = findings.filter((finding) => isOpenFinding(finding)).length;
-  const infoCount = findings.filter((finding) => finding.status === 'INFO').length;
-  const recordCount = findings.filter((finding) => finding.status === 'RECORD').length;
-  if (gapCount + infoCount + recordCount === 0) {
-    return 'VERDICT: READY FOR APPROVAL';
-  }
-  const verdictParts = [
-    gapCount > 0 ? `${gapCount} gap(s)` : 'no text gaps',
-    ...(infoCount > 0 ? [`${countWithNoun(infoCount, 'fact', 'facts')} needed from you`] : []),
-    ...(recordCount > 0 ? [`${countWithNoun(recordCount, 'record field', 'record fields')} to set`] : []),
-  ];
-  return `VERDICT: NOT READY — ${verdictParts.join('; ')}.`;
+  return `VERDICT: ${describeVerdict(findings)}`;
 }
 
 /**

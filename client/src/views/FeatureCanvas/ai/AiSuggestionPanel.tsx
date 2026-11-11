@@ -1,12 +1,13 @@
-// AiSuggestionPanel.tsx — The hidden, passphrase-gated accelerator UI (copy prompt → paste JSON).
+// AiSuggestionPanel.tsx — The hidden, passphrase-gated accelerator UI (copy prompt → paste reply).
 //
 // This panel is only reachable when AI Assist is unlocked (Ctrl+Alt+Z). It generates a prompt to
-// copy into an external assistant and ingests a strict JSON reply, surfacing every suggestion as
+// copy into an external assistant and ingests its filled-in table (or JSON), surfacing every suggestion as
 // an accept/reject proposal. Accepting mutates ONLY the overlay; nothing here touches Jira, and
 // the whole workflow is fully usable without ever opening this panel.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
 import { IN_PROGRESS_STATUS_CATEGORY } from '../logic/wip.ts';
@@ -16,6 +17,7 @@ import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { createProvisionalContainer } from '../overlay/containerFactory.ts';
 import { copyToClipboard } from './clipboard.ts';
 import {
+  buildCanvasAiFollowUpPrompt,
   buildCanvasAiPrompt,
   describeSuggestionAction,
   parseCanvasAiResponse,
@@ -23,6 +25,7 @@ import {
   type AiPromptIssue,
   type AiSuggestion,
   type AiSuggestionKind,
+  type MasterPlanItem,
 } from './canvasAiAssist.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 
@@ -100,6 +103,14 @@ function toPromptIssue(node: CanvasNode): AiPromptIssue {
   };
 }
 
+/**
+ * The keys a master plan really answered. The plan must size and prioritise every feature, so a row
+ * carrying neither — a blank row read back as "keep" — is unanswered and goes into the follow-up.
+ */
+function listAnsweredPlanKeys(plan: readonly MasterPlanItem[]): string[] {
+  return plan.filter((item) => item.size !== null || item.bucket !== null).map((item) => item.issueKey);
+}
+
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
 export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsureSprints, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
@@ -109,6 +120,8 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
   const [error, setError] = useState<string | null>(null);
   // Set after a master-plan ingest applies (a summary of what changed); cleared on any kind switch.
   const [planSummary, setPlanSummary] = useState<string | null>(null);
+  // The follow-up for the same AI chat when a reply strayed from the table or left features out ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
   // Features that are parked or already in the Complete box are OUT of active flow — never sequence
@@ -124,6 +137,15 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
     [controller.overlay.containers],
   );
 
+  // The issues the prompt lists — kept apart so the follow-up asks about exactly the same rows.
+  // Sequence (sprint grouping) considers only active features — never parked or completed ones.
+  const promptIssues = useMemo(() => {
+    const listedNodes = kind === 'sprintGrouping'
+      ? canvasNodes.filter((node) => !node.isParked && !completeBoxIds.has(node.containerId ?? ''))
+      : canvasNodes;
+    return listedNodes.map(toPromptIssue);
+  }, [kind, canvasNodes, completeBoxIds]);
+
   const prompt = useMemo(() => {
     // Prioritize and Triage get PI time-remaining (days to DoD) as context; Triage also gets the WIP
     // limit. Days-left is read from the PI name's date range at render.
@@ -135,15 +157,10 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
         piName,
         availableSprints: sprintNames,
       };
-      return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), context);
+      return buildCanvasAiPrompt(kind, promptIssues, context);
     }
-    // Sequence (sprint grouping) considers only active features — never parked or completed ones.
-    if (kind === 'sprintGrouping') {
-      const sequenceable = canvasNodes.filter((node) => !node.isParked && !completeBoxIds.has(node.containerId ?? ''));
-      return buildCanvasAiPrompt(kind, sequenceable.map(toPromptIssue));
-    }
-    return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
-  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName, completeBoxIds, sprintNames]);
+    return buildCanvasAiPrompt(kind, promptIssues);
+  }, [kind, promptIssues, wip.limit, wip.inProgressCount, piName, sprintNames]);
 
   // For value-driven analyses, warn when no feature carries Business Value or points — the
   // assistant will then lean on status/health/completion/blockers, which the user should know.
@@ -191,16 +208,20 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
         setPlanSummary(`Applied to ${plan.length} feature(s): ${sized} sized · ${prioritized} prioritized · ${sequenced} sequenced · ${parked} parked · ${completed} completed. Undo reverts it all.`);
         setSuggestions([]);
         setError(null);
+        setFollowUpPrompt(buildCanvasAiFollowUpPrompt(kind, promptIssues, listAnsweredPlanKeys(plan)));
         return;
       }
       const parsed = parseCanvasAiResponse(kind, responseText);
-      setSuggestions(parsed.items.filter((item) => knownKeys.has(item.issueKey)));
+      const knownSuggestions = parsed.items.filter((item) => knownKeys.has(item.issueKey));
+      setSuggestions(knownSuggestions);
       setError(null);
       setPlanSummary(null);
+      setFollowUpPrompt(buildCanvasAiFollowUpPrompt(kind, promptIssues, knownSuggestions.map((item) => item.issueKey)));
     } catch (ingestError) {
       setError(ingestError instanceof Error ? ingestError.message : 'Could not read the response.');
       setSuggestions([]);
       setPlanSummary(null);
+      setFollowUpPrompt(buildCanvasAiFollowUpPrompt(kind, promptIssues, null));
     }
   };
 
@@ -217,7 +238,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
       </div>
       <select
         value={kind}
-        onChange={(event) => { setKind(event.target.value as AiSuggestionKind); setSuggestions([]); setPlanSummary(null); setError(null); }}
+        onChange={(event) => { setKind(event.target.value as AiSuggestionKind); setSuggestions([]); setPlanSummary(null); setError(null); setFollowUpPrompt(''); }}
         style={{ margin: '8px 0', width: '100%' }}
       >
         {/* The master plan runs all phases in one round-trip; the rest match the coaching phase order. */}
@@ -257,12 +278,13 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
       )}
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
       <button type="button" className={controlStyles.btn} onClick={() => copyToClipboard(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
-      <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
+      <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the AI reply here (its filled-in table, or JSON)" rows={4} style={{ width: '100%', fontSize: 11 }} />
       <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} style={{ margin: '6px 0' }}>
         {kind === 'masterPlan' ? 'Ingest & apply plan' : 'Ingest suggestions'}
       </button>
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
       {planSummary && <p style={{ color: 'var(--color-success)', fontSize: 12 }}>{planSummary}</p>}
+      <AiFollowUpPrompt fieldId="canvas-ai-follow-up" followUpPrompt={followUpPrompt} />
       <ul style={{ listStyle: 'none', padding: 0, maxHeight: 220, overflowY: 'auto' }}>
         {suggestions.map((suggestion) => (
           <li key={`${suggestion.issueKey}:${suggestion.proposedValue}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>

@@ -10,8 +10,19 @@
 // The output is a plan of Status Summary values — "01" for the most important item, counting up to
 // the bottom of the list. Pure: no React, no I/O. The fetch and the write live in
 // releasePriorityApply.ts, so everything that is easy to get subtly wrong is testable without Jira.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores a JSON reply format, so the prompt
+// ends with a fill-in table listing every issue (key and summary filled in, rank and reason blank). The
+// reader turns the table back into the same {kind, items[]} envelope; JSON is still read. A reply that
+// is neither, or that leaves issues unranked, gets a follow-up for the same chat — never a guessed rank.
 
-import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  readRecordTableItems,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
 
 /** The envelope kind. A reply pasted from another AI surface is caught here rather than written. */
 export const RELEASE_PRIORITY_REPLY_KIND = 'releasePriority';
@@ -23,6 +34,32 @@ const MINIMUM_RANK_DIGITS = 2;
 const MAX_RATIONALE_LENGTH = 240;
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * The fill-in table the prompt ends with: one row per issue, its key and summary filled in. The
+ * summary only names the row for the assistant and is never read back.
+ */
+export const RELEASE_PRIORITY_REPLY_SPEC: ReplyRecordSpec = {
+  kind: RELEASE_PRIORITY_REPLY_KIND,
+  replyMarker: 'RELEASE_PRIORITY_TABLE:',
+  columns: [
+    { field: 'issueKey', header: 'Issue key' },
+    { field: 'summary', header: 'Summary', isNamingOnly: true },
+    { field: 'rank', header: 'Rank', valueKind: 'number', answerHint: '1 for the most important item, counting up; every rank used once' },
+    { field: 'rationale', header: 'Rationale', answerHint: 'one short sentence naming the deciding signal' },
+  ],
+};
+
+/** An issue as its table row names it: the key, and its summary so the assistant knows which is which. */
+export interface ReleasePriorityRowName {
+  issueKey: string;
+  summary: string;
+}
+
+/** A row's naming cells. A "|" inside a summary would split the cell, so it is written as "/". */
+function buildRowNamingCells(rowNames: readonly ReleasePriorityRowName[]): string[][] {
+  return rowNames.map((rowName) => [rowName.issueKey, rowName.summary.replace(/\|/g, '/').trim() || '(no summary)']);
+}
 
 /** Everything the prompt says about one issue — read from Jira, never from the assistant. */
 export interface ReleasePriorityPromptIssue {
@@ -68,6 +105,8 @@ export interface ReleasePriorityRankResult {
   unknownKeys: string[];
   /** Keys in the release the assistant never mentioned — appended at the bottom, flagged. */
   unrankedKeys: string[];
+  /** A follow-up for the same chat asking for just the unranked issues, or '' when every one was ranked. */
+  followUpPrompt: string;
 }
 
 /** One Status Summary write the panel is about to make. */
@@ -142,20 +181,36 @@ How to weigh the signals:
 Rules:
   - Use only the issue keys listed below. Never invent a key.
   - Every key appears exactly once. Do not skip any.
-  - "rationale" is one short sentence naming the deciding signal, under ${MAX_RATIONALE_LENGTH} characters.
+  - The rationale is one short sentence naming the deciding signal, under ${MAX_RATIONALE_LENGTH} characters.
 
 Items (${input.issues.length}):
 ${issueBlocks}
 
 Issue keys you must rank: ${issueKeyList}
 
-Reply with this JSON object and nothing else, items ordered from rank 1 upward:
-{
-  "kind": "${RELEASE_PRIORITY_REPLY_KIND}",
-  "items": [
-    { "issueKey": "<one of the keys above>", "rank": 1, "rationale": "<why it sits here>" }
-  ]
-}`;
+${buildRecordReplyInstructions(RELEASE_PRIORITY_REPLY_SPEC, buildRowNamingCells(input.issues))}`;
+}
+
+/**
+ * The follow-up for a reply that could not be read at all: the same table again, asking for the form
+ * only so the order the assistant already worked out is kept.
+ */
+export function buildReleasePriorityFormatFixPrompt(rowNames: readonly ReleasePriorityRowName[]): string {
+  return buildRecordFormatFixPrompt(RELEASE_PRIORITY_REPLY_SPEC, buildRowNamingCells(rowNames));
+}
+
+/**
+ * The follow-up for a reply that left issues unranked: only those rows, each asked for the rank it takes
+ * in the WHOLE list, so the follow-up's table can be pasted under the first reply and read as one.
+ */
+function buildUnrankedFollowUpPrompt(unrankedKeys: readonly string[], summaryByKey: ReadonlyMap<string, string>): string {
+  if (unrankedKeys.length === 0) return '';
+  const rowNames = unrankedKeys.map((issueKey) => ({ issueKey, summary: summaryByKey.get(issueKey) ?? '' }));
+  return [
+    `Your last reply did not rank ${unrankedKeys.join(', ')}. Rank only these now, in the same table — give each the`
+      + ' rank it takes in the WHOLE release list, not a new list of its own.',
+    buildRecordReplyInstructions(RELEASE_PRIORITY_REPLY_SPEC, buildRowNamingCells(rowNames)),
+  ].join('\n');
 }
 
 // ── Parsing ──
@@ -219,16 +274,19 @@ function compareReplyItems(leftItem: ReplyItem, rightItem: ReplyItem): number {
 /**
  * Parses the assistant's reply into a complete ordering of the release.
  *
- * Throws only for a wholly wrong reply — not JSON, or another surface's kind. Everything else
- * degrades honestly: an unknown key is dropped and reported, a duplicate keeps its first mention,
- * and a key the assistant forgot is appended at the bottom in its original order and flagged, so
- * the person accepting the list can see exactly which rows the assistant never judged.
+ * Throws only for a wholly wrong reply — neither the table nor JSON, or another surface's kind.
+ * Everything else degrades honestly: an unknown key is dropped and reported, a duplicate keeps its
+ * first mention, and a key the assistant forgot is appended at the bottom in its original order and
+ * flagged, so the person accepting the list can see exactly which rows the assistant never judged.
+ * A table row whose rank was left blank counts as forgotten — a blank is never read as a rank.
+ * `summaryByKey` names the rows of the follow-up that asks for the forgotten ones.
  */
 export function parseReleasePriorityReply(
   replyText: string,
   knownIssueKeys: readonly string[],
+  summaryByKey: ReadonlyMap<string, string> = new Map(),
 ): ReleasePriorityRankResult {
-  const parsedEnvelope = JSON.parse(extractJsonPayload(replyText)) as Record<string, unknown>;
+  const parsedEnvelope = JSON.parse(extractRecordReplyPayload(replyText, RELEASE_PRIORITY_REPLY_SPEC)) as Record<string, unknown>;
   if (parsedEnvelope.kind !== RELEASE_PRIORITY_REPLY_KIND) {
     throw new Error(
       `Response kind "${String(parsedEnvelope.kind)}" does not match the requested "${RELEASE_PRIORITY_REPLY_KIND}".`,
@@ -236,7 +294,10 @@ export function parseReleasePriorityReply(
   }
 
   const knownKeysUpper = knownIssueKeys.map((issueKey) => issueKey.toUpperCase());
-  const rawItems = Array.isArray(parsedEnvelope.items) ? parsedEnvelope.items : [];
+  const envelopeItems = Array.isArray(parsedEnvelope.items) ? parsedEnvelope.items : [];
+  const isTableReply = (readRecordTableItems(replyText, RELEASE_PRIORITY_REPLY_SPEC)?.length ?? 0) > 0;
+  // A table row with its rank left blank was not ranked; a JSON item without one keeps its reply position.
+  const rawItems = isTableReply ? envelopeItems.filter((rawItem) => (rawItem as Record<string, unknown>)?.rank !== undefined) : envelopeItems;
   const { items, unknownKeys } = readReplyItems(rawItems, knownKeysUpper);
 
   const rankedKeys = new Set(items.map((item) => item.issueKey));
@@ -255,7 +316,8 @@ export function parseReleasePriorityReply(
   // Re-number from 1 so a reply with gaps or repeats still yields 01, 02, 03 … with no holes.
   const rankedItems = orderedItems.map((item, index) => ({ ...item, rank: index + 1 }));
 
-  return { rankedItems, unknownKeys, unrankedKeys };
+  const summaryByUpperKey = new Map([...summaryByKey].map(([issueKey, summary]) => [issueKey.toUpperCase(), summary]));
+  return { rankedItems, unknownKeys, unrankedKeys, followUpPrompt: buildUnrankedFollowUpPrompt(unrankedKeys, summaryByUpperKey) };
 }
 
 // ── Status Summary values ──

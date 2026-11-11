@@ -29,7 +29,7 @@ describe('buildDeliveryPlanPrompt', () => {
     const { prompts, chunkCount } = buildDeliveryPlanPrompt(factSheet(), [bottleneck]);
     expect(chunkCount).toBe(1);
     const prompt = prompts[0];
-    expect(prompt).toContain('"kind": "piDeliveryPlan"');
+    expect(prompt).not.toContain('"kind"');
     expect(prompt).toContain('DENP-100');
     expect(prompt).toContain('sl-throughput-s2');
     expect(prompt).toMatch(/do not return dates/i);
@@ -41,6 +41,26 @@ describe('buildDeliveryPlanPrompt', () => {
     const prompt = buildDeliveryPlanPrompt(sheet, []).prompts[0];
     expect(prompt).toContain('Detail: Members with duplicate enrollments');
     expect(prompt).toMatch(/derived from the detail/i);
+  });
+
+  it('ends with a Story table and a mitigation table, every row pre-listed (GH #499)', () => {
+    const sheet = factSheet(1);
+    sheet.features[0].summary = 'Card | wallet';
+    const prompt = buildDeliveryPlanPrompt(sheet, [bottleneck]).prompts[0];
+    expect(prompt.split('\n').slice(-8)).toEqual([
+      '',
+      'DELIVERY_PLAN_STORIES:',
+      'Feature key | Feature | Story | Repos | Acceptance hints',
+      'DENP-100 | Card   wallet | ___ | ___ | ___',
+      '',
+      'DELIVERY_PLAN_MITIGATIONS:',
+      'Bottleneck id | Bottleneck | Mitigation',
+      'sl-throughput-s2 | SL test is the constraint in 26.4.2 | ___',
+    ]);
+  });
+
+  it('leaves the mitigation table out when nothing is flagged', () => {
+    expect(buildDeliveryPlanPrompt(factSheet(1), []).prompts[0]).not.toContain('Bottleneck id |');
   });
 
   it('omits the Detail line when a Feature has no description', () => {

@@ -4,8 +4,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildBatchReadinessFollowUpPrompt,
   buildBatchReadinessPrompts,
   buildBatchReadinessReport,
+  groupBatchEpicsIntoParts,
   buildBatchSummary,
   formatBatchReport,
   DEFAULT_MAX_VERDICTS_PER_PART,
@@ -290,5 +292,100 @@ describe('formatBatchReport — Jira', () => {
     });
 
     expect(formatBatchReport(batch, 'markdown')).toContain('Enrollment \\| Transformers');
+  });
+});
+
+describe('the batch fill-in table, for Google AI Mode (GH #499)', () => {
+  const TWO_CRITERIA = DEFAULT_DOR_CRITERIA.slice(0, 2);
+  const TWO_IDS = TWO_CRITERIA.map((criterion) => criterion.id);
+  const PART_KEYS = ['DENP-1', 'DENP-2'];
+
+  it('ends each part with a row per Epic and criterion, both filled in', () => {
+    const prompt = buildBatchReadinessPrompts([buildEpic('DENP-1'), buildEpic('DENP-2')], TWO_CRITERIA)[0];
+
+    expect(prompt).not.toContain('Reply with ONLY this JSON');
+    expect(prompt).toContain('READINESS_BATCH_TABLE:');
+    expect(prompt).toContain('Epic key | Criterion id | Status | Evidence | What is missing');
+    expect(prompt).toContain(`DENP-1 | ${FIRST_CRITERION_ID} | ___ | ___ | ___`);
+    expect(prompt).toContain(`DENP-2 | ${SECOND_CRITERION_ID} | ___ | ___ | ___`);
+  });
+
+  it('groups the Epics into the same parts the prompts cover', () => {
+    const epics = Array.from({ length: 5 }, (_unusedEntry, index) => buildEpic(`DENP-${index}`));
+    const prompts = buildBatchReadinessPrompts(epics, TWO_CRITERIA, 4);
+    const parts = groupBatchEpicsIntoParts(epics, TWO_CRITERIA, 4);
+
+    expect(parts).toHaveLength(prompts.length);
+    expect(parts.map((part) => part.map((epic) => epic.source.issueKey))).toEqual([['DENP-0', 'DENP-1'], ['DENP-2', 'DENP-3'], ['DENP-4']]);
+  });
+
+  it('reads an AI Mode markdown table wrapped in an intro and a closing offer', () => {
+    const reply = [
+      'Below is the readiness review for both Epics.',
+      '',
+      '| Epic key | Criterion id | Status | Evidence | What is missing |',
+      '|---|---|---|---|---|',
+      `| DENP-1 | ${FIRST_CRITERION_ID} | Satisfied | Signed off in August. | ___ |`,
+      `| denp-2 | ${FIRST_CRITERION_ID} | Missing | ___ | State the objective. |`,
+      '',
+      'Would you like me to draft the missing sections?',
+    ].join('\n');
+
+    const { verdictsByIssueKey, errors } = parseBatchReadinessIngest(reply, PART_KEYS, TWO_IDS);
+
+    expect(errors).toEqual([]);
+    expect(verdictsByIssueKey['DENP-1'][0]).toEqual({ criterionId: FIRST_CRITERION_ID, status: 'satisfied', evidence: 'Signed off in August.', whatIsMissing: '' });
+    expect(verdictsByIssueKey['DENP-2'][0].whatIsMissing).toBe('State the objective.');
+  });
+
+  it('reads a tab-separated table pasted from the web page', () => {
+    const reply = [
+      'Epic key\tCriterion id\tStatus\tEvidence\tWhat is missing',
+      `DENP-1\t${SECOND_CRITERION_ID}\tPartial\tMentions ESI.\tName the upstream systems.`,
+    ].join('\n');
+
+    const { verdictsByIssueKey } = parseBatchReadinessIngest(reply, PART_KEYS, TWO_IDS);
+
+    expect(verdictsByIssueKey['DENP-1']).toEqual([
+      { criterionId: SECOND_CRITERION_ID, status: 'partial', evidence: 'Mentions ESI.', whatIsMissing: 'Name the upstream systems.' },
+    ]);
+  });
+
+  it('leaves a blank row unanswered rather than calling it missing', () => {
+    const reply = ['Epic key | Criterion id | Status | Evidence | What is missing', `DENP-1 | ${FIRST_CRITERION_ID} | ___ | ___ | ___`].join('\n');
+
+    expect(parseBatchReadinessIngest(reply, PART_KEYS, TWO_IDS).verdictsByIssueKey).toEqual({});
+  });
+
+  it('offers the part\'s whole table again for an unreadable reply', () => {
+    const reply = 'Both Epics look broadly ready. If you provide more detail I can go further.';
+
+    const followUp = buildBatchReadinessFollowUpPrompt(reply, PART_KEYS, TWO_IDS, {});
+
+    expect(followUp).toContain('could not be read');
+    expect(followUp).toContain(`DENP-2 | ${SECOND_CRITERION_ID} | ___`);
+  });
+
+  it('asks only for the rows a partial reply left out', () => {
+    const reply = [
+      'Epic key | Criterion id | Status | Evidence | What is missing',
+      `DENP-1 | ${FIRST_CRITERION_ID} | satisfied | Signed off. | ___`,
+      `DENP-1 | ${SECOND_CRITERION_ID} | missing | ___ | Add it. |`,
+    ].join('\n');
+    const { verdictsByIssueKey } = parseBatchReadinessIngest(reply, PART_KEYS, TWO_IDS);
+
+    const followUp = buildBatchReadinessFollowUpPrompt(reply, PART_KEYS, TWO_IDS, verdictsByIssueKey);
+
+    expect(followUp).toContain('left 2 row(s) out');
+    expect(followUp).toContain(`DENP-2 | ${FIRST_CRITERION_ID} | ___`);
+    expect(followUp).toContain(`DENP-2 | ${SECOND_CRITERION_ID} | ___`);
+    expect(followUp).not.toContain(`DENP-1 | ${FIRST_CRITERION_ID}`);
+  });
+
+  it('offers no follow-up when every row came back', () => {
+    const reply = buildReply(PART_KEYS.flatMap((key) => TWO_IDS.map((criterionId) => ({ key, criterionId, status: 'missing', evidence: '', whatIsMissing: 'Add it.' }))));
+    const { verdictsByIssueKey } = parseBatchReadinessIngest(reply, PART_KEYS, TWO_IDS);
+
+    expect(buildBatchReadinessFollowUpPrompt(reply, PART_KEYS, TWO_IDS, verdictsByIssueKey)).toBe('');
   });
 });

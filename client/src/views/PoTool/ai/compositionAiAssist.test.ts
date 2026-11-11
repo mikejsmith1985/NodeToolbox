@@ -75,7 +75,8 @@ describe('buildCompositionPrompt — the PO\'s intent leads (FR-031)', () => {
     const prompt = buildCompositionPrompt(hugeDraft, DEFINITION_OF_READY, WRITABLE_FIELDS);
 
     expect(prompt).toContain('(truncated');
-    expect(prompt.length).toBeLessThan(9000);
+    // Only the first 4,000 characters of the source travel; the rest is cut, not carried.
+    expect(prompt).not.toContain('x'.repeat(4001));
   });
 });
 
@@ -228,7 +229,7 @@ describe('nine-section documentation (spec 029)', () => {
     });
     expect(prompt).toContain('⚠ REQUIRES BUSINESS VALIDATION');
     expect(prompt).toContain('⚠ REQUIRES TECHNICAL VALIDATION');
-    expect(prompt).toContain('BOTH in the description\'s "Acceptance Criteria" section AND in the acceptanceCriteria field');
+    expect(prompt).toContain('it goes BOTH into the description AND into');
     expect(prompt.toLowerCase()).toContain('never state or imply that any of this was written, generated, or drafted by ai');
   });
 

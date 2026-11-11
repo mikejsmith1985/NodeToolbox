@@ -5,9 +5,10 @@
 
 import React, { useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx';
 import type { PersonCapacity } from '../../FeatureCanvas/planner/capacityTypes.ts';
-import { buildPiPlanAiPrompt, parsePiPlanAiReply } from './piPlanAiAssist.ts';
+import { buildPiPlanAiFollowUpPrompt, buildPiPlanAiPrompt, parsePiPlanAiReply } from './piPlanAiAssist.ts';
 import type { PiPlanPromptContext } from './piPlanAiAssist.ts';
 import { applyBreakdownSuggestion } from './piPlanAiApply.ts';
 import { buildPiPlanProposal } from './piPlanEngine.ts';
@@ -42,6 +43,8 @@ export interface PiPlanPanelProps {
 export function PiPlanPanel(props: PiPlanPanelProps): React.ReactElement {
   const [proposal, setProposal] = useState<PlanProposal | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  // The follow-up for the same AI chat when a reply strayed from the table or left Features out ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
@@ -76,9 +79,11 @@ export function PiPlanPanel(props: PiPlanPanelProps): React.ReactElement {
         ? `Ingested with ${parsed.rejected.length} rejected item(s) and ${parsed.unparsedCount} unparsed story(ies).`
         : null;
       setParseError(softNote);
+      setFollowUpPrompt(buildPiPlanAiFollowUpPrompt(props.promptContext, parsed));
     } catch (ingestError) {
       setProposal(null);
       setParseError(ingestError instanceof Error ? ingestError.message : String(ingestError));
+      setFollowUpPrompt(buildPiPlanAiFollowUpPrompt(props.promptContext, null));
     }
   }
 
@@ -108,6 +113,7 @@ export function PiPlanPanel(props: PiPlanPanelProps): React.ReactElement {
       error={parseError}
       hint="Accepted Stories are created in Jira with their sub-tasks and dates. Review each item before accepting."
     >
+      <AiFollowUpPrompt fieldId="pi-plan-ai-follow-up" followUpPrompt={followUpPrompt} />
       {proposal ? (
         <div className="pi-plan-results">
           {proposal.honestStates.length > 0 ? (

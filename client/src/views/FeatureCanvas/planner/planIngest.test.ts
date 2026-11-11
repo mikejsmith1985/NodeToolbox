@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
-import { buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
+import { buildPlanIngestFollowUpPrompt, buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
 
 /** A minimal feature node carrying the given child story keys, for placement resolution tests. */
 function buildNode(issueKey: string, childKeys: string[]): CanvasNode {
@@ -26,16 +26,16 @@ const ROSTER_NAMES: readonly string[] = ['Jane Doe', 'Alan Turing'];
 // ── buildTranslatePrompt ──
 
 describe('buildTranslatePrompt', () => {
-  it('states the "convert the agreed plan" instruction and demands JSON-only output', () => {
+  it('states the "convert the agreed plan" instruction and asks for the table only (GH #499)', () => {
     const prompt = buildTranslatePrompt(VALID_SPRINT_NAMES, ROSTER_NAMES, { allowAssignee: false });
     expect(prompt).toContain('Convert the capacity plan we just agreed on in this conversation');
-    expect(prompt).toContain('Output ONLY the JSON, no prose.');
+    expect(prompt).toContain('Answer ONLY with the table');
+    expect(prompt).not.toContain('"kind"');
   });
 
-  it('embeds the exact JSON schema with the ingest kind', () => {
+  it('ends with the table header the reader looks for', () => {
     const prompt = buildTranslatePrompt(VALID_SPRINT_NAMES, ROSTER_NAMES, { allowAssignee: false });
-    expect(prompt).toContain('"kind":"capacityPlanIngest"');
-    expect(prompt).toContain('{"issueKey":"KEY","sprint":"SPRINT"}');
+    expect(prompt.split('\n').slice(-2)).toEqual(['PLAN_TABLE:', 'Issue key | Sprint']);
   });
 
   it('lists every valid sprint name and requires an exact match', () => {
@@ -48,16 +48,16 @@ describe('buildTranslatePrompt', () => {
 
   it('includes the assignee clause and roster names when assignee is allowed', () => {
     const prompt = buildTranslatePrompt(VALID_SPRINT_NAMES, ROSTER_NAMES, { allowAssignee: true });
-    expect(prompt).toContain('{"issueKey":"KEY","sprint":"SPRINT","assignee":"NAME"}');
+    expect(prompt.split('\n').slice(-1)).toEqual(['Issue key | Sprint | Assignee']);
     for (const rosterName of ROSTER_NAMES) {
       expect(prompt).toContain(rosterName);
     }
-    expect(prompt).toContain('assignee');
+    expect(prompt).toContain('Assignee cell');
   });
 
   it('omits the assignee field and instructs not to include it when assignee is disallowed', () => {
     const prompt = buildTranslatePrompt(VALID_SPRINT_NAMES, ROSTER_NAMES, { allowAssignee: false });
-    expect(prompt).not.toContain('"assignee":"NAME"');
+    expect(prompt).not.toContain('Issue key | Sprint | Assignee');
     expect(prompt).toContain('Do NOT include');
     // Roster names must not leak when reassignment is off.
     expect(prompt).not.toContain('Alan Turing');
@@ -65,7 +65,7 @@ describe('buildTranslatePrompt', () => {
 
   it('instructs one entry per moved story using exact keys and no invention', () => {
     const prompt = buildTranslatePrompt(VALID_SPRINT_NAMES, ROSTER_NAMES, { allowAssignee: false });
-    expect(prompt).toContain('one entry per');
+    expect(prompt).toContain('one row per story/task');
     expect(prompt).toContain('Do not invent');
   });
 
@@ -77,6 +77,56 @@ describe('buildTranslatePrompt', () => {
 });
 
 // ── parsePlanIngest ──
+
+describe('parsePlanIngest with an AI Mode reply (GH #499)', () => {
+  const options = { validSprintNames: VALID_SPRINT_NAMES, allowAssignee: true };
+
+  it('reads a markdown table wrapped in an intro and a closing offer', () => {
+    const reply = [
+      'Here is the agreed capacity plan as a table:',
+      '',
+      '| Issue key | Sprint | Assignee |',
+      '| --- | --- | --- |',
+      '| **NT-1** | 26.3.4 | Jane Doe |',
+      '| NT-2 | 26.3.5 | ___ |',
+      '',
+      'If you would like, I can also balance the load further.',
+    ].join('\n');
+    expect(parsePlanIngest(reply, options)).toEqual({
+      assignments: [{ issueKey: 'NT-1', sprint: '26.3.4', assignee: 'Jane Doe' }, { issueKey: 'NT-2', sprint: '26.3.5' }],
+      errors: [],
+    });
+  });
+
+  it('reads a tab-separated table and still rejects an unknown sprint', () => {
+    const result = parsePlanIngest('Issue key\tSprint\nNT-1\t26.3.4\nNT-2\tSprint 99', options);
+    expect(result.assignments).toEqual([{ issueKey: 'NT-1', sprint: '26.3.4' }]);
+    expect(result.errors).toEqual(['Assignment "NT-2" has unknown sprint "Sprint 99".']);
+  });
+});
+
+describe('buildPlanIngestFollowUpPrompt', () => {
+  const options = { allowAssignee: false };
+
+  it('asks for the table again when the reply could not be read', () => {
+    const reply = 'Move NT-1 into the next sprint.';
+    const result = parsePlanIngest(reply, { validSprintNames: VALID_SPRINT_NAMES, allowAssignee: false });
+    const followUp = buildPlanIngestFollowUpPrompt(reply, result, VALID_SPRINT_NAMES, ROSTER_NAMES, options);
+    expect(followUp).toMatch(/^Your last reply was not in the form I need[\s\S]*PLAN_TABLE:\nIssue key \| Sprint$/);
+  });
+
+  it('asks to restate only the rejected rows, naming why, and offers nothing for a clean reply', () => {
+    const partialReply = 'Issue key | Sprint\nNT-1 | 26.3.4\nNT-2 | Sprint 99';
+    const partial = parsePlanIngest(partialReply, { validSprintNames: VALID_SPRINT_NAMES, allowAssignee: false });
+    const followUp = buildPlanIngestFollowUpPrompt(partialReply, partial, VALID_SPRINT_NAMES, ROSTER_NAMES, options);
+    expect(followUp).toContain('unknown sprint "Sprint 99"');
+    expect(followUp).toContain('Restate only those rows');
+
+    const cleanReply = 'Issue key | Sprint\nNT-1 | 26.3.4';
+    const clean = parsePlanIngest(cleanReply, { validSprintNames: VALID_SPRINT_NAMES, allowAssignee: false });
+    expect(buildPlanIngestFollowUpPrompt(cleanReply, clean, VALID_SPRINT_NAMES, ROSTER_NAMES, options)).toBe('');
+  });
+});
 
 describe('parsePlanIngest', () => {
   it('parses a clean, valid payload', () => {

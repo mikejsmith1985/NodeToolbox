@@ -6,11 +6,32 @@
 // The panel is a copy-out / paste-back round trip. Toolbox never calls an AI service. Ingesting a reply
 // writes NOTHING to Jira: proposals land in the tab's own draft, unaccepted, and Jira is reached only by
 // the Commit button the PO already uses (FR-021, INV-J1).
+//
+// Google's AI Mode (the team's only assistant) answers in its own shape, so a reply can come back unreadable or with
+// items left out. A round then hands back a follow-up for the SAME chat — asking only for the form, or only for what is
+// missing — and the panel shows it with a copy button instead of a dead end (GH #499). Nothing is ever guessed.
 
 import { useState } from 'react';
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore';
 import styles from './PoAiPanel.module.css';
+
+/** What reading one reply produced: how many proposals landed, what was wrong, and any follow-up to send. */
+export interface PoAiIngestOutcome {
+  acceptedCount: number;
+  errors: string[];
+  /** A follow-up for the same AI chat when the reply was unreadable or left items out; '' or absent when none. */
+  followUpPrompt?: string;
+}
+
+/** Characters that cannot appear in an element id — the panel title is turned into one. */
+const NON_ID_CHARACTER_PATTERN = /[^a-z0-9]+/g;
+
+/** A stable element id for this panel's follow-up box, so two panels on one page are told apart. */
+function buildFollowUpFieldId(title: string): string {
+  return `po-ai-follow-up-${title.toLowerCase().replace(NON_ID_CHARACTER_PATTERN, '-').replace(/^-|-$/g, '')}`;
+}
 
 interface PoAiPanelProps {
   /** What this panel is for, e.g. "Propose a split". */
@@ -18,7 +39,7 @@ interface PoAiPanelProps {
   /** Builds the prompt on demand, so a long draft is only assembled when the PO asks. */
   buildPrompt: () => string;
   /** Ingests the reply. Returns what to tell the PO; the caller applies the proposals to its draft. */
-  onIngest: (responseText: string) => { acceptedCount: number; errors: string[] };
+  onIngest: (responseText: string) => PoAiIngestOutcome;
   /** Explains what will happen when a proposal is accepted. */
   helpText: string;
 }
@@ -31,6 +52,7 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
   const [responseText, setResponseText] = useState('');
   const [ingestErrors, setIngestErrors] = useState<string[]>([]);
   const [ingestSummary, setIngestSummary] = useState<string | null>(null);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [hasCopiedPrompt, setHasCopiedPrompt] = useState(false);
 
   // Hooks run first, then the gate: a locked session renders nothing at all.
@@ -41,6 +63,8 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
   function handleGeneratePrompt(): void {
     setPromptText(buildPrompt());
     setHasCopiedPrompt(false);
+    // A fresh prompt starts a fresh chat, so a follow-up meant for the old one no longer applies.
+    setFollowUpPrompt('');
   }
 
   async function handleCopyPrompt(): Promise<void> {
@@ -54,8 +78,9 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
   }
 
   function handleIngest(): void {
-    const { acceptedCount, errors } = onIngest(responseText);
+    const { acceptedCount, errors, followUpPrompt: nextFollowUpPrompt = '' } = onIngest(responseText);
     setIngestErrors(errors);
+    setFollowUpPrompt(nextFollowUpPrompt);
     setIngestSummary(
       acceptedCount > 0
         ? `${acceptedCount} proposal(s) added below — nothing is in Jira yet. Review each one, edit anything you like, then accept the ones you agree with.`
@@ -115,6 +140,8 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
           ))}
         </ul>
       ) : null}
+
+      <AiFollowUpPrompt followUpPrompt={followUpPrompt} fieldId={buildFollowUpFieldId(title)} />
     </section>
   );
 }

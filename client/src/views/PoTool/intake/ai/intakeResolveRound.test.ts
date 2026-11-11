@@ -22,6 +22,7 @@ import {
   MAX_CANDIDATES_IN_PROMPT,
   parseResolveReply,
   RESOLVE_REPLY_KIND,
+  RESOLVE_TABLE_SPEC,
 } from './intakeResolveRound.ts';
 
 const NOW_ISO = '2026-09-18T12:00:00.000Z';
@@ -87,7 +88,7 @@ describe('buildResolveRequests', () => {
     expect(request).toMatchObject({ itemIds: ['item-1', 'item-3'], partIndex: 0, partCount: 1 });
     expect(request.text).toContain('DENP-632 [In Progress] Epic DENP-632 — excerpt');
     expect(request.text).not.toContain('DENP-700');
-    expect(request.text).toContain(`"kind":"${RESOLVE_REPLY_KIND}"`);
+    expect(request.text).toContain(RESOLVE_TABLE_SPEC.replyMarker);
     expect(request.text).not.toMatch(/part \d of/);
     for (const label of SECTION_LABELS) {
       expect(request.text).toContain(`- ${label}`);

@@ -201,6 +201,35 @@ describe('PiReviewAiPanel — the two paths', () => {
     expect(onApply).not.toHaveBeenCalled()
   })
 
+  it('reads an AI Mode reply — intro, markdown table, closing offer — into the same suggestions (GH #499)', async () => {
+    act(() => setAiAssistUnlocked(true))
+    renderPanel()
+    await waitForPrompt()
+
+    await ingestReply([
+      'Here is the completed table.',
+      '| Issue key | Feature | Size | Why this size |',
+      '|---|---|---|---|',
+      '| ALPHA-1 | Enrollment support | M | Two integrations. |',
+      'If you share more detail I can refine this.',
+    ].join('\n'))
+
+    const suggestionList = await findSuggestionList()
+    expect(suggestionList.getByText(/two integrations/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument()
+  })
+
+  it('offers a follow-up for the same AI chat when the reply could not be read', async () => {
+    act(() => setAiAssistUnlocked(true))
+    renderPanel()
+    await waitForPrompt()
+
+    await ingestReply('ALPHA-1 looks like a medium-sized Feature to me.')
+
+    const followUpBox = await screen.findByLabelText(/follow-up for the same ai chat/i)
+    expect((followUpBox as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*ALPHA-1 \| /)
+  })
+
   it('rejects a reply pasted from another AI surface outright', async () => {
     act(() => setAiAssistUnlocked(true))
     renderPanel()

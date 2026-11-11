@@ -68,6 +68,25 @@ describe('PiPlanPanel', () => {
     await waitFor(() => expect(onApplyStory).toHaveBeenCalledTimes(1));
   });
 
+  it('builds the proposal from an AI Mode table reply (GH #499)', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    render(<PiPlanPanel {...props()} />);
+    const tableReply = 'Here is the plan.\n| Feature key | Story | Story points |\n|---|---|---|\n| ABC-1 | Story A | 8 |\nLet me know if you want changes.';
+    fireEvent.change(screen.getByLabelText(/PI Planner reply/), { target: { value: tableReply } });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest plan reply/i }));
+    await waitFor(() => expect(screen.getByText('Story A')).toBeInTheDocument());
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a follow-up for the same AI chat when the reply could not be read', async () => {
+    useAiAssistStore.setState({ isAiAssistUnlocked: true });
+    render(<PiPlanPanel {...props()} />);
+    fireEvent.change(screen.getByLabelText(/PI Planner reply/), { target: { value: 'ABC-1 could be two stories.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest plan reply/i }));
+    const followUpBox = await screen.findByLabelText(/follow-up for the same ai chat/i);
+    expect((followUpBox as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*ABC-1 \| Login/);
+  });
+
   it('surfaces a parse error for a malformed reply and shows no proposal', async () => {
     useAiAssistStore.setState({ isAiAssistUnlocked: true });
     render(<PiPlanPanel {...props()} />);

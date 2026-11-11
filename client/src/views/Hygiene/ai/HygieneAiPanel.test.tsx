@@ -175,4 +175,29 @@ describe('HygieneAiPanel — the prompt has to fit the agent box', () => {
 
     expect(screen.getByText(/would not fit the agent/i)).toBeInTheDocument()
   })
+
+  it('reads an AI Mode table reply and lists its proposals (GH #499)', () => {
+    renderPanel()
+
+    ingestReply([
+      'Here are the fixes.',
+      '| Issue key | Fix | Proposed value | Rationale |',
+      '|---|---|---|---|',
+      '| TBX-1 | missing-sp | 5 | Small change. |',
+      'Let me know if you want acceptance criteria too.',
+    ].join('\n'))
+
+    expect(screen.getByRole('list', { name: /ai fix proposals/i })).toHaveTextContent('TBX-1')
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument()
+  })
+
+  it('offers a follow-up for the same chat when the reply cannot be read', () => {
+    renderPanel()
+
+    ingestReply('I would estimate TBX-1 at about five points.')
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/No JSON object found/)
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement
+    expect(followUpBox.value).toContain('TBX-1 | missing-sp | ___ | ___')
+  })
 })

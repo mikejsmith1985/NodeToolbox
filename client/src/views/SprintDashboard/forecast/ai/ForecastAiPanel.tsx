@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { ReportAiPanel } from '../../../ReportsHub/ReportAiPanel.tsx';
 import {
   buildForecastDailyPrompt,
+  buildForecastFormatFixPrompt,
   buildScopeCutPrompt,
   buildTestCapacityPrompt,
   parseForecastAiReply,
@@ -85,16 +86,20 @@ function NarrativeSection({
   const [rejectedItems, setRejectedItems] = useState<Array<{ id: string; reason: string }>>([]);
   const [acceptedIds, setAcceptedIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the reply was unreadable or left a section blank (GH #499).
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
 
   function handleIngest(replyText: string): void {
     try {
       const ingest = parseForecastAiReply(replyText, kind, allowedIssueKeys, allowedPersonKeys);
       setItems(ingest.items);
       setRejectedItems(ingest.rejectedItems);
+      setFollowUpPrompt(ingest.followUpPrompt);
       setError(null);
     } catch (caughtError) {
       // Previously accepted items are kept: a bad paste should not undo work already reviewed.
       setError(caughtError instanceof Error ? caughtError.message : 'Could not read that reply.');
+      setFollowUpPrompt(buildForecastFormatFixPrompt(kind));
     }
   }
 
@@ -105,6 +110,8 @@ function NarrativeSection({
       ingestLabel={ingestLabel}
       onIngest={handleIngest}
       error={error}
+      followUpPrompt={followUpPrompt}
+      followUpFieldId={`forecast-ai-follow-up-${kind}`}
     >
       {rejectedItems.length > 0 && (
         // Named, never dropped. A reply that silently lost half its content is worse than one that

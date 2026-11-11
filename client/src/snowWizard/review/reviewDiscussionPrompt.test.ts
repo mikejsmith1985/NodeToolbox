@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { listReadinessRuleGuide } from '../../views/SnowHub/guided/changeReadinessGuide.ts';
 import type { ChangeReviewResult } from './changeReview.ts';
-import { buildReviewDiscussionPrompt, readCopilotCoachingNote } from './reviewDiscussionPrompt.ts';
+import { buildCoachingNoteFollowUp, buildReviewDiscussionPrompt, readAssistantCoachingNote } from './reviewDiscussionPrompt.ts';
 
 const TEXT_FIELDS = {
   shortDescription: 'Login fix', description: 'Fixes login.', justification: '', riskImpact: 'Low.',
@@ -73,12 +73,41 @@ describe('the coaching note round trip', () => {
       '**COACHING NOTE END**',
       'Anything else?',
     ].join('\n');
-    expect(readCopilotCoachingNote(replyText)).toBe('Hi Jane,\n1. Attach the test evidence.');
+    expect(readAssistantCoachingNote(replyText)).toBe('Hi Jane,\n1. Attach the test evidence.');
   });
 
   it('finds no note in a reply without both markers, or with nothing between them', () => {
-    expect(readCopilotCoachingNote('Which environment is this for?')).toBeNull();
-    expect(readCopilotCoachingNote('COACHING NOTE START\nHi Jane,')).toBeNull();
-    expect(readCopilotCoachingNote('COACHING NOTE START\n\nCOACHING NOTE END')).toBeNull();
+    expect(readAssistantCoachingNote('Which environment is this for?')).toBeNull();
+    expect(readAssistantCoachingNote('COACHING NOTE START\nHi Jane,')).toBeNull();
+    expect(readAssistantCoachingNote('COACHING NOTE START\n\nCOACHING NOTE END')).toBeNull();
+  });
+});
+
+describe('reading a note from Google AI Mode (GH #499)', () => {
+  it('reads a note written under a heading, without the intro or the closing offer', () => {
+    const replyText = [
+      'Here is a coaching note based on what we agreed.',
+      '',
+      '## Coaching Note for Jane',
+      'Hi Jane,',
+      '1. Attach the test evidence.',
+      '2. Name the validation owner.',
+      '',
+      'If you would like, I can make it shorter.',
+    ].join('\n');
+
+    expect(readAssistantCoachingNote(replyText)).toBe('Hi Jane,\n1. Attach the test evidence.\n2. Name the validation owner.');
+  });
+
+  it('reads a note that starts straight at its greeting', () => {
+    expect(readAssistantCoachingNote('Sure.\n\nHello Jane,\n1. Link the outage.\n\nWould you like me to add more?')).toBe('Hello Jane,\n1. Link the outage.');
+  });
+
+  it('never takes a greeting with no points — the assistant talking — as the note', () => {
+    expect(readAssistantCoachingNote('Hi! Before I write it, which environment is this for?')).toBeNull();
+  });
+
+  it('offers a follow-up asking for the note between the markers', () => {
+    expect(buildCoachingNoteFollowUp()).toContain('between a line "COACHING NOTE START" and a line "COACHING NOTE END"');
   });
 });

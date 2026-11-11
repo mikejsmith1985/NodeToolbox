@@ -11,7 +11,7 @@ import type { ReviewedCtask } from './ctaskReviewRecord.ts';
 import { EVIDENCE_RULE_LINES } from './evidenceRules.ts';
 import {
   buildFillInTable, buildFormatFixPrompt, describeFillInRules, findHeaderColumns, readDurationCellMinutes, splitReplyCells,
-} from './replyTable.ts';
+} from '../../../utils/aiReplyTable.ts';
 
 /** One task's place in the order the assistant gave, and how long it takes. */
 export interface CtaskTimelineEntry {

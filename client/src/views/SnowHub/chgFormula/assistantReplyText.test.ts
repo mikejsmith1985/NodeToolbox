@@ -2,7 +2,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CODE_BLOCK_REPLY_INSTRUCTION, restoreMarkerLineBreaks, stripCodeFences } from './assistantReplyText.ts';
+import {
+  CHG_FIELD_REPLY_SECTIONS,
+  CODE_BLOCK_REPLY_INSTRUCTION,
+  isAssistantQuestion,
+  restoreMarkerLineBreaks,
+  stripCodeFences,
+} from './assistantReplyText.ts';
 
 describe('stripCodeFences', () => {
   it('removes the ``` fence lines a code-block reply is wrapped in, keeping everything inside', () => {
@@ -45,5 +51,27 @@ describe('restoreMarkerLineBreaks', () => {
 describe('CODE_BLOCK_REPLY_INSTRUCTION', () => {
   it('asks for the whole reply in one code block, so its line breaks survive copying', () => {
     expect(CODE_BLOCK_REPLY_INSTRUCTION).toContain('```text');
+  });
+});
+
+describe('isAssistantQuestion with Google AI Mode (GH #499)', () => {
+  it('treats a heading-shaped answer that ends by offering more help as a reply, not a question', () => {
+    const reply = 'Here are the fixes.\n\nBackout Plan\n1. Stop the job.\n\nWould you like me to tighten the test plan too?';
+
+    expect(isAssistantQuestion(reply)).toBe(false);
+  });
+
+  it('still recognises the assistant\'s question', () => {
+    expect(isAssistantQuestion('Who validates the change in production?')).toBe(true);
+  });
+});
+
+describe('CHG_FIELD_REPLY_SECTIONS', () => {
+  it('reads a rewrite round\'s qualified justification heading', () => {
+    const justification = CHG_FIELD_REPLY_SECTIONS.find((section) => section.key === 'justification');
+
+    ['Justification', 'Rewritten Justification', 'Revised RCP Justification', 'Business Justification']
+      .forEach((headingText) => expect(justification?.headingPattern.test(headingText)).toBe(true));
+    expect(justification?.headingPattern.test('Justification for the delay is weak')).toBe(false);
   });
 });

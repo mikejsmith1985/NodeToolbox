@@ -7,7 +7,13 @@
 import { useId, useMemo, useState } from 'react';
 
 import { buildChangePlanDocumentHtml, openChangePlanForPrinting } from '../../../views/SnowHub/rcp/changePlanDocument.ts';
-import { buildRcpApprovalEmailPrompt, buildRcpApprovalEmailTemplate, readRcpEmailReply, readRcpProcessOwnerName } from '../../../views/SnowHub/rcp/rcpApprovalEmail.ts';
+import {
+  buildRcpApprovalEmailPrompt,
+  buildRcpApprovalEmailTemplate,
+  isRcpEmailQuestionReply,
+  readRcpEmailReply,
+  readRcpProcessOwnerName,
+} from '../../../views/SnowHub/rcp/rcpApprovalEmail.ts';
 import { readCentralTodayIso, type RcpCheckStatus } from '../../../views/SnowHub/rcp/rcpRules.ts';
 import CopyButton from '../../shell/CopyButton.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
@@ -24,6 +30,7 @@ export interface ProductionPaperworkStepProps extends ChangeStepProps {
 const RULE_STATUS_WORDS: Readonly<Record<RcpCheckStatus, string>> = { pass: 'Met', fail: 'Not met', check: 'Check once created' };
 const POPUP_BLOCKED_MESSAGE = 'The new window was blocked. Allow pop-ups for ServiceNow and try again.';
 const PRINT_HINT = 'In the print window choose "Save as PDF", then attach the file to the approval email.';
+const QUESTION_PASTED_TEXT = 'That is your AI assistant\'s question — answer it in its chat, then paste its finished email here.';
 const GENERATED_ON_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Chicago' };
 
 /** The finished email, ready to copy. */
@@ -74,6 +81,8 @@ export default function ProductionPaperworkStep({ crg, session, updateSession, p
         {evaluation.results.map((result) => <li key={result.ruleId} className={styles.hint}>{`${RULE_STATUS_WORDS[result.status]} — ${result.title}: ${result.detail}`}</li>)}
       </ul>
       <PromptRound promptText={buildRcpApprovalEmailPrompt(emailContext, processOwnerName)} copyLabel="Copy the email prompt" readButtonLabel="Read the email" onReadReply={(replyText) => {
+        // The assistant's question is answered in its own chat — it must never become the email (GH #499).
+        if (isRcpEmailQuestionReply(replyText)) return QUESTION_PASTED_TEXT;
         const readEmail = readRcpEmailReply(replyText).emailText;
         setEmailText(readEmail);
         if (readEmail !== '') markDone();

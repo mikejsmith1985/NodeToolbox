@@ -5,7 +5,13 @@
 // (the records, the backout rule, the gaps, the reply markers) for the change-only builders to carry, and reads
 // each task's rewritten backout plan out of a pasted fix reply.
 
-import { CHG_FIELD_REPLY_MARKERS, restoreMarkerLineBreaks, stripCodeFences } from './assistantReplyText.ts';
+import { readReplySections, type ReplySection } from '../../../utils/aiReplySections.ts';
+import {
+  CHG_FIELD_REPLY_MARKERS,
+  CHG_FIELD_REPLY_SECTIONS,
+  restoreMarkerLineBreaks,
+  stripCodeFences,
+} from './assistantReplyText.ts';
 import { describeTaskPeople, type ExtraPromptPart } from './chgPromptContext.ts';
 import type { ReviewedCtask } from './ctaskReviewRecord.ts';
 import { buildCtaskFindingField, readCtaskFindingTarget } from './ctaskReviewRules.ts';
@@ -20,8 +26,16 @@ export const CTASK_BACKOUT_RULE =
 const NOT_SET_TEXT = '(not set)';
 // The reply marker suffix for a task's rewritten backout plan: CTASK0012345_BACKOUT_PLAN.
 const BACKOUT_MARKER_SUFFIX = '_BACKOUT_PLAN';
-// A task marker at a line start, capturing the task number and anything written after the colon.
-const CTASK_MARKER_LINE_PATTERN = /^\s*(CTASK\d+)_BACKOUT_PLAN\s*:\s*(.*)$/i;
+// A task's plan starting at a line: its marker ("CTASK0012345_BACKOUT_PLAN: …") or the heading Google's AI Mode writes
+// instead ("### CTASK0012345 Backout Plan", "**CTASK0012345 — Backout plan:** …") — GH #499. Captures the task number
+// and anything written after a colon.
+const CTASK_MARKER_LINE_PATTERN = /^[\s#*>_`-]*(CTASK\d+)[\s_·:—–*-]*back[\s_-]?out[\s_]*plan[\s*_`]*(?:[:|]\s*(.*))?$/i;
+// The bold or code marks left before a plan's first words when its heading carried them ("**CTASK… plan:** 1. Stop").
+const LEADING_MARK_PATTERN = /^[\s*_`]+/;
+// Markdown marks around a heading line, removed before it is compared with the change fields' headings.
+const HEADING_MARK_PATTERN = /^#{1,6}\s*|\*\*|__/g;
+// What a task's labelled plan in the reply form stands for; the assistant replaces it with the plan.
+const WHOLE_PLAN_PLACEHOLDER = '[the task\'s complete backout plan as it should now read]';
 // A task marker run into the previous text by a flattened copy, so it can be put back on its own line.
 const FLATTENED_CTASK_MARKER_PATTERN = /[ \t]+(?=CTASK\d+_BACKOUT_PLAN\s*:)/gi;
 // Any change-field marker at a line start — where a task's block ends.
@@ -30,6 +44,21 @@ const CHANGE_MARKER_LINE_PATTERN = new RegExp(`^\\s*(?:${CHG_FIELD_REPLY_MARKERS
 /** The reply marker for one task's rewritten backout plan. */
 export function buildCtaskBackoutMarker(ctaskNumber: string): string {
   return `${ctaskNumber}${BACKOUT_MARKER_SUFFIX}`;
+}
+
+/** One task's rewritten backout plan as a reply section: its marker, or a heading naming the task and its backout plan. */
+export function buildCtaskBackoutSection(ctaskNumber: string): ReplySection {
+  return {
+    key: ctaskNumber,
+    marker: buildCtaskBackoutMarker(ctaskNumber),
+    headingPattern: new RegExp(`^${ctaskNumber}[\\s·:—–-]*back[\\s-]?out\\s+plan$`, 'i'),
+  };
+}
+
+/** True when a whole line is a change field's heading ("Backout Plan", "## Test Plan") — where a task's plan ends. */
+function isChangeFieldHeadingLine(replyLine: string): boolean {
+  const headingText = replyLine.replace(HEADING_MARK_PATTERN, '').trim().replace(/:$/, '').trim();
+  return headingText !== '' && CHG_FIELD_REPLY_SECTIONS.some((section) => section.headingPattern.test(headingText));
 }
 
 /** One task as the assistant reads it: what it is, its CI, and its description and backout plan in full. */
@@ -75,11 +104,11 @@ export function buildCtaskCheckPart(ctasks: readonly ReviewedCtask[]): ExtraProm
       'Configuration items are checked by Toolbox itself — do not judge configuration items.',
     ],
     replyLines: implementationTasks.length === 0 ? [] : [
-      'Also, before the VERDICT line, one line for each of these implementation tasks, named exactly as shown: '
-        + implementationTasks.map((ctask) => buildCtaskFindingField(ctask.number, 'backoutPlan')).join(', '),
-      'PASS | <task> · Backout plan — <why it meets the change task rule>',
-      'GAP | <task> · Backout plan — <what is missing> — Fix: <the backout steps to add>',
+      'Each implementation task\'s backout plan also has a row in the table: PASS when it meets the change task rule, '
+        + 'GAP when it does not — with the backout steps to add as its Fix.',
     ],
+    // One table row per implementation task, named exactly as the review's task findings are (GH #499).
+    tableItems: implementationTasks.map((ctask) => buildCtaskFindingField(ctask.number, 'backoutPlan')),
   };
 }
 
@@ -97,6 +126,7 @@ export function buildCtaskRecheckPart(
     ],
     gapLines: backoutGaps.map((gap) => renderBackoutGapLine(gap, 'Earlier suggested fix: ')),
     replyLines: [],
+    tableItems: backoutGaps.map((gap) => gap.field),
   };
 }
 
@@ -114,10 +144,7 @@ export function buildCtaskFixPart(
       `Change task rule: ${CTASK_BACKOUT_RULE}`,
     ],
     gapLines: backoutGaps.map((gap) => renderBackoutGapLine(gap, 'Fix: ')),
-    replyLines: [
-      ...gapTasks.map((ctask) => `${buildCtaskBackoutMarker(ctask.number)}:`),
-      ...(gapTasks.length > 0 ? ['Each CTASK…_BACKOUT_PLAN is that task\'s complete backout plan as it should now read.'] : []),
-    ],
+    replyLines: gapTasks.map((ctask) => `${buildCtaskBackoutMarker(ctask.number)}: ${WHOLE_PLAN_PLACEHOLDER}`),
   };
 }
 
@@ -128,9 +155,19 @@ export interface CtaskBackoutReply {
 }
 
 /**
- * Reads each task's rewritten backout plan out of a fix reply. A task block runs to the next task or change
- * marker; everything outside the blocks is handed back for the change-field reader. A plan for a task the
- * prompt did not ask about is dropped — the reply is not trusted with a task it was not shown.
+ * One task's plan text, trimmed the way every section is read — so a closing offer to help further ("If you'd like, I
+ * can…") that an answer engine puts after the last plan is never written into the task (GH #499).
+ */
+function readTaskPlanText(ctaskNumber: string, planLines: readonly string[]): string {
+  const taskSection = buildCtaskBackoutSection(ctaskNumber);
+  return readReplySections(`${taskSection.marker}:\n${planLines.join('\n')}`, [taskSection])[ctaskNumber] ?? '';
+}
+
+/**
+ * Reads each task's rewritten backout plan out of a fix reply. A task block starts at its marker or its heading and
+ * runs to the next task, or to a change field's marker or heading; everything outside the blocks is handed back for
+ * the change-field reader. A plan for a task the prompt did not ask about is dropped — the reply is not trusted with
+ * a task it was not shown.
  */
 export function parseCtaskBackoutReply(replyText: string, askedCtaskNumbers: readonly string[]): CtaskBackoutReply {
   const restoredReply = restoreMarkerLineBreaks(
@@ -143,8 +180,9 @@ export function parseCtaskBackoutReply(replyText: string, askedCtaskNumbers: rea
   let currentTask: { ctaskNumber: string; lines: string[] } | null = null;
 
   const closeCurrentTask = () => {
-    if (currentTask && askedNumbers.has(currentTask.ctaskNumber) && currentTask.lines.join('\n').trim() !== '') {
-      backoutPlansByNumber.set(currentTask.ctaskNumber, currentTask.lines.join('\n').trim());
+    const planText = currentTask ? readTaskPlanText(currentTask.ctaskNumber, currentTask.lines) : '';
+    if (currentTask && askedNumbers.has(currentTask.ctaskNumber) && planText !== '') {
+      backoutPlansByNumber.set(currentTask.ctaskNumber, planText);
     }
     currentTask = null;
   };
@@ -153,10 +191,11 @@ export function parseCtaskBackoutReply(replyText: string, askedCtaskNumbers: rea
     const taskMatch = CTASK_MARKER_LINE_PATTERN.exec(replyLine);
     if (taskMatch) {
       closeCurrentTask();
-      currentTask = { ctaskNumber: taskMatch[1].toUpperCase(), lines: taskMatch[2].trim() ? [taskMatch[2].trim()] : [] };
+      const firstText = (taskMatch[2] ?? '').replace(LEADING_MARK_PATTERN, '').trim();
+      currentTask = { ctaskNumber: taskMatch[1].toUpperCase(), lines: firstText ? [firstText] : [] };
       continue;
     }
-    if (currentTask && CHANGE_MARKER_LINE_PATTERN.test(replyLine)) {
+    if (currentTask && (CHANGE_MARKER_LINE_PATTERN.test(replyLine) || isChangeFieldHeadingLine(replyLine))) {
       closeCurrentTask();
     }
     (currentTask ? currentTask.lines : changeLines).push(replyLine);

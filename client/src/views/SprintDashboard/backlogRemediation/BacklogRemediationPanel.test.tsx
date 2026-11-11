@@ -330,4 +330,28 @@ describe('BacklogRemediationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep ENCUC-1' }));
     expect(decideSpy).toHaveBeenCalledWith('ENCUC-1', 'kept', expect.any(Object), expect.any(String));
   });
+
+  it('offers a follow-up for the same AI chat for an unreadable reply and for items a reply left out (GH #499)', async () => {
+    setAiAssistUnlocked(true);
+    mockFetchAgingBacklog.mockResolvedValue(fetchResult(['ENCUC-1', 'ENCUC-2']));
+    renderPanel();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /refresh backlog/i }));
+    });
+    const promptBox = screen.getByLabelText(/triage prompt/i) as HTMLTextAreaElement;
+    await waitFor(() => expect(promptBox.value).toContain('ENCUC-1'));
+
+    const replyBox = screen.getByLabelText(/triage reply/i);
+    fireEvent.change(replyBox, { target: { value: 'ENCUC-1 looks safe to cancel, I think.' } });
+    fireEvent.click(screen.getByRole('button', { name: /ingest verdicts/i }));
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).not.toBe('');
+
+    fireEvent.change(replyBox, {
+      target: { value: JSON.stringify({ kind: 'agingTriage', items: [{ issueKey: 'ENCUC-1', verdict: 'cancel-safe', rationale: 'stale' }] }) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /ingest verdicts/i }));
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('ENCUC-2');
+    expect(followUpBox.value).not.toContain('ENCUC-1');
+  });
 });

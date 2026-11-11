@@ -808,6 +808,32 @@ describe('ArtView', () => {
     expect(values.some((value) => value.includes('Cut costs'))).toBe(true);
   });
 
+  it('splits a pasted AI Mode pillar table into one form per filled pillar (GH #499)', () => {
+    mockState.activeTab = 'monthly';
+    setAiAssistUnlocked(true);
+    renderArtView();
+    fireEvent.click(screen.getAllByRole('button', { name: /AI suggestions/i })[0]);
+    fireEvent.change(screen.getByLabelText('AI response'), {
+      target: { value: 'Here is the draft.\n| Pillar | What was accomplished |\n|---|---|\n| Growth | • Grew signups |\n| Affordability | • Cut costs |\n| Operating Model | ___ |\nLet me know if you want more.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Apply AI draft/i }));
+
+    const values = (screen.getAllByLabelText(/what was accomplished\?/i) as HTMLTextAreaElement[]).map((field) => field.value);
+    expect(values.some((value) => value.includes('Grew signups'))).toBe(true);
+    expect(values.some((value) => value.includes('Cut costs'))).toBe(true);
+  });
+
+  it('offers a follow-up for the same AI chat when the monthly reply could not be read', () => {
+    mockState.activeTab = 'monthly';
+    setAiAssistUnlocked(true);
+    renderArtView();
+    fireEvent.click(screen.getAllByRole('button', { name: /AI suggestions/i })[0]);
+    fireEvent.change(screen.getByLabelText('AI response'), { target: { value: 'The team grew signups this month.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Apply AI draft/i }));
+
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*Growth \| ___/);
+  });
+
   // ── Monthly Report parity: pillar filter ──
 
   it('renders a pillar filter dropdown in the Monthly Report toolbar', () => {

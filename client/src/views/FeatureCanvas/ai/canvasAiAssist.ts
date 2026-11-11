@@ -1,12 +1,24 @@
 // canvasAiAssist.ts — The hidden, passphrase-gated copy-paste AI round-trip for the canvas.
 //
 // This mirrors the hardened release-notes AI Assist pattern: the tool GENERATES a prompt the
-// operator pastes into an external assistant, then INGESTS a strict JSON reply. It is an
-// accelerator only — every suggestion is an editable proposal defaulting to un-accepted, and
-// the coaching workflow is fully operable without it. No AI service is called from here.
+// operator pastes into an external assistant, then INGESTS its reply. It is an accelerator only —
+// every suggestion is an editable proposal defaulting to un-accepted, and the coaching workflow is
+// fully operable without it. No AI service is called from here.
+//
+// Google's AI Mode — the team's only assistant (GH #499) — ignores JSON, so each prompt ends with a
+// fill-in table listing every feature; the shared record reader turns the table back into the
+// same {kind, items[]} JSON these validators already check, and a JSON reply is still read.
 
 import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { TSHIRT_SIZES } from '../logic/sizing.ts';
+import {
+  buildRecordFormatFixPrompt,
+  buildRecordReplyInstructions,
+  extractRecordReplyPayload,
+  type ReplyRecordColumn,
+  type ReplyRecordSpec,
+} from '../../../utils/aiReplyRecords.ts';
+import { buildSectionsFollowUpPrompt, readReplySections, type ReplySection } from '../../../utils/aiReplySections.ts';
 // The JSON-extraction helper now lives in shared utils so every AI round-trip (canvas, aging triage,
 // coaching) uses one implementation; re-exported below to keep this module's long-standing import path.
 import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
@@ -135,17 +147,14 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'also favor features that can realistically reach Definition of Done (dev-complete + delivered to '
     + 'integration testing, not production) within the days left. If Business Value or effort is not '
     + 'shown for an issue, reason from the other signals and note that in the rationale; do NOT invent '
-    + 'values. Respond ONLY with valid JSON: '
-    + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
+    + 'values.',
   sizeEstimate:
     'Assign each issue a relative t-shirt size (XS, S, M, L, XL, XXL) for effort, judging scope ONLY from the '
     + 'data shown — description, acceptance criteria, story counts, and points when present. Larger '
     + 'scope / more stories / higher points = larger size. If scope is unclear from the data, say so in '
-    + 'the rationale rather than guessing. Respond ONLY with valid JSON: '
-    + '{"kind":"sizeEstimate","items":[{"issueKey":"KEY","size":"L","rationale":"..."}]}',
+    + 'the rationale rather than guessing.',
   sprintGrouping:
-    'Propose sprint groupings. Respond ONLY with valid JSON: '
-    + '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["KEY"]}]}',
+    'Propose sprint groupings: give each issue the sprint it belongs in.',
   parkCandidates:
     'Triage the features that should leave the active flow. For each, choose an action: "park" (defer '
     + 'stale, duplicate, or over-WIP work — favor lowest MoSCoW/Business Value and least progress), '
@@ -155,26 +164,111 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + '(marked complete but still has active/open child stories — needs splitting). Prefer parking down '
     + 'to the WIP limit shown above. NEVER park a feature that is nearly done or would take little effort '
     + 'to finish (high completion % and/or small size) — finishing it clears WIP faster than parking. Use '
-    + 'ONLY the data shown; do NOT invent values. Leave a feature out if it should stay active. Respond '
-    + 'ONLY with valid JSON: '
-    + '{"kind":"parkCandidates","items":[{"issueKey":"KEY","action":"park","reason":"..."}]}',
+    + 'ONLY the data shown; do NOT invent values. Leave a feature\'s action blank (___) if it should stay active.',
   masterPlan:
     'Produce a COMPLETE plan for EVERY feature in one pass, as if running all five phases. For each '
-    + 'feature return: "size" (XS/S/M/L/XL/XXL, from scope); "bucket" (Must/Should/Could/Wont, weighing value '
-    + 'against size and PI time-to-DoD); "triage" ("keep" to keep active, "park" to defer stale/duplicate/'
+    + 'feature give: its Size (XS/S/M/L/XL/XXL, from scope); its MoSCoW bucket (Must/Should/Could/Wont, weighing value '
+    + 'against size and PI time-to-DoD); its Triage ("keep" to keep active, "park" to defer stale/duplicate/'
     + 'over-WIP work, "complete" if it already meets Definition of Done — dev-complete + delivered to '
-    + 'integration testing, not production, "breakout" if marked done but has open child stories); and '
-    + '"sprint" (one of the EXACT sprint names listed above to sequence it into, or null when '
+    + 'integration testing, not production, "breakout" if marked done but has open child stories); and its '
+    + 'Sprint (one of the EXACT sprint names listed above to sequence it into, or ___ when '
     + 'parked/complete/not ready — never invent a sprint name). Honor the '
     + 'WIP limit and PI days-left shown above; NEVER sequence a parked or complete feature, and never park '
-    + 'work that is nearly done. Use ONLY the data shown; do NOT invent values. Respond ONLY with valid '
-    + 'JSON: {"kind":"masterPlan","items":[{"issueKey":"KEY","size":"L","bucket":"Must","triage":"keep","sprint":"Sprint 25","reason":"..."}]}',
+    + 'work that is nearly done. Use ONLY the data shown; do NOT invent values.',
 };
 
-/** Builds the copy-paste prompt for one analysis over the given candidate issues. */
+// ── Fill-in tables (GH #499) ──
+
+// A "|" or line break inside a summary would split its table row, so it is written as a space.
+const TABLE_CELL_BREAKING_PATTERN = /[|\r\n]+/g;
+const ISSUE_KEY_COLUMN: ReplyRecordColumn = { field: 'issueKey', header: 'Issue key' };
+const FEATURE_NAME_COLUMN: ReplyRecordColumn = { field: 'summary', header: 'Feature', isNamingOnly: true };
+const SIZE_COLUMN: ReplyRecordColumn = { field: 'size', header: 'Size', answerHint: TSHIRT_SIZES.join(', ') };
+const BUCKET_COLUMN: ReplyRecordColumn = { field: 'bucket', header: 'MoSCoW bucket', answerHint: MOSCOW_BUCKETS.join(', ') };
+const SPRINT_COLUMN: ReplyRecordColumn = { field: 'containerTitle', header: 'Sprint', answerHint: 'the sprint\'s name' };
+
+/** Each analysis's table: the key and summary pre-filled, then the answer columns its validator reads. */
+const CANVAS_REPLY_SPECS: Record<AiSuggestionKind, ReplyRecordSpec> = {
+  priorityOrder: {
+    kind: 'priorityOrder',
+    replyMarker: 'PRIORITY_TABLE:',
+    columns: [ISSUE_KEY_COLUMN, FEATURE_NAME_COLUMN, BUCKET_COLUMN, { field: 'rationale', header: 'Why' }],
+  },
+  sizeEstimate: {
+    kind: 'sizeEstimate',
+    replyMarker: 'SIZE_TABLE:',
+    columns: [ISSUE_KEY_COLUMN, FEATURE_NAME_COLUMN, SIZE_COLUMN, { field: 'rationale', header: 'Why' }],
+  },
+  sprintGrouping: { kind: 'sprintGrouping', replyMarker: 'SPRINT_TABLE:', columns: [ISSUE_KEY_COLUMN, FEATURE_NAME_COLUMN, SPRINT_COLUMN] },
+  parkCandidates: {
+    kind: 'parkCandidates',
+    replyMarker: 'TRIAGE_TABLE:',
+    columns: [
+      ISSUE_KEY_COLUMN,
+      FEATURE_NAME_COLUMN,
+      { field: 'action', header: 'Action', answerHint: `${TRIAGE_ACTIONS.join(', ')} — or ___ to keep it active` },
+      { field: 'reason', header: 'Reason' },
+    ],
+  },
+  masterPlan: {
+    kind: 'masterPlan',
+    replyMarker: 'MASTER_PLAN_TABLE:',
+    columns: [
+      ISSUE_KEY_COLUMN,
+      FEATURE_NAME_COLUMN,
+      SIZE_COLUMN,
+      BUCKET_COLUMN,
+      { field: 'triage', header: 'Triage', answerHint: MASTER_TRIAGE.join(', ') },
+      { ...SPRINT_COLUMN, field: 'sprint', answerHint: 'a listed sprint\'s exact name or number, or ___' },
+      { field: 'reason', header: 'Reason' },
+    ],
+  },
+};
+
+// Triage only lists the features that should leave active flow, so a blank row is an answer there.
+const KINDS_WITH_OPTIONAL_ROWS: ReadonlySet<AiSuggestionKind> = new Set(['parkCandidates']);
+
+/** One pre-filled row per issue — its key and summary — so the reply cannot invent or drop a feature. */
+function listIssueRowNamingCells(issues: readonly AiPromptIssue[]): string[][] {
+  return issues.map((issue) => [issue.issueKey, issue.summary.replace(TABLE_CELL_BREAKING_PATTERN, ' ')]);
+}
+
+/** Builds the copy-paste prompt for one analysis over the given candidate issues, ending with its fill-in table. */
 export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiPromptIssue[], context?: AiPromptContext): string {
   const issueLines = issues.map(buildIssueDescriptor).join('\n');
-  return `${buildContextHeader(kind, context)}${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}`;
+  const replyInstructions = buildRecordReplyInstructions(CANVAS_REPLY_SPECS[kind], listIssueRowNamingCells(issues));
+  return `${buildContextHeader(kind, context)}${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}\n\n${replyInstructions}`;
+}
+
+/**
+ * The follow-up to paste into the same AI chat, or '' when the reply needs none.
+ *
+ * An unreadable reply gets the whole table again; a reply that left issues unanswered gets a table
+ * of just those. Nothing missing is ever guessed. Triage rows are optional (blank = stays active),
+ * so Triage only ever gets the unreadable-reply follow-up.
+ *
+ * @param issues - The same issues the prompt listed.
+ * @param answeredIssueKeys - The keys the reply gave a usable answer for, or null when it could not be read.
+ */
+export function buildCanvasAiFollowUpPrompt(
+  kind: AiSuggestionKind,
+  issues: readonly AiPromptIssue[],
+  answeredIssueKeys: readonly string[] | null,
+): string {
+  const replySpec = CANVAS_REPLY_SPECS[kind];
+  if (answeredIssueKeys === null) {
+    return buildRecordFormatFixPrompt(replySpec, listIssueRowNamingCells(issues));
+  }
+  const answeredKeys = new Set(answeredIssueKeys.map((issueKey) => issueKey.toUpperCase()));
+  const missingIssues = issues.filter((issue) => !answeredKeys.has(issue.issueKey.toUpperCase()));
+  if (missingIssues.length === 0 || KINDS_WITH_OPTIONAL_ROWS.has(kind)) {
+    return '';
+  }
+  return [
+    `Your last reply gave no usable answer for ${missingIssues.map((issue) => issue.issueKey).join(', ')}. `
+      + 'Answer only those now, in this table.',
+    buildRecordReplyInstructions(replySpec, listIssueRowNamingCells(missingIssues)),
+  ].join('\n');
 }
 
 /**
@@ -212,9 +306,9 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
     const sprints = context.availableSprints ?? [];
     if (sprints.length > 0) {
       const numbered = sprints.map((name, index) => `${index + 1}) "${name}"`).join('; ');
-      lines.push(`Available sprints — set "sprint" to a sprint's EXACT name OR its number: ${numbered}. Use null if a feature is parked/complete/not ready. Never invent a sprint name.`);
+      lines.push(`Available sprints — set Sprint to a sprint's EXACT name OR its number: ${numbered}. Leave it ___ if a feature is parked/complete/not ready. Never invent a sprint name.`);
     } else {
-      lines.push('No sprints are available — set "sprint" to null for every feature (they will be placed in Later). Do NOT invent sprint names.');
+      lines.push('No sprints are available — leave Sprint as ___ for every feature (they will be placed in Later). Do NOT invent sprint names.');
     }
   }
 
@@ -235,7 +329,9 @@ function readRequiredString(source: Record<string, unknown>, fieldName: string):
 }
 
 /** Validates a priorityOrder item into a suggestion, enforcing a valid MoSCoW bucket. */
-function readPriorityItem(rawItem: Record<string, unknown>): AiSuggestion {
+function readPriorityItem(rawItem: Record<string, unknown>): AiSuggestion | null {
+  // A table row left blank is unanswered — reported through the follow-up, never guessed.
+  if (rawItem.bucket === undefined) return null;
   const issueKey = readRequiredString(rawItem, 'issueKey');
   const bucket = readRequiredString(rawItem, 'bucket') as MoscowBucket;
   if (!MOSCOW_BUCKETS.includes(bucket)) {
@@ -245,7 +341,8 @@ function readPriorityItem(rawItem: Record<string, unknown>): AiSuggestion {
 }
 
 /** Validates a sizeEstimate item into a suggestion, enforcing a valid t-shirt size. */
-function readSizeItem(rawItem: Record<string, unknown>): AiSuggestion {
+function readSizeItem(rawItem: Record<string, unknown>): AiSuggestion | null {
+  if (rawItem.size === undefined) return null;
   const issueKey = readRequiredString(rawItem, 'issueKey');
   const size = readRequiredString(rawItem, 'size') as TshirtSize;
   if (!TSHIRT_SIZES.includes(size)) {
@@ -255,7 +352,9 @@ function readSizeItem(rawItem: Record<string, unknown>): AiSuggestion {
 }
 
 /** Validates a triage (parkCandidates) item, enforcing a known action; proposedValue holds the action. */
-function readActionItem(rawItem: Record<string, unknown>): AiSuggestion {
+function readActionItem(rawItem: Record<string, unknown>): AiSuggestion | null {
+  // A blank action means "stays active" — the table's form of leaving the feature out.
+  if (rawItem.action === undefined) return null;
   const issueKey = readRequiredString(rawItem, 'issueKey');
   const action = readRequiredString(rawItem, 'action') as TriageAction;
   if (!TRIAGE_ACTIONS.includes(action)) {
@@ -270,39 +369,41 @@ function readActionItem(rawItem: Record<string, unknown>): AiSuggestion {
  * the caller against the live canvas, so this returns every well-formed item un-accepted.
  */
 export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: string): AiSuggestionSet {
-  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  const parsed = JSON.parse(extractRecordReplyPayload(responseText, CANVAS_REPLY_SPECS[kind])) as Record<string, unknown>;
   if (parsed.kind !== kind) {
     throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "${kind}".`);
   }
-
+  const rawItems = Array.isArray(parsed.items) ? (parsed.items as Record<string, unknown>[]) : [];
   if (kind === 'sprintGrouping') {
-    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
-    const items: AiSuggestion[] = [];
-    for (const rawGroup of groups) {
-      const group = rawGroup as { containerTitle?: unknown; issueKeys?: unknown };
-      const containerTitle = typeof group.containerTitle === 'string' ? group.containerTitle : '';
-      const issueKeys = Array.isArray(group.issueKeys) ? group.issueKeys : [];
-      for (const issueKey of issueKeys) {
-        if (typeof issueKey === 'string' && issueKey.trim() !== '') {
-          items.push({ issueKey: issueKey.trim(), proposedValue: containerTitle, rationale: '', accepted: false });
-        }
+    return { kind, items: [...readSprintGroups(parsed.groups), ...readSprintRows(rawItems)], ignoredUnknownKeyCount: 0 };
+  }
+  const readItem = kind === 'sizeEstimate' ? readSizeItem : kind === 'parkCandidates' ? readActionItem : readPriorityItem;
+  const items = rawItems.map(readItem).filter((item): item is AiSuggestion => item !== null);
+  return { kind, items, ignoredUnknownKeyCount: 0 };
+}
+
+/** Flattens a JSON reply's {containerTitle, issueKeys[]} groups into per-issue suggestions. */
+function readSprintGroups(rawGroups: unknown): AiSuggestion[] {
+  const groups = Array.isArray(rawGroups) ? rawGroups : [];
+  const items: AiSuggestion[] = [];
+  for (const rawGroup of groups) {
+    const group = rawGroup as { containerTitle?: unknown; issueKeys?: unknown };
+    const containerTitle = typeof group.containerTitle === 'string' ? group.containerTitle : '';
+    const issueKeys = Array.isArray(group.issueKeys) ? group.issueKeys : [];
+    for (const issueKey of issueKeys) {
+      if (typeof issueKey === 'string' && issueKey.trim() !== '') {
+        items.push({ issueKey: issueKey.trim(), proposedValue: containerTitle, rationale: '', accepted: false });
       }
     }
-    return { kind, items, ignoredUnknownKeyCount: 0 };
   }
+  return items;
+}
 
-  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-  const items = rawItems.map((rawItem) => {
-    const itemRecord = rawItem as Record<string, unknown>;
-    if (kind === 'sizeEstimate') {
-      return readSizeItem(itemRecord);
-    }
-    if (kind === 'parkCandidates') {
-      return readActionItem(itemRecord);
-    }
-    return readPriorityItem(itemRecord);
-  });
-  return { kind, items, ignoredUnknownKeyCount: 0 };
+/** Reads the fill-in table's one-row-per-issue sprint answers; a row with no sprint is unanswered. */
+function readSprintRows(rawItems: readonly Record<string, unknown>[]): AiSuggestion[] {
+  return rawItems
+    .filter((item) => typeof item.issueKey === 'string' && typeof item.containerTitle === 'string')
+    .map((item) => ({ issueKey: String(item.issueKey).trim(), proposedValue: String(item.containerTitle), rationale: '', accepted: false }));
 }
 
 /**
@@ -312,7 +413,7 @@ export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: stri
  * the JSON is unreadable or the kind does not match.
  */
 export function parseMasterPlan(responseText: string): MasterPlanItem[] {
-  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  const parsed = JSON.parse(extractRecordReplyPayload(responseText, CANVAS_REPLY_SPECS.masterPlan)) as Record<string, unknown>;
   if (parsed.kind !== 'masterPlan') {
     throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "masterPlan".`);
   }
@@ -362,6 +463,16 @@ export function describeSuggestionAction(kind: AiSuggestionKind, suggestion: AiS
 //
 // A distinct round-trip from the suggestion kinds above: the reply is a single JQL string, not a
 // list of per-issue suggestions. Used only by the passphrase-gated NL→JQL control on the scope bar.
+// An answer engine wraps the query in an intro, a ```jql block and a closing offer, so the reader
+// takes the "JQL:" line (or the first code block) and nothing around it.
+
+/** The one section the NL→JQL reply carries: its "JQL:" line, or a "JQL" / "JQL Query" heading. */
+const SCOPE_QUERY_SECTION: ReplySection<'jql'> = { key: 'jql', marker: 'JQL', headingPattern: /^(?:jira )?jql(?: query)?$/i };
+// The first fenced code block in a reply, for an answer that gives the query in a block without a label.
+const FIRST_CODE_BLOCK_PATTERN = /```[\w-]*\s*\n([\s\S]*?)```/;
+// Inline-code marks an assistant puts around a one-line query.
+const INLINE_CODE_MARK_PATTERN = /^`+|`+$/g;
+const NO_JQL_FOUND_MESSAGE = 'No JQL query found in the reply — copy the follow-up below into the same AI chat.';
 
 /** Builds the prompt that turns a natural-language scope description into one JQL query. */
 export function buildScopeQueryPrompt(context: { projectKey: string; piName: string; description: string }): string {
@@ -369,19 +480,49 @@ export function buildScopeQueryPrompt(context: { projectKey: string; piName: str
     'Convert this request into a single Jira JQL query that selects features/epics.',
     `Project: ${context.projectKey || '(any)'}. Program Increment: ${context.piName || '(any)'}.`,
     `Request: ${context.description}`,
-    'Respond ONLY with valid JSON: {"kind":"scopeQuery","jql":"<the JQL>"}',
+    'Answer with ONE line that starts with "JQL:" followed by the query. Write nothing else, and ask no questions.',
   ].join('\n');
 }
 
-/** Parses the NL→JQL reply into a proposed query string. Throws a descriptive error on malformed input. */
-export function parseScopeQueryResponse(responseText: string): { jql: string } {
-  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+/** The query from a JSON reply, or null when the reply holds no JSON object. Throws on a wrong kind. */
+function readScopeQueryJson(responseText: string): string | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
   if (parsed.kind !== 'scopeQuery') {
     throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "scopeQuery".`);
   }
-  const jql = typeof parsed.jql === 'string' ? parsed.jql.trim() : '';
-  if (jql === '') {
+  return typeof parsed.jql === 'string' ? parsed.jql.trim() : '';
+}
+
+/** The query from a prose reply: the "JQL:" line, else the first code block; '' when neither is there. */
+function readScopeQueryText(responseText: string): string {
+  const sectionText = readReplySections(responseText, [SCOPE_QUERY_SECTION]).jql ?? '';
+  const firstSectionLine = sectionText.split(/\r?\n/).find((sectionLine) => sectionLine.trim() !== '') ?? '';
+  const codeBlockText = FIRST_CODE_BLOCK_PATTERN.exec(responseText)?.[1] ?? '';
+  return (firstSectionLine || codeBlockText).trim().replace(INLINE_CODE_MARK_PATTERN, '').trim();
+}
+
+/**
+ * Parses the NL→JQL reply into a proposed query string: a JSON reply, a "JQL:" line, or a fenced
+ * code block, ignoring any intro or closing offer. Throws a descriptive error when no query is found.
+ */
+export function parseScopeQueryResponse(responseText: string): { jql: string } {
+  const jsonQuery = readScopeQueryJson(responseText);
+  if (jsonQuery === '') {
     throw new Error('Missing or empty "jql" in the scopeQuery response.');
   }
+  const jql = jsonQuery ?? readScopeQueryText(responseText);
+  if (jql === '') {
+    throw new Error(NO_JQL_FOUND_MESSAGE);
+  }
   return { jql };
+}
+
+/** The follow-up for an NL→JQL reply that held no query: asks for just the "JQL:" line. */
+export function buildScopeQueryFollowUpPrompt(): string {
+  return buildSectionsFollowUpPrompt([SCOPE_QUERY_SECTION], true);
 }

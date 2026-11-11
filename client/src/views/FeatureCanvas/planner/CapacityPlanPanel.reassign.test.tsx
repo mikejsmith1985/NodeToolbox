@@ -100,7 +100,7 @@ describe('CapacityPlanPanel reassignment toggle', () => {
     renderReadyPanel(controller);
 
     fireEvent.click(screen.getByLabelText('Include reassignments (writes assignees)'));
-    fireEvent.change(screen.getByLabelText('Paste plan JSON to ingest'), { target: { value: INGEST_WITH_ASSIGNEE } });
+    fireEvent.change(screen.getByLabelText('Paste plan reply to ingest'), { target: { value: INGEST_WITH_ASSIGNEE } });
     fireEvent.click(screen.getByRole('button', { name: /Apply to canvas/ }));
 
     expect(controller.setStoryPlacement).toHaveBeenCalledWith('DENP-1', 'DENP-2', expect.any(String));
@@ -112,11 +112,34 @@ describe('CapacityPlanPanel reassignment toggle', () => {
     const controller = buildControllerStub();
     renderReadyPanel(controller);
 
-    fireEvent.change(screen.getByLabelText('Paste plan JSON to ingest'), { target: { value: INGEST_WITH_ASSIGNEE } });
+    fireEvent.change(screen.getByLabelText('Paste plan reply to ingest'), { target: { value: INGEST_WITH_ASSIGNEE } });
     fireEvent.click(screen.getByRole('button', { name: /Apply to canvas/ }));
 
     expect(controller.setStoryPlacement).toHaveBeenCalledWith('DENP-1', 'DENP-2', expect.any(String));
     expect(controller.setStoryAssignee).not.toHaveBeenCalled();
     expect(screen.queryByText(/staged \d+ reassignment/)).not.toBeInTheDocument();
+  });
+
+  it('applies an AI Mode table reply (intro + closing offer) the same way (GH #499)', () => {
+    const controller = buildControllerStub();
+    renderReadyPanel(controller);
+
+    fireEvent.click(screen.getByLabelText('Include reassignments (writes assignees)'));
+    fireEvent.change(screen.getByLabelText('Paste plan reply to ingest'), {
+      target: { value: 'Here is the agreed plan.\n| Issue key | Sprint | Assignee |\n|---|---|---|\n| DENP-2 | 26.3.1 | Jane Doe |\nLet me know if you want changes.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Apply to canvas/ }));
+
+    expect(controller.setStoryAssignee).toHaveBeenCalledWith('DENP-1', 'DENP-2', 'Jane Doe');
+    expect(screen.queryByLabelText(/follow-up for the same ai chat/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a follow-up for the same AI chat when the reply could not be read', () => {
+    renderReadyPanel(buildControllerStub());
+
+    fireEvent.change(screen.getByLabelText('Paste plan reply to ingest'), { target: { value: 'Move DENP-2 to the first sprint.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Apply to canvas/ }));
+
+    expect((screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement).value).toMatch(/not in the form I need[\s\S]*PLAN_TABLE:/);
   });
 });

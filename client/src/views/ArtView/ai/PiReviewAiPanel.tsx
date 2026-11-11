@@ -10,11 +10,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx'
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { PiReviewRow } from '../piReviewTable.ts'
 import { extractPiReviewFeatureKey } from '../piReviewJira.ts'
 import {
+  buildPiReviewAiFollowUpPrompt,
   buildPiReviewAiPrompt,
   parsePiReviewAiReply,
   type PiReviewAiColumnAvailability,
@@ -91,6 +93,8 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
   const [unparsedCount, setUnparsedCount] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  // The follow-up for the same AI chat when a reply strayed from the table or left Features out ('' = none).
+  const [followUpPrompt, setFollowUpPrompt] = useState('')
 
   const hasFeatures = useMemo(
     () => rows.some((row) => extractPiReviewFeatureKey(row.feature) !== null),
@@ -138,10 +142,12 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
       setUnparsedCount(runResult.unparsedCount)
       setErrorMessage(null)
       setStatusMessage(runResult.suggestions.length === 0 ? 'No usable suggestions in that reply.' : null)
+      setFollowUpPrompt(buildPiReviewAiFollowUpPrompt(featureContexts, columnAvailability, runResult))
     } catch (parseError) {
       setErrorMessage(parseError instanceof Error ? parseError.message : 'Could not read the response.')
+      setFollowUpPrompt(buildPiReviewAiFollowUpPrompt(featureContexts, columnAvailability, null))
     }
-  }, [featureContexts])
+  }, [columnAvailability, featureContexts])
 
   /** Removes a suggestion from the review list once it has been decided either way. */
   const dropSuggestion = useCallback((decided: PiReviewAiSuggestion) => {
@@ -184,6 +190,7 @@ export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }:
       title="AI Assistance"
     >
       {statusMessage !== null && <p className={styles.aiStatus}>{statusMessage}</p>}
+      <AiFollowUpPrompt fieldId="pi-review-ai-follow-up" followUpPrompt={followUpPrompt} />
 
       {unknownKeys.length > 0 && (
         <p className={styles.aiWarning}>

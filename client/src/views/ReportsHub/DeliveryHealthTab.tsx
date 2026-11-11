@@ -46,6 +46,7 @@ import {
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
   buildDeliveryHealthPrompt,
+  buildDeliveryHealthFollowUpPrompt,
   parseDeliveryHealthReply,
   type DeliveryHealthPlan,
   type DeliveryHealthTopic,
@@ -189,6 +190,8 @@ export default function DeliveryHealthTab() {
   const [teamContext, setTeamContext] = useState(() => readTeamContext());
   const [plan, setPlan] = useState<DeliveryHealthPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  // A follow-up for the same AI chat when the reply was unreadable or left a part out (GH #499).
+  const [planFollowUpPrompt, setPlanFollowUpPrompt] = useState('');
 
   async function handleRun(): Promise<void> {
     setIsLoading(true);
@@ -214,10 +217,13 @@ export default function DeliveryHealthTab() {
   /** Reads a pasted plan, keeping the parse failure beside the panel that produced it. */
   function handleIngestPlan(responseText: string): void {
     try {
-      setPlan(parseDeliveryHealthReply(responseText));
+      const readPlan = parseDeliveryHealthReply(responseText);
+      setPlan(readPlan);
       setPlanError(null);
+      setPlanFollowUpPrompt(buildDeliveryHealthFollowUpPrompt(readPlan));
     } catch (caughtError) {
       setPlanError(caughtError instanceof Error ? caughtError.message : 'That reply could not be read.');
+      setPlanFollowUpPrompt(buildDeliveryHealthFollowUpPrompt(null));
     }
   }
 
@@ -345,6 +351,8 @@ export default function DeliveryHealthTab() {
               which is in a changelog. Gated, propose-only, and it writes nothing. */}
           <ReportAiPanel
             error={planError}
+            followUpFieldId="delivery-health-follow-up"
+            followUpPrompt={planFollowUpPrompt}
             ingestLabel="Read the plan"
             onIngest={handleIngestPlan}
             prompt={buildDeliveryHealthPrompt(report.queue, report.rework, teamContext)}

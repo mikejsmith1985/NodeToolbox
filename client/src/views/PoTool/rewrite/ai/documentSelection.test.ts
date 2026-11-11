@@ -9,7 +9,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildDocumentSelectionPrompt, parseDocumentSelectionReply } from './documentSelection.ts';
+import {
+  buildDocumentSelectionFollowUpPrompt,
+  buildDocumentSelectionPrompt,
+  isUnreadableDocumentSelectionReply,
+  parseDocumentSelectionReply,
+} from './documentSelection.ts';
 
 const LISTING = [
   { name: 'Accessibility Standard.md', folderPath: '/Standards', modifiedAtIso: '2026-08-01T00:00:00Z' },
@@ -99,5 +104,66 @@ describe('parseDocumentSelectionReply', () => {
 
   it('says plainly when the reply is not JSON at all', () => {
     expect(() => parseDocumentSelectionReply('I could not decide.', knownNames)).toThrow();
+  });
+});
+
+// ── Google AI Mode replies (GH #499) ──
+
+describe('parseDocumentSelectionReply — an AI Mode answer', () => {
+  const knownNames = LISTING.map((document) => document.name);
+
+  it('asks for a labelled list of names, not JSON', () => {
+    const prompt = buildDocumentSelectionPrompt(LISTING, 'task');
+
+    expect(prompt).toContain('DOCUMENTS_TO_READ:');
+    expect(prompt).not.toContain('"kind"');
+  });
+
+  it('reads a headed list with an intro, reasons after the names, and a closing offer', () => {
+    const reply = [
+      'Based on the task, these are the most relevant documents.',
+      '',
+      '## Documents to Read',
+      '* **Accessibility Standard.md** — sets the contrast rules',
+      '* Enrollment Design.html (in /Design)',
+      '',
+      'If you want, I can also explain why the retro was left out.',
+    ].join('\n');
+
+    expect(parseDocumentSelectionReply(reply, knownNames).selectedNames)
+      .toEqual(['Accessibility Standard.md', 'Enrollment Design.html']);
+  });
+
+  it('reads a tab-separated table pasted from the answer page, taking the first cell', () => {
+    const reply = 'DOCUMENTS_TO_READ:\nDocument\tWhy\nQ1 Retro.txt\tlists the open issues';
+
+    const result = parseDocumentSelectionReply(reply, knownNames);
+
+    expect(result.selectedNames).toEqual(['Q1 Retro.txt']);
+    // The header row is the table's, not a requested name, so it is neither fetched nor reported.
+    expect(result.rejectedNames).toEqual([]);
+  });
+
+  it('still refuses a name the library does not hold', () => {
+    const result = parseDocumentSelectionReply('DOCUMENTS_TO_READ:\n- Invented Policy.md', knownNames);
+
+    expect(result.selectedNames).toEqual([]);
+    expect(result.rejectedNames).toEqual(['Invented Policy.md']);
+  });
+
+  it('reads "- None" as a real empty answer', () => {
+    expect(parseDocumentSelectionReply('DOCUMENTS_TO_READ:\n- None', knownNames)).toEqual({ selectedNames: [], rejectedNames: [] });
+  });
+});
+
+describe('the selection follow-up', () => {
+  it('flags a reply with neither the list nor JSON, and offers the form again', () => {
+    expect(isUnreadableDocumentSelectionReply('I could not decide.')).toBe(true);
+    expect(buildDocumentSelectionFollowUpPrompt()).toContain('DOCUMENTS_TO_READ:');
+  });
+
+  it('does not flag a list or a JSON reply', () => {
+    expect(isUnreadableDocumentSelectionReply('DOCUMENTS_TO_READ:\n- Q1 Retro.txt')).toBe(false);
+    expect(isUnreadableDocumentSelectionReply('{"kind":"documentSelection","documents":[]}')).toBe(false);
   });
 });

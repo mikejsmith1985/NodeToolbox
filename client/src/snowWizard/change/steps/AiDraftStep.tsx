@@ -4,9 +4,11 @@
 // Visible to everyone (no AI unlock in the Wizard). Every suggestion starts ticked; the user can untick any, and only
 // the ticked ones are written, through the same setters the screens use. Filled values carry no AI mark (FR-008).
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
+import { appendRoundReply } from '../../../views/SnowHub/chgFormula/riskCheckTable.ts';
 import { buildAiDraftPrompt, readAiDraftReply, type AiDraftReply } from '../aiDraft.ts';
+import type { PromptRoundOutcome } from '../PromptRound.tsx';
 import type { ChangeStepProps } from '../changeWizardSession.ts';
 import styles from '../ChangeWizard.module.css';
 import type { JiraEvidenceAttachment } from '../jiraEvidence.ts';
@@ -103,12 +105,15 @@ export default function AiDraftStep({ crg, purpose = 'write', buildPrompt = buil
   const [draftReply, setDraftReply] = useState<AiDraftReply | null>(null);
   const [filledCount, setFilledCount] = useState<number | null>(null);
   const promptText = useMemo(() => buildPrompt(crg.state, jiraEvidence), [buildPrompt, crg.state, jiraEvidence]);
+  // While a follow-up is out, the replies so far: its answer completes them rather than starting over (GH #499).
+  const pendingRepliesRef = useRef('');
 
-  function handleReadReply(replyText: string): string {
-    const readReply = readAiDraftReply(replyText, crg.state);
+  function handleReadReply(replyText: string): PromptRoundOutcome {
+    const readReply = readAiDraftReply(appendRoundReply(pendingRepliesRef.current, replyText), crg.state);
+    pendingRepliesRef.current = readReply.isUsable && readReply.followUpPrompt !== '' ? appendRoundReply(pendingRepliesRef.current, replyText) : '';
     setFilledCount(null);
     setDraftReply(readReply.isUsable ? readReply : null);
-    return readReply.message;
+    return { message: readReply.message, followUpPrompt: readReply.followUpPrompt };
   }
 
   function fillTicked(suggestionIds: string[]) {

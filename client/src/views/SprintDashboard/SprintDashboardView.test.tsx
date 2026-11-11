@@ -910,9 +910,10 @@ describe('SprintDashboardView', () => {
     fireEvent.click(buildPromptButton);
 
     const promptTextArea = await screen.findByLabelText('AI Assist release prompt');
-    expect((promptTextArea as HTMLTextAreaElement).value).toContain('Respond ONLY with valid JSON.');
-    expect((promptTextArea as HTMLTextAreaElement).value).toContain('"items": [');
-    expect((promptTextArea as HTMLTextAreaElement).value).toContain('TBX-99');
+    // The reply form is a pre-filled table, not JSON — Google's AI Mode ignores reply syntax (GH #499).
+    expect((promptTextArea as HTMLTextAreaElement).value).toContain('RELEASE_NOTES_TABLE:');
+    expect((promptTextArea as HTMLTextAreaElement).value).toMatch(/TBX-99 \| ___/);
+    expect((promptTextArea as HTMLTextAreaElement).value).not.toContain('"items": [');
   });
 
   it('does not expose a visible unlock control for the hidden release flow', async () => {

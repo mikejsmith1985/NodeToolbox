@@ -303,5 +303,8 @@ describe('DeliveryHealthTab constraint and plan', () => {
     await user.click(screen.getByRole('button', { name: /read the plan/i }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    // ...and offers a follow-up for the same AI chat asking for the form, rather than a dead end (GH #499).
+    const followUpBox = screen.getByLabelText(/follow-up for the same ai chat/i) as HTMLTextAreaElement;
+    expect(followUpBox.value).toContain('DIAGNOSIS:');
   });
 });
