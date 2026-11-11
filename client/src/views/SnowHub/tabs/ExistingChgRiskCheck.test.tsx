@@ -362,7 +362,9 @@ describe('ExistingChgRiskCheck — Google AI Mode replies (GH #499)', () => {
     await screen.findByText(/CTASK0012345 · Configuration item/);
     await openRiskCheck();
 
-    const promptText = (screen.getByLabelText('Prompt') as HTMLTextAreaElement).value;
+    // The table ends the prompt — its last part when it comes in parts (GH #499).
+    const promptFields = screen.getAllByLabelText(/^Prompt( part \d+ of \d+)?$/);
+    const promptText = (promptFields[promptFields.length - 1] as HTMLTextAreaElement).value;
     expect(promptText.trim().endsWith('CTASK0012345 · Backout plan | ___ | ___ | ___')).toBe(true);
   });
 

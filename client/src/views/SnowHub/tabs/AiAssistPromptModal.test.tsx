@@ -26,7 +26,7 @@ describe('AiAssistPromptModal', () => {
   it('splits a prompt too long for one chat message into parts, each copied on its own (GH #475)', () => {
     const writeText = vi.fn(async (_copiedText: string) => undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+    const longPrompt = Array.from({ length: 500 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
     render(<AiAssistPromptModal onClose={vi.fn()} session={buildSession({ promptText: longPrompt })} />);
 
     expect(screen.getByText(/comes in 2 parts\. Paste them in order into the same chat/)).toBeInTheDocument();

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Risk Check prompts now reach Google's AI Mode whole (GH #499).** A 49,679-character Risk Check was read only to
+  about its first 2,000 characters, and AI Mode answered "your prompt was cut off". Two changes:
+  - A prompt over 24,000 characters now comes in parts ("PART 1 OF 3…", same chat, the assistant waits for the last).
+    Before, the split point was Copilot's 128,000-character limit, which no longer applies.
+  - Each CTASK's instructions now appear once in the prompt, under "Change task instructions". The task list points
+    to them instead of repeating them, which saves about 5,600 characters on a four-task change.
+
 ### Added
 - **Admin Hub → 🧪 QE/SL Backfill: fill the description and acceptance criteria a Jira automation never cloned.**
   A one-off clean-up for open issues with [QE] or [SL] in the summary (projects default to ENCUC, ENFCT):

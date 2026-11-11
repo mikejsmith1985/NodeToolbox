@@ -7,7 +7,7 @@ import PromptRound from './PromptRound.tsx';
 
 describe('PromptRound', () => {
   it('splits a prompt too long for one chat message into parts, each with its own copy button (GH #475)', () => {
-    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+    const longPrompt = Array.from({ length: 500 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
     render(<PromptRound promptText={longPrompt} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
     expect(screen.queryByRole('button', { name: 'Copy the prompt' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Copy part 1 of 2' })).toBeTruthy();

@@ -982,7 +982,9 @@ describe('CreateChgTab', () => {
     const user = userEvent.setup();
     await openEnhancePromptModal(user);
 
-    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    // The prompt may come in parts past AI Mode's size (GH #499) — read every part.
+    const promptText = screen.getAllByLabelText(/^Prompt( part \d+ of \d+)?$/)
+      .map((promptField) => (promptField as HTMLTextAreaElement).value).join('\n');
     expect(promptText).toContain('IMPLEMENTATION_PLAN:');
     expect(promptText).toContain('Preproduction Test Plan');
     expect(promptText).toContain('deploy to INT and test there');
@@ -1611,7 +1613,9 @@ describe('CreateChgTab', () => {
     // The risk check round trip uses the same paste-back modal as Enhance with prompt.
     expect(await screen.findByText(/Copy this prompt and paste it into AI Assist/)).toBeInTheDocument();
     // It checks the whole change against the Release Manager's Formula Card (GH #395).
-    const promptText = (screen.getByText(/Copy this prompt and paste it into AI Assist/).parentElement?.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    // The prompt may come in parts past AI Mode's size (GH #499) — read every part.
+    const promptText = screen.getAllByLabelText(/^Prompt( part \d+ of \d+)?$/)
+      .map((promptField) => (promptField as HTMLTextAreaElement).value).join('\n');
     expect(promptText).toContain('Formula Card');
     expect(promptText).toContain('Backout Plan:');
     expect(promptText).toContain('RISK_CHECK_TABLE:');
