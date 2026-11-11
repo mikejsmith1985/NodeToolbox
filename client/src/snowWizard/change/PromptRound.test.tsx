@@ -31,6 +31,24 @@ describe('PromptRound', () => {
     expect(screen.getByRole('status').textContent).toBe('Read 2 suggestions.');
   });
 
+  it('offers a follow-up to copy when the reply strayed, and clears the box so the next reply is read on paste (GH #499)', () => {
+    const onReadReply = vi.fn(() => ({ message: 'No timings could be read.', followUpPrompt: 'Your last reply was not in the form I need.' }));
+    render(<PromptRound promptText="Time these" copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={onReadReply} />);
+
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'CTASK01 | 13:00 | 14:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
+
+    expect(screen.getByRole('status').textContent).toBe('No timings could be read.');
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toBe('Your last reply was not in the form I need.');
+    expect(screen.getByRole('button', { name: 'Copy the follow-up' })).toBeTruthy();
+    expect((screen.getByLabelText(/Paste the assistant/) as HTMLTextAreaElement).value).toBe('');
+
+    onReadReply.mockReturnValueOnce({ message: 'Every task is timed.', followUpPrompt: '' });
+    fireEvent.change(screen.getByLabelText(/Paste the assistant/), { target: { value: 'T1 | 30 | 15 | 20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read the reply' }));
+    expect(screen.queryByLabelText('Follow-up for the same AI chat')).toBeNull();
+  });
+
   it('pastes the reply from the clipboard and reads it in one click, and says so when the browser will not share it', async () => {
     const onReadReply = vi.fn(() => 'Read 3 fields.');
     const readText = vi.fn(async () => 'BACKOUT_PLAN: 1. Redeploy v1');

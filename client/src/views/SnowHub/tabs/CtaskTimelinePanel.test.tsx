@@ -77,6 +77,29 @@ describe('CtaskTimelinePanel', () => {
     expect(screen.getByText(/The reply left out CTASK0000002/)).toBeInTheDocument();
   });
 
+  it('offers a follow-up for the tasks left out, and adds its answer to the first reply (GH #499)', async () => {
+    render(<CtaskTimelinePanel changeSysId="chg-1" changeWindow={WINDOW} />);
+    fireEvent.click(screen.getByRole('button', { name: /Plan the CTASK timeline with AI Assist/ }));
+    const replyBox = await screen.findByLabelText(/Paste the assistant/);
+
+    // An answer engine's schedule: start times and its own numbers, so nothing is readable.
+    fireEvent.change(replyBox, { target: { value: 'CTASK02 | CTASK0000002 — Review | 2026-10-10T05:00 | 2026-10-10T06:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this timeline' }));
+    expect(screen.getByRole('status')).toHaveTextContent('No task minutes could be read');
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toContain('CTASK0000001 — Deploy recon | ___');
+
+    fireEvent.change(replyBox, { target: { value: 'Task\tMinutes\nCTASK0000001 — Deploy recon\t45 min' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this timeline' }));
+    expect((screen.getByLabelText('Follow-up for the same AI chat') as HTMLTextAreaElement).value).toContain('CTASK0000002 — Review Technical Checkout | ___');
+
+    fireEvent.change(replyBox, { target: { value: 'CTASK0000002 — Review Technical Checkout | 20 | then' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this timeline' }));
+    expect(screen.queryByLabelText('Follow-up for the same AI chat')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(await screen.findByText(/CTASK0000002 · .* \(20 min\)/)).toBeInTheDocument();
+    expect(screen.getByText(/CTASK0000001 · .* \(45 min\)/)).toBeInTheDocument();
+  });
+
   it('shows ServiceNow\'s own reason when it refuses a task\'s dates', async () => {
     vi.mocked(saveCtaskPlannedDates).mockImplementation(async (ctask) => {
       if (ctask.number === 'CTASK0000001') throw new Error('Data Policy Exception: Planned start date must be within the change window');

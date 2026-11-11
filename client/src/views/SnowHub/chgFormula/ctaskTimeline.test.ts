@@ -58,7 +58,19 @@ describe('buildCtaskTimelinePrompt', () => {
     expect(prompt).toContain('Deploy usmg-enrollment-ingestion PR 98.');
     expect(prompt).toContain('estimated: implementation 30 min, validation 15 min');
     expect(prompt).toContain('TIMELINE:');
-    expect(prompt).toMatch(/<CTASK number> \| <minutes>/);
+  });
+
+  it('ends with a table already listing every task, for the assistant to fill in (GH #499)', () => {
+    const prompt = buildCtaskTimelinePrompt(ALL_TASKS, WINDOW);
+
+    expect(prompt.trimEnd().endsWith([
+      'TIMELINE:',
+      'Task | Minutes | Why it runs here',
+      'CTASK0000003 — Review Business Checkout | ___ | ___',
+      'CTASK0000002 — Review Technical Checkout | ___ | ___',
+      'CTASK0000001 — Deploy recon service | ___ | ___',
+    ].join('\n'))).toBe(true);
+    expect(prompt).toContain('Do not add, remove, rename or renumber tasks');
   });
 });
 
@@ -66,10 +78,39 @@ describe('parseCtaskTimelineReply', () => {
   it('reads the order and minutes, ignoring unknown tasks and naming any left out', () => {
     const reply = '```text\nTIMELINE:\nCTASK0000001 | 45 | deploy then validate\nCTASK0000099 | 10\nCTASK0000002 | 20\n```';
 
-    expect(parseCtaskTimelineReply(reply, ALL_TASKS)).toEqual({
+    expect(parseCtaskTimelineReply(reply, ALL_TASKS)).toMatchObject({
       entries: [{ ctaskNumber: 'CTASK0000001', minutes: 45 }, { ctaskNumber: 'CTASK0000002', minutes: 20 }],
       missingNumbers: ['CTASK0000003'],
     });
+  });
+
+  it('reads the filled-in table as a web page copies it: tabs, bold, a header, lengths in hours', () => {
+    const reply = [
+      'Why it runs here\tTask\tMinutes',
+      'deploy first\t**CTASK0000001 — Deploy recon service**\t1.5 Hours',
+      'then check\tCTASK0000002 — Review Technical Checkout\t~20 min',
+      '| CTASK0000003 — Review Business Checkout | 30 | last |',
+    ].join('\n');
+
+    expect(parseCtaskTimelineReply(reply, ALL_TASKS)).toMatchObject({
+      entries: [
+        { ctaskNumber: 'CTASK0000001', minutes: 90 },
+        { ctaskNumber: 'CTASK0000002', minutes: 20 },
+        { ctaskNumber: 'CTASK0000003', minutes: 30 },
+      ],
+      missingNumbers: [],
+      followUpPrompt: '',
+    });
+  });
+
+  it('never reads a start time as minutes, and asks for the table again for every task it could not read', () => {
+    // Google AI Mode's reply shape: start and end times, with its own task numbers.
+    const reply = 'CTASK02 | CTASK0000002 — Review Technical Checkout | 2026-11-12T14:30 | 2026-11-12T15:30 | Release Eng';
+
+    const parsed = parseCtaskTimelineReply(reply, ALL_TASKS);
+    expect(parsed.entries).toEqual([]);
+    expect(parsed.followUpPrompt).toContain('was not in the form I need');
+    expect(parsed.followUpPrompt).toContain('CTASK0000002 — Review Technical Checkout | ___ | ___');
   });
 });
 

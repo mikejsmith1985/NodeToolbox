@@ -53,7 +53,18 @@ describe('the timing prompt', () => {
     const promptText = buildTaskTimelinePrompt(buildDraft([DEPLOY]));
     expect(promptText).toContain('estimate it from the Jira work');
     expect(promptText).toContain('Never answer "unknown", "TBD", "not estimated", 0 or a range, and do not ask me');
-    expect(promptText).toContain('<task id> | <implementation minutes> | <validation minutes> | <backout minutes> | <in order');
+  });
+
+  it('ends with a table already listing every task, for the assistant to fill in rather than invent (GH #499)', () => {
+    const promptText = buildTaskTimelinePrompt(buildDraft([DEPLOY, BUSINESS]));
+    expect(promptText).toContain([
+      'TIMELINE:',
+      'Task | Implementation minutes | Validation minutes | Backout minutes | Runs | Why',
+      'T1 — Deploy payments | ___ | ___ | ___ | ___ | ___',
+      'T2 — Business Checkout | ___ | ___ | ___ | ___ | ___',
+    ].join('\n'));
+    expect(promptText).toContain('Do not add, remove, rename or renumber tasks');
+    expect(promptText.trimEnd().endsWith('T2 — Business Checkout | ___ | ___ | ___ | ___ | ___')).toBe(true);
   });
 });
 
@@ -73,7 +84,7 @@ describe('the timing prompt asks how each task runs', () => {
     expect(promptText).toContain('"whole window": a task kept only for awareness or on stand-by');
     expect(promptText).toContain('"with T<n>": a task that can run at the same time as task T<n>');
     expect(promptText).toContain('add "; not before HH:MM <zone>" in 24-hour time');
-    expect(promptText).toContain('<in order / whole window / with T<n>, then "; not before HH:MM <zone>" if any> | <why>');
+    expect(promptText).toContain('In the Runs column write in order, whole window or with T<n>');
   });
 });
 
@@ -130,6 +141,43 @@ describe('reading the timing reply', () => {
       '| **T2** | 10 | 5 | 5 | checkout |',
     ].join('\n');
     expect(Object.keys(readTaskTimelineReply(tableReply, cards).estimatesByTaskId)).toEqual(['c1', 'c2']);
+  });
+
+  it('reads the columns by their header, in whatever order a table copied from a web page has them', () => {
+    const tabTable = [
+      'Task\tRuns\tBackout\tImplementation\tValidation',
+      'T1 — Deploy\tin order\t20 min\t1.5 Hours\t15 min',
+      'T2 — Checkout\twith T1\t5\t10\t5',
+    ].join('\n');
+    const reply = readTaskTimelineReply(tabTable, cards, '2026-10-24T22:00');
+    expect(reply.estimatesByTaskId).toEqual({
+      c1: { implementationMinutes: '90', validationMinutes: '15', backoutMinutes: '20' },
+      c2: { implementationMinutes: '10', validationMinutes: '5', backoutMinutes: '5' },
+    });
+    expect(reply.placementsByTaskId.c2).toEqual({ runMode: 'alongside', alongsideTaskTitle: 'Deploy' });
+  });
+
+  it('turns down a schedule with one duration per task and hands over a fix-the-format prompt (GH #499)', () => {
+    // Google AI Mode's real reply: its own CTASK numbers, start and end times and one duration — never three estimates.
+    const aiModeReply = [
+      'CTASK # | Task Name | Planned Start | Planned End | Duration | Assignee / Role',
+      '-- | -- | -- | -- | -- | --',
+      'CTASK01 | Code Promotion & Artifact Deployment | 2026-11-12T13:00 | 2026-11-12T14:30 | 1.5 Hours | DevOps',
+      'CTASK02 | T1 — Deploy | 2026-11-12T14:30 | 2026-11-12T15:30 | 1.0 Hour | Release Eng / QA',
+    ].join('\n');
+    const reply = readTaskTimelineReply(aiModeReply, cards);
+    expect(reply.isUsable).toBe(false);
+    expect(reply.estimatesByTaskId).toEqual({});
+    expect(reply.followUpPrompt).toContain('was not in the form I need');
+    expect(reply.followUpPrompt).toContain('T1 — Deploy | ___ | ___ | ___ | ___ | ___');
+    expect(reply.message).toContain('Copy the follow-up');
+  });
+
+  it('asks again for only the tasks a reply left out, and asks nothing once all are timed', () => {
+    const partReply = readTaskTimelineReply('TIMELINE:\nT1 | 30 | 15 | 20 | in order | ok', cards);
+    expect(partReply.followUpPrompt).toContain('T2 — Checkout | ___');
+    expect(partReply.followUpPrompt).not.toContain('T1 — Deploy');
+    expect(readTaskTimelineReply('T1 | 30 | 15 | 20\nT2 | 10 | 5 | 5', cards).followUpPrompt).toBe('');
   });
 
   it('matches a modify\'s cards by their CTASK number or their title, and names that number in the prompt', () => {

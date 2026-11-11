@@ -11,6 +11,7 @@ import type { ReviewedCtask } from '../chgFormula/ctaskReviewRecord.ts';
 import {
   buildCtaskTimelinePrompt,
   isTimelinePastWindow,
+  NO_TIMELINE_ROWS_MESSAGE,
   parseCtaskTimelineReply,
   scheduleCtaskTimeline,
   type ChangeWindow,
@@ -38,6 +39,14 @@ function formatFormDateTime(formDateTimeUtc: string): string {
   const padTwo = (value: number) => String(value).padStart(2, '0');
   return `${instant.getFullYear()}-${padTwo(instant.getMonth() + 1)}-${padTwo(instant.getDate())} `
     + `${padTwo(instant.getHours())}:${padTwo(instant.getMinutes())}`;
+}
+
+/** The status once a reply is captured, asking for the follow-up while any task is still missing. */
+function describeCapturedTimeline(missingNumbers: readonly string[]): string {
+  return missingNumbers.length === 0
+    ? 'Timeline captured — check it below, then write the dates.'
+    : `Timeline captured without ${missingNumbers.join(', ')} — copy the follow-up below into the same AI chat for them, `
+      + 'then paste its reply here.';
 }
 
 /** "1 CTASK", "2 CTASKs". */
@@ -109,18 +118,23 @@ export function CtaskTimelinePanel({ changeSysId, changeWindow }: CtaskTimelineP
     }
     setCtasks(loadedTasks);
     setPlannedReply(null);
+    // Every usable reply in this round is kept, so a follow-up's answer for the tasks left out adds to the first (GH #499).
+    let roundReplies = '';
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to plan the order of operations, then paste its reply below — '
         + 'Toolbox dates each CTASK back to back from the change\'s planned start.',
       promptText: buildCtaskTimelinePrompt(loadedTasks, changeWindow),
       applyButtonLabel: 'Use this timeline',
       applyReply: (replyText) => {
-        if (parseCtaskTimelineReply(replyText, loadedTasks).entries.length === 0) {
-          return { statusMessage: 'No "CTASK… | minutes" lines were found in the pasted reply.', wasApplied: false };
+        const replyTimeline = parseCtaskTimelineReply(replyText, loadedTasks);
+        if (replyTimeline.entries.length === 0) {
+          return { statusMessage: NO_TIMELINE_ROWS_MESSAGE, wasApplied: false, followUpPrompt: replyTimeline.followUpPrompt };
         }
-        setPlannedReply(replyText);
+        roundReplies = roundReplies === '' ? replyText : `${roundReplies}\n${replyText}`;
+        const { missingNumbers, followUpPrompt } = parseCtaskTimelineReply(roundReplies, loadedTasks);
+        setPlannedReply(roundReplies);
         setStatusMessage('');
-        return { statusMessage: 'Timeline captured — check it below, then write the dates.', wasApplied: true };
+        return { statusMessage: describeCapturedTimeline(missingNumbers), wasApplied: true, followUpPrompt };
       },
     });
   };

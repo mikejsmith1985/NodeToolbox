@@ -9,6 +9,9 @@ import { describeEstimatesForPrompt, readEstimatesFromText } from '../ctaskDurat
 import { CODE_BLOCK_REPLY_INSTRUCTION, stripCodeFences } from './assistantReplyText.ts';
 import type { ReviewedCtask } from './ctaskReviewRecord.ts';
 import { EVIDENCE_RULE_LINES } from './evidenceRules.ts';
+import {
+  buildFillInTable, buildFormatFixPrompt, describeFillInRules, findHeaderColumns, readDurationCellMinutes, splitReplyCells,
+} from './replyTable.ts';
 
 /** One task's place in the order the assistant gave, and how long it takes. */
 export interface CtaskTimelineEntry {
@@ -38,9 +41,15 @@ const STAGE_PATTERNS: readonly RegExp[] = [
 ];
 const OTHER_STAGE_RANK = STAGE_PATTERNS.length;
 const STAGE_ORDER_TEXT = 'Implementation → Review Technical Checkout → Review Business Checkout';
-// The reply marker, then one "CTASK… | minutes" line per task.
+// The reply marker, then the filled-in table: one "CTASK… — title | minutes | why" row per task.
 const TIMELINE_MARKER = 'TIMELINE:';
-const TIMELINE_LINE_PATTERN = /^\s*[-*]?\s*(CTASK\d+)\s*\|\s*(\d+)/i;
+const CTASK_NUMBER_PATTERN = /CTASK\d+/gi;
+/** The fill-in table's header; the reader finds each column by these names, in whatever order a reply has them. */
+const TIMELINE_TABLE_HEADER = ['Task', 'Minutes', 'Why it runs here'];
+const TIMELINE_HEADER_COLUMNS = { task: /^(?:task|ctask)/i, minutes: /minute|duration|length/i };
+/** What to say when a reply has no row this reader can use — usually an assistant that answered in its own shape. */
+export const NO_TIMELINE_ROWS_MESSAGE = 'No task minutes could be read — the reply needs each CTASK with its minutes, not start '
+  + 'and end times. Copy the follow-up below into the same AI chat, then paste its reply here.';
 const MILLISECONDS_PER_MINUTE = 60_000;
 // The form's date-time length: "YYYY-MM-DDTHH:mm".
 const FORM_DATE_TIME_LENGTH = 16;
@@ -65,7 +74,16 @@ function renderTimelineTask(ctask: ReviewedCtask): string {
   ].join('\n');
 }
 
-/** The prompt that asks for the order of operations and each task's minutes. */
+/** The table the prompt ends with: every task by number and title, its minutes and reason left blank. */
+function buildTimelineFillInTable(ctasks: readonly ReviewedCtask[]): string[] {
+  return buildFillInTable(TIMELINE_TABLE_HEADER, ctasks.map((ctask) => [`${ctask.number} — ${ctask.shortDescription.trim()}`]));
+}
+
+/**
+ * The prompt that asks for the order of operations and each task's minutes. It ends with a table listing every task
+ * for the assistant to fill in: an answer engine completes a table far more reliably than it follows a line format
+ * (GH #499), and the rows it is given cannot be renumbered or added to.
+ */
 export function buildCtaskTimelinePrompt(ctasks: readonly ReviewedCtask[], changeWindow: ChangeWindow): string {
   return [
     'You are a Release Manager planning the order of operations for a ServiceNow change\'s tasks (CTASKs).',
@@ -82,29 +100,53 @@ export function buildCtaskTimelinePrompt(ctasks: readonly ReviewedCtask[], chang
     '',
     ...EVIDENCE_RULE_LINES,
     '',
-    `Reply with ${TIMELINE_MARKER} and then one line per task, in the order they run:`,
-    '<CTASK number> | <minutes> | <why it runs here>',
-    '',
+    'Order the rows in the order the tasks run.',
+    ...describeFillInRules(TIMELINE_MARKER),
     CODE_BLOCK_REPLY_INSTRUCTION,
+    '',
+    TIMELINE_MARKER,
+    ...buildTimelineFillInTable(ctasks),
   ].join('\n');
 }
 
-/** The order and minutes from a pasted reply, keeping only this change's tasks, and naming any it left out. */
+/** One reply row read: the first of this change's CTASK numbers it names, and its minutes. Null when it is not one. */
+function readTimelineRow(
+  cells: readonly string[],
+  knownNumbers: ReadonlySet<string>,
+  headerColumns: Partial<Record<keyof typeof TIMELINE_HEADER_COLUMNS, number>> | null,
+): CtaskTimelineEntry | null {
+  const taskCellIndex = cells.findIndex((cellText) => (cellText.match(CTASK_NUMBER_PATTERN) ?? [])
+    .some((ctaskNumber) => knownNumbers.has(ctaskNumber.toUpperCase())));
+  if (taskCellIndex === -1) return null;
+  const ctaskNumber = (cells[taskCellIndex].match(CTASK_NUMBER_PATTERN) ?? [])
+    .map((matchedNumber) => matchedNumber.toUpperCase()).find((matchedNumber) => knownNumbers.has(matchedNumber)) as string;
+  // The header's Minutes column when it holds a length; otherwise the first length after the task, as the form asks.
+  const headerMinutes = headerColumns?.minutes === undefined ? null : readDurationCellMinutes(cells[headerColumns.minutes] ?? '');
+  const minutes = headerMinutes ?? cells.slice(taskCellIndex + 1).map((cellText) => readDurationCellMinutes(cellText))
+    .find((cellMinutes) => cellMinutes !== null) ?? null;
+  return minutes === null ? null : { ctaskNumber, minutes };
+}
+
+/**
+ * The order and minutes from a pasted reply, keeping only this change's tasks, naming any it left out, and — when any
+ * are missing — a follow-up asking for just those, in the same table. A start or end time is never read as minutes.
+ */
 export function parseCtaskTimelineReply(
   replyText: string,
   ctasks: readonly ReviewedCtask[],
-): { entries: CtaskTimelineEntry[]; missingNumbers: string[] } {
+): { entries: CtaskTimelineEntry[]; missingNumbers: string[]; followUpPrompt: string } {
   const knownNumbers = new Set(ctasks.map((ctask) => ctask.number.toUpperCase()));
   const entries: CtaskTimelineEntry[] = [];
+  let headerColumns: Partial<Record<keyof typeof TIMELINE_HEADER_COLUMNS, number>> | null = null;
   for (const replyLine of stripCodeFences(replyText).split(/\r?\n/)) {
-    const lineMatch = TIMELINE_LINE_PATTERN.exec(replyLine);
-    const ctaskNumber = lineMatch?.[1].toUpperCase() ?? '';
-    if (lineMatch && knownNumbers.has(ctaskNumber) && !entries.some((entry) => entry.ctaskNumber === ctaskNumber)) {
-      entries.push({ ctaskNumber, minutes: Number(lineMatch[2]) });
-    }
+    const cells = splitReplyCells(replyLine);
+    headerColumns = findHeaderColumns(cells, TIMELINE_HEADER_COLUMNS) ?? headerColumns;
+    const entry = readTimelineRow(cells, knownNumbers, headerColumns);
+    if (entry && !entries.some((knownEntry) => knownEntry.ctaskNumber === entry.ctaskNumber)) entries.push(entry);
   }
-  const missingNumbers = ctasks.map((ctask) => ctask.number).filter((ctaskNumber) => !entries.some((entry) => entry.ctaskNumber === ctaskNumber));
-  return { entries, missingNumbers };
+  const missingTasks = ctasks.filter((ctask) => !entries.some((entry) => entry.ctaskNumber === ctask.number.toUpperCase()));
+  const followUpPrompt = missingTasks.length === 0 ? '' : buildFormatFixPrompt(TIMELINE_MARKER, buildTimelineFillInTable(missingTasks));
+  return { entries, missingNumbers: missingTasks.map((ctask) => ctask.number), followUpPrompt };
 }
 
 /** A form date-time moved on by some minutes, in the same form. */

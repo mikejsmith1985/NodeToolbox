@@ -10,6 +10,9 @@
 // which run alongside another, which are only on stand-by for the whole window, and which may not start before a time.
 
 import { stripCodeFences, CODE_BLOCK_REPLY_INSTRUCTION } from '../../views/SnowHub/chgFormula/assistantReplyText.ts';
+import {
+  buildFillInTable, buildFormatFixPrompt, describeFillInRules, findHeaderColumns, readDurationCellMinutes, splitReplyCells,
+} from '../../views/SnowHub/chgFormula/replyTable.ts';
 import { rankCtaskStage } from '../../views/SnowHub/chgFormula/ctaskTimeline.ts';
 import {
   formatMinutes, listMissingEstimateLabels, normalizeEstimates, readEstimateMinutes, readPlannedWindowMinutes, type DurationEstimates,
@@ -52,24 +55,31 @@ export interface TaskTimelineReply {
   estimatesByTaskId: Record<string, DurationEstimates>;
   /** Where each card runs in the window, by card id — only for the lines that said so. */
   placementsByTaskId: Record<string, TaskTimelinePlacement>;
+  /** A follow-up asking for the tasks still untimed, in the asked-for table; '' once every task is timed. */
+  followUpPrompt: string;
 }
 
 /** The line that starts the reply's timings. */
 export const TIMELINE_REPLY_MARKER = 'TIMELINE:';
-// One cell's length: "30", "30 min", "1h 30m", "1.5 hours", "2 hrs". Assistants word it every way, so all are read.
-const DURATION_CELL_PATTERN = /^(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*(?:m(?:in(?:ute)?s?)?)?)?$/i;
 const PROMPT_ID_PATTERN = /\bT(\d+)\b/i;
 const CTASK_NUMBER_PATTERN = /CTASK\d+/i;
-// Bold, italic and code marks an assistant puts around a table cell or a list item.
-const MARKDOWN_MARK_PATTERN = /\*\*|__|`/g;
-const MINUTES_PER_HOUR = 60;
 const ESTIMATES_PER_LINE = 3;
+/** The fill-in table's header; the reader finds each column by these names, in whatever order a reply has them. */
+const TIMELINE_TABLE_HEADER = ['Task', 'Implementation minutes', 'Validation minutes', 'Backout minutes', 'Runs', 'Why'];
+const TIMELINE_HEADER_COLUMNS = {
+  implementation: /implement/i,
+  validation: /validat/i,
+  backout: /back.?out/i,
+  runs: /^runs?\b|run mode|placement/i,
+};
+type TimelineHeaderColumns = Partial<Record<keyof typeof TIMELINE_HEADER_COLUMNS, number>>;
 const IMPLEMENTATION_TASK_TYPE = 'implementation';
 const MILLISECONDS_PER_MINUTE = 60_000;
 // The form's date-time length: "YYYY-MM-DDTHH:mm".
 const FORM_DATE_TIME_LENGTH = 16;
-const NOT_A_TIMING_MESSAGE = '⚠️ No task timings could be read from that reply. Each task needs a line with its id (T1, T2…) '
-  + 'and three lengths, like “T1 | 30 | 15 | 20 | why”. Ask the assistant to answer in that form, then paste its whole reply again.';
+const NOT_A_TIMING_MESSAGE = '⚠️ No task timings could be read from that reply. Each task needs its id (T1, T2…) and three '
+  + 'lengths — implementation, validation and backout — not start and end times or one duration. Copy the follow-up below '
+  + 'into the same AI chat, then paste its whole reply here.';
 
 /** "T1", "T2": how the prompt names each card, so the reply can say which is which. */
 function readTaskPromptId(taskIndex: number): string {
@@ -298,8 +308,15 @@ const TIMING_RULES = [
   '  Then, when a task\'s title or instructions say it must start or finish after a time ("after 5:00 CST", '
     + '"After-Hours Requirement"), add "; not before HH:MM <zone>" in 24-hour time, with the zone it states. '
     + 'An after-hours time is in the evening, so "5:00" there is 17:00.',
+  'In the Runs column write in order, whole window or with T<n>, then the "; not before" time when there is one.',
   'The tasks that run in order or alongside must fit inside each change\'s window; backout time is held in reserve.',
 ];
+
+/** The table the timing prompt ends with: every task named by its id and title, every answer blank. */
+function buildTimelineFillInTable(cards: readonly CtaskTemplate[]): string[] {
+  const rowNamingCells = cards.map((card, cardIndex) => [`${readTaskPromptId(cardIndex)} — ${describeTaskCard(card, cardIndex)}${readCtaskNumberText(card)}`]);
+  return buildFillInTable(TIMELINE_TABLE_HEADER, rowNamingCells);
+}
 
 /** What the earlier steps already say about the change, so each task is timed and placed with the whole picture. */
 function describeChangeForPrompt(draft: CrgDraftState): string[] {
@@ -314,7 +331,11 @@ function describeChangeForPrompt(draft: CrgDraftState): string[] {
   return factLines.length > 0 ? ['', 'What the earlier steps say about this change:', ...factLines] : [];
 }
 
-/** The timing prompt: the windows, every task, the Jira work, the rules, and the exact reply form. */
+/**
+ * The timing prompt: the windows, every task, the Jira work, the rules, and a table listing every task for the assistant
+ * to fill in. The table comes last, so it is the last thing read: an answer engine follows a table it can complete far
+ * better than a line format it must invent (GH #499).
+ */
 export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
   const enabledEnvironments = readEnabledPlanEnvironments(draft);
   const selectedIssues = readSelectedIssues(draft);
@@ -331,26 +352,12 @@ export function buildTaskTimelinePrompt(draft: CrgDraftState): string {
     '',
     ...TIMING_RULES,
     '',
-    `Reply with ${TIMELINE_REPLY_MARKER} and then one line per task:`,
-    '<task id> | <implementation minutes> | <validation minutes> | <backout minutes> | <in order / whole window / with T<n>, then "; not before HH:MM <zone>" if any> | <why>',
-    '',
+    ...describeFillInRules(TIMELINE_REPLY_MARKER),
     CODE_BLOCK_REPLY_INSTRUCTION,
+    '',
+    TIMELINE_REPLY_MARKER,
+    ...buildTimelineFillInTable(draft.changeTasks),
   ].join('\n');
-}
-
-/** A cell's length in whole minutes, or null when the cell is not a length (a title, a reason, an empty cell). */
-function readDurationCell(cellText: string): number | null {
-  const durationMatch = DURATION_CELL_PATTERN.exec(cellText.trim());
-  if (!durationMatch || (durationMatch[1] === undefined && durationMatch[2] === undefined)) return null;
-  const totalMinutes = Number(durationMatch[1] ?? 0) * MINUTES_PER_HOUR + Number(durationMatch[2] ?? 0);
-  return totalMinutes > 0 ? Math.round(totalMinutes) : null;
-}
-
-/** A reply line as cells: split on "|" (a table or the asked-for form), else on tabs or commas. */
-function splitReplyCells(replyLine: string): string[] {
-  const plainLine = replyLine.replace(MARKDOWN_MARK_PATTERN, '').trim();
-  const separator = plainLine.includes('|') ? '|' : /\t|,/;
-  return plainLine.split(separator).map((cellText) => cellText.trim()).filter((cellText) => cellText !== '');
 }
 
 /** Lower-case letters and digits only, so a title compares without punctuation or spacing. */
@@ -376,23 +383,46 @@ interface TimingLine {
   placement: TaskTimelinePlacement | null;
 }
 
-/** The cell indexes holding the first three lengths, or null when the line has fewer. */
-function findLengthCellIndexes(cells: readonly string[]): number[] | null {
-  const lengthIndexes = cells.flatMap((cellText, cellIndex) => (readDurationCell(cellText) !== null ? [cellIndex] : []));
-  return lengthIndexes.length >= ESTIMATES_PER_LINE ? lengthIndexes.slice(0, ESTIMATES_PER_LINE) : null;
+/** Where a line's three lengths and its placement sit, and where the cells naming its task end. */
+interface TimingCellLayout {
+  lengthIndexes: number[];
+  placementIndex: number;
+  namingEndIndex: number;
+}
+
+/** The layout a header row named, when it named all three estimate columns and each holds a length on this line. */
+function readHeaderLayout(cells: readonly string[], headerColumns: TimelineHeaderColumns | null): TimingCellLayout | null {
+  const { implementation, validation, backout, runs } = headerColumns ?? {};
+  if (implementation === undefined || validation === undefined || backout === undefined) return null;
+  const lengthIndexes = [implementation, validation, backout];
+  if (lengthIndexes.some((cellIndex) => readDurationCellMinutes(cells[cellIndex] ?? '') === null)) return null;
+  return { lengthIndexes, placementIndex: runs ?? -1, namingEndIndex: Math.min(...lengthIndexes, runs ?? Infinity) };
+}
+
+/** With no header: the first three lengths, the placement in the cell right after them. */
+function readPositionalLayout(cells: readonly string[]): TimingCellLayout | null {
+  const lengthIndexes = cells.flatMap((cellText, cellIndex) => (readDurationCellMinutes(cellText) !== null ? [cellIndex] : []));
+  if (lengthIndexes.length < ESTIMATES_PER_LINE) return null;
+  const firstThree = lengthIndexes.slice(0, ESTIMATES_PER_LINE);
+  // An older reply puts the reason after the lengths, which reads as no placement.
+  return { lengthIndexes: firstThree, placementIndex: firstThree[ESTIMATES_PER_LINE - 1] + 1, namingEndIndex: firstThree[0] };
 }
 
 /** One reply line read, or null when it is not a timing line. */
-function readTimingLine(replyLine: string, cards: readonly CtaskTemplate[], placementContext: PlacementReadContext): TimingLine | null {
+function readTimingLine(
+  replyLine: string,
+  cards: readonly CtaskTemplate[],
+  placementContext: PlacementReadContext,
+  headerColumns: TimelineHeaderColumns | null,
+): TimingLine | null {
   const cells = splitReplyCells(replyLine);
-  const lengthIndexes = findLengthCellIndexes(cells);
-  if (!lengthIndexes || lengthIndexes[0] < 1) return null;
-  const card = findNamedCard(cells.slice(0, lengthIndexes[0]).join(' '), cards);
+  const layout = readHeaderLayout(cells, headerColumns) ?? readPositionalLayout(cells);
+  if (!layout || layout.namingEndIndex < 1) return null;
+  const card = findNamedCard(cells.slice(0, layout.namingEndIndex).join(' '), cards);
   if (!card) return null;
-  const [implementationMinutes, validationMinutes, backoutMinutes] = lengthIndexes.map((cellIndex) => String(readDurationCell(cells[cellIndex])));
-  // The placement is the cell right after the three lengths; an older reply puts the reason there, which reads as none.
-  const placementCell = cells[lengthIndexes[ESTIMATES_PER_LINE - 1] + 1] ?? '';
-  const placement = readPlacementCell(placementCell, placementContext);
+  const [implementationMinutes, validationMinutes, backoutMinutes] = layout.lengthIndexes
+    .map((cellIndex) => String(readDurationCellMinutes(cells[cellIndex])));
+  const placement = readPlacementCell(cells[layout.placementIndex] ?? '', placementContext);
   return { card, estimates: { implementationMinutes, validationMinutes, backoutMinutes }, placement };
 }
 
@@ -405,6 +435,14 @@ function buildPlacementContext(cards: readonly CtaskTemplate[], windowDate: stri
   };
 }
 
+/** The follow-up asking for just these cards, in the same table under their prompt ids; '' when none is needed. */
+function buildTimelineFollowUp(cards: readonly CtaskTemplate[], askedCards: readonly CtaskTemplate[]): string {
+  if (askedCards.length === 0) return '';
+  const fillInTable = buildTimelineFillInTable(cards);
+  const askedRows = fillInTable.filter((_tableLine, lineIndex) => lineIndex === 0 || askedCards.includes(cards[lineIndex - 1]));
+  return buildFormatFixPrompt(TIMELINE_REPLY_MARKER, askedRows);
+}
+
 /**
  * Reads a pasted timing reply into each card's three estimates, naming any card it left untimed. Lines are matched by
  * the task's prompt id, its CTASK number or its title, in the asked-for form, a markdown table, or a list.
@@ -413,17 +451,25 @@ export function readTaskTimelineReply(replyText: string, cards: readonly CtaskTe
   const estimatesByTaskId: Record<string, DurationEstimates> = {};
   const placementsByTaskId: Record<string, TaskTimelinePlacement> = {};
   const placementContext = buildPlacementContext(cards, windowDate);
+  let headerColumns: TimelineHeaderColumns | null = null;
   for (const replyLine of stripCodeFences(replyText).split(/\r?\n/)) {
-    const timingLine = readTimingLine(replyLine, cards, placementContext);
+    // A header row sets which column is which for the rows under it, so an assistant's own column order still reads.
+    headerColumns = findHeaderColumns(splitReplyCells(replyLine), TIMELINE_HEADER_COLUMNS) ?? headerColumns;
+    const timingLine = readTimingLine(replyLine, cards, placementContext, headerColumns);
     if (!timingLine || estimatesByTaskId[timingLine.card.id]) continue;
     estimatesByTaskId[timingLine.card.id] = timingLine.estimates;
     if (timingLine.placement) placementsByTaskId[timingLine.card.id] = timingLine.placement;
   }
   const timedCount = Object.keys(estimatesByTaskId).length;
-  if (timedCount === 0) return { isUsable: false, message: NOT_A_TIMING_MESSAGE, estimatesByTaskId, placementsByTaskId };
-  const untimedLabels = cards.flatMap((card, cardIndex) => (estimatesByTaskId[card.id] ? [] : [describeTaskCard(card, cardIndex)]));
+  if (timedCount === 0) {
+    return { isUsable: false, message: NOT_A_TIMING_MESSAGE, estimatesByTaskId, placementsByTaskId, followUpPrompt: buildTimelineFollowUp(cards, cards) };
+  }
+  // A card an earlier reply already timed is not missing: a follow-up's reply answers only the tasks it was asked about.
+  const untimedCards = cards.filter((card) => !estimatesByTaskId[card.id] && !isTaskTimed(card));
+  const followUpPrompt = buildTimelineFollowUp(cards, untimedCards);
+  const untimedLabels = untimedCards.map((card) => describeTaskCard(card, cards.indexOf(card)));
   const message = untimedLabels.length === 0
     ? `✓ Every task is timed (${timedCount}). The schedule below shows when each one runs.`
-    : `Timed ${timedCount} of ${cards.length}. The reply left out ${untimedLabels.join(', ')} — ask the assistant to time ${untimedLabels.length === 1 ? 'it' : 'them'} too, then paste the whole reply again.`;
-  return { isUsable: true, message, estimatesByTaskId, placementsByTaskId };
+    : `Timed ${timedCount} of ${cards.length}. The reply left out ${untimedLabels.join(', ')} — copy the follow-up below into the same AI chat, then paste its reply here.`;
+  return { isUsable: true, message, estimatesByTaskId, placementsByTaskId, followUpPrompt };
 }

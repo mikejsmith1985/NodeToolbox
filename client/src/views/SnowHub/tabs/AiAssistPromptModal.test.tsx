@@ -62,6 +62,23 @@ describe('AiAssistPromptModal', () => {
     expect(replyBox).toHaveValue('hello');
   });
 
+  it('offers a follow-up to copy into the same chat when the reply strayed, and drops it once one is not needed (GH #499)', () => {
+    const applyReply = vi.fn((): { statusMessage: string; wasApplied: boolean; followUpPrompt?: string } => (
+      { statusMessage: 'No timings read.', wasApplied: false, followUpPrompt: 'Your last reply was not in the form I need.' }
+    ));
+    render(<AiAssistPromptModal onClose={vi.fn()} session={buildSession({ applyReply })} />);
+    const replyBox = screen.getByLabelText(/Paste the assistant/);
+
+    fireEvent.change(replyBox, { target: { value: 'CTASK01 | 13:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /Use this review/ }));
+    expect(screen.getByLabelText('Follow-up for the same AI chat')).toHaveValue('Your last reply was not in the form I need.');
+    expect(screen.getByRole('button', { name: /Copy the follow-up/ })).toBeInTheDocument();
+
+    applyReply.mockReturnValueOnce({ statusMessage: 'Timeline captured.', wasApplied: true });
+    fireEvent.click(screen.getByRole('button', { name: /Use this review/ }));
+    expect(screen.queryByLabelText('Follow-up for the same AI chat')).toBeNull();
+  });
+
   it('closes on request', () => {
     const handleClose = vi.fn();
     render(<AiAssistPromptModal onClose={handleClose} session={buildSession()} />);

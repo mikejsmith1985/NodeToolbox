@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     somebody filled since the preview.
 
 ### Fixed
+- **CTASK timing works with Google's AI Mode, not only Copilot (GH #499).** AI Mode answers in its own shape: a
+  schedule with start/end times, one duration per task and tasks it made up. Both the SNow Wizard's "Time the tasks
+  with AI" and Toolbox's "Plan the CTASK timeline" (Create and Modify) now:
+  - End the prompt with a table that already lists every task, for the assistant to fill in. It cannot add,
+    drop or renumber a task.
+  - Read a reply however it is laid out: tab-separated (a table copied from a web page), pipes or markdown, with the
+    columns found by their header in any order, and lengths like "1.5 Hours" or "~20 min".
+  - Never read a start or end time as a length, and never guess a missing estimate.
+  - Show a **"Copy the follow-up"** prompt for the same AI chat when a reply strays from the table or leaves tasks
+    out. The follow-up asks only for the tasks still missing, and its answer is added to the first reply.
 - **QE/SL Backfill: Preview no longer stops on a bare "Failed: 502" and asks Jira for much less.**
   - A failure now names the step (field list, target search, target details, or source lookup), the row it reached,
     the request, and the reason.

@@ -22,8 +22,11 @@ export interface AiAssistPromptSession {
   promptText: string;
   /** Label for the button that consumes the pasted reply. */
   applyButtonLabel: string;
-  /** Consumes the pasted reply. Returns the status to show and whether the reply was used. */
-  applyReply: (replyText: string) => { statusMessage: string; wasApplied: boolean };
+  /**
+   * Consumes the pasted reply. Returns the status to show, whether the reply was used, and — when the reply strayed from
+   * the asked-for form or left items out — a follow-up for the same AI chat (GH #499).
+   */
+  applyReply: (replyText: string) => { statusMessage: string; wasApplied: boolean; followUpPrompt?: string };
 }
 
 interface AiAssistPromptModalProps {
@@ -33,6 +36,9 @@ interface AiAssistPromptModalProps {
 
 // The reply box's id, so its label names it for screen readers and tests alike.
 const REPLY_FIELD_ID = 'crg-ai-assist-reply';
+const FOLLOW_UP_FIELD_ID = 'crg-ai-assist-follow-up';
+// The follow-up's place in the copied-button tracking, apart from every prompt part's index.
+const FOLLOW_UP_COPY_INDEX = -1;
 
 /** The prompt to copy, a box for the reply, and the outcome of consuming it. */
 export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalProps) {
@@ -40,12 +46,15 @@ export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalPro
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const { hasCopied, confirmCopy } = useCopyFeedback();
   const [copiedPartIndex, setCopiedPartIndex] = useState<number | null>(null);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   // A prompt too long for one chat message comes as parts, each copied on its own (GH #475).
   const promptParts = splitPromptIntoParts(session.promptText);
+  const isFollowUpCopied = hasCopied && copiedPartIndex === FOLLOW_UP_COPY_INDEX;
 
   const handleApplyReply = () => {
     const applyOutcome = session.applyReply(replyText);
     setApplyStatus(applyOutcome.statusMessage);
+    setFollowUpPrompt(applyOutcome.followUpPrompt ?? '');
     // A used reply is cleared so a second paste starts clean; an unusable one stays to be corrected.
     if (applyOutcome.wasApplied) {
       setReplyText('');
@@ -105,6 +114,21 @@ export function AiAssistPromptModal({ session, onClose }: AiAssistPromptModalPro
           </button>
         </div>
         {applyStatus !== null ? <p className={styles.promptInstructions} role="status">{applyStatus}</p> : null}
+        {followUpPrompt ? (
+          <>
+            <label className={styles.promptInstructions} htmlFor={FOLLOW_UP_FIELD_ID}>Follow-up for the same AI chat</label>
+            <textarea className={styles.promptTextArea} id={FOLLOW_UP_FIELD_ID} readOnly value={followUpPrompt} />
+            <div className={styles.promptActions}>
+              <button
+                className={styles.aiAssistButton}
+                onClick={() => { setCopiedPartIndex(FOLLOW_UP_COPY_INDEX); confirmCopy(followUpPrompt); }}
+                type="button"
+              >
+                {isFollowUpCopied ? <><CheckIcon /> Copied!</> : <><ClipboardIcon /> Copy the follow-up</>}
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );

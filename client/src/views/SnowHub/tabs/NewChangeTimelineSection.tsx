@@ -12,7 +12,7 @@ import {
   toFormUtcFromApi,
   type CtaskTimelinePlanStep,
 } from '../chgFormula/createdCtaskTimeline.ts';
-import { buildCtaskTimelinePrompt } from '../chgFormula/ctaskTimeline.ts';
+import { buildCtaskTimelinePrompt, NO_TIMELINE_ROWS_MESSAGE, parseCtaskTimelineReply } from '../chgFormula/ctaskTimeline.ts';
 import { formatSnowDateTimeForApi, type useCrgState } from '../hooks/useCrgState.ts';
 import { AiAssistPromptModal, type AiAssistPromptSession } from './AiAssistPromptModal.tsx';
 import styles from './CreateChgTab.module.css';
@@ -50,18 +50,24 @@ export function NewChangeTimelineSection({ state, isAiAssistUnlocked, onSetPlan 
       state.changeTasks.map((changeTask) => ({ label: changeTask.shortDescription || changeTask.name, description: changeTask.description })),
       !state.reconcileAutoCtasks,
     );
+    // Every usable reply in this round is kept, so a follow-up's answer for the tasks left out adds to the first (GH #499).
+    let roundReplies = '';
     setPromptSession({
       instructions: 'Copy this prompt into AI Assist to plan the order of operations, then paste its reply below — each '
         + 'new change\'s CTASKs are dated from it, back to back from that change\'s planned start.',
       promptText: buildCtaskTimelinePrompt(plannedTasks, readPlanningWindow(state)),
       applyButtonLabel: 'Use this timeline',
       applyReply: (replyText) => {
-        const plan = readTimelinePlanFromReply(replyText, plannedTasks);
-        if (plan.length === 0) {
-          return { statusMessage: 'No "CTASK… | minutes" lines were found in the pasted reply.', wasApplied: false };
+        if (readTimelinePlanFromReply(replyText, plannedTasks).length === 0) {
+          const { followUpPrompt } = parseCtaskTimelineReply(replyText, plannedTasks);
+          return { statusMessage: NO_TIMELINE_ROWS_MESSAGE, wasApplied: false, followUpPrompt };
         }
+        roundReplies = roundReplies === '' ? replyText : `${roundReplies}\n${replyText}`;
+        const plan = readTimelinePlanFromReply(roundReplies, plannedTasks);
+        const { followUpPrompt } = parseCtaskTimelineReply(roundReplies, plannedTasks);
         onSetPlan(plan);
-        return { statusMessage: `Timeline planned for ${plan.length} tasks — they are dated when the change is created.`, wasApplied: true };
+        const missingText = followUpPrompt === '' ? '' : ' Some tasks were left out — copy the follow-up below into the same AI chat.';
+        return { statusMessage: `Timeline planned for ${plan.length} tasks — they are dated when the change is created.${missingText}`, wasApplied: true, followUpPrompt };
       },
     });
   };

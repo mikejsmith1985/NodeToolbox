@@ -10,7 +10,7 @@ import { formatMinutes } from '../../../views/SnowHub/ctaskDurations.ts';
 import type { CtaskTemplate, TaskTimelinePlacement } from '../../../views/SnowHub/hooks/useCrgState.ts';
 import styles from '../ChangeWizard.module.css';
 import type { CrgHook } from '../changeDraft.ts';
-import PromptRound from '../PromptRound.tsx';
+import PromptRound, { type PromptRoundOutcome } from '../PromptRound.tsx';
 import {
   buildEnvironmentTimelines, buildTaskTimelinePrompt, describeTaskTiming, listTimelineOverruns, readTaskTimelineReply, type EnvironmentTimeline,
 } from '../taskTimeline.ts';
@@ -106,8 +106,8 @@ export default function TaskTimelineSection({ crg }: { crg: CrgHook }) {
   const timelines = allTimelines.filter((timeline) => timeline.schedule.length > 0);
   const overruns = listTimelineOverruns(state);
 
-  /** Puts the reply's estimates and placements on the cards it timed; the message says what was read. */
-  function handleReadReply(replyText: string): string {
+  /** Puts the reply's estimates and placements on the cards it timed; the message says what was read, the follow-up what is missing. */
+  function handleReadReply(replyText: string): PromptRoundOutcome {
     const timingReply = readTaskTimelineReply(replyText, state.changeTasks, allTimelines[0]?.plannedStartDate ?? '');
     for (const card of state.changeTasks) {
       const durationEstimates = timingReply.estimatesByTaskId[card.id];
@@ -115,7 +115,7 @@ export default function TaskTimelineSection({ crg }: { crg: CrgHook }) {
       const timelinePlacement = timingReply.placementsByTaskId[card.id] ?? card.timelinePlacement;
       actions.updateChangeTask(card.id, { ...buildTaskTemplateData(card), durationEstimates, ...(timelinePlacement ? { timelinePlacement } : {}) });
     }
-    return timingReply.message;
+    return { message: timingReply.message, followUpPrompt: timingReply.followUpPrompt };
   }
 
   /** Writes one task's new placement through the same writer the cards use. */

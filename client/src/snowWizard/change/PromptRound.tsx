@@ -9,12 +9,19 @@ import CopyButton from '../shell/CopyButton.tsx';
 import styles from './ChangeWizard.module.css';
 import { describePromptParts, splitPromptIntoParts } from '../../views/SnowHub/chgFormula/promptParts.ts';
 
+/** What a reader says about a reply, and — when the reply strayed from the asked-for form — a follow-up to send. */
+export interface PromptRoundOutcome {
+  message: string;
+  /** A short prompt for the same AI chat asking for the form again; '' when none is needed. */
+  followUpPrompt: string;
+}
+
 interface PromptRoundProps {
   promptText: string;
   copyLabel: string;
   readButtonLabel: string;
-  /** Reads the pasted reply and returns what to tell the user. */
-  onReadReply: (replyText: string) => string;
+  /** Reads the pasted reply and returns what to tell the user, with a follow-up when the reply strayed. */
+  onReadReply: (replyText: string) => string | PromptRoundOutcome;
 }
 
 const CLIPBOARD_BLOCKED_TEXT = 'The browser would not share the clipboard with this file. The reply box is ready — press Ctrl+V now.';
@@ -43,10 +50,24 @@ async function readClipboardText(waitMs = CLIPBOARD_WAIT_MS): Promise<string | n
 export default function PromptRound({ promptText, copyLabel, readButtonLabel, onReadReply }: PromptRoundProps) {
   const promptFieldId = useId();
   const replyFieldId = useId();
+  const followUpFieldId = useId();
   const [replyText, setReplyText] = useState('');
   const [statusText, setStatusText] = useState('');
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
   // A prompt too long for one chat message comes as parts, each with its own copy button (GH #475).
   const promptParts = splitPromptIntoParts(promptText);
+
+  /**
+   * Hands a reply to the reader and shows its verdict. A reply that strayed brings a follow-up (GH #499); the reply box
+   * is then emptied, so the follow-up's answer is read the moment it is pasted.
+   */
+  function readReply(pastedReply: string) {
+    const outcome = onReadReply(pastedReply);
+    const { message, followUpPrompt: nextFollowUp } = typeof outcome === 'string' ? { message: outcome, followUpPrompt: '' } : outcome;
+    setStatusText(message);
+    setFollowUpPrompt(nextFollowUp);
+    if (nextFollowUp !== '') setReplyText('');
+  }
 
   /** One click instead of select-all and paste: takes the clipboard's text and reads it straight away. */
   async function pasteAndRead() {
@@ -59,7 +80,7 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
     }
     if (clipboardText.trim() === '') { setStatusText(CLIPBOARD_EMPTY_TEXT); return; }
     setReplyText(clipboardText);
-    setStatusText(onReadReply(clipboardText));
+    readReply(clipboardText);
   }
 
   /** A paste into the empty reply box is the whole reply, so it is read straight away — no second button. */
@@ -69,7 +90,7 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
     if (pastedText.trim() === '') return;
     pasteEvent.preventDefault();
     setReplyText(pastedText);
-    setStatusText(onReadReply(pastedText));
+    readReply(pastedText);
   }
 
   return (
@@ -102,11 +123,18 @@ export default function PromptRound({ promptText, copyLabel, readButtonLabel, on
         onChange={(changeEvent) => setReplyText(changeEvent.target.value)} />
       <div className={styles.buttonRow}>
         <button type="button" className={styles.actionButton} onClick={() => { void pasteAndRead(); }}>Paste from clipboard</button>
-        <button type="button" className={styles.secondaryButton} disabled={replyText.trim() === ''} onClick={() => setStatusText(onReadReply(replyText))}>
+        <button type="button" className={styles.secondaryButton} disabled={replyText.trim() === ''} onClick={() => readReply(replyText)}>
           {readButtonLabel}
         </button>
       </div>
       {statusText ? <p className={styles.hint} role="status">{statusText}</p> : null}
+      {followUpPrompt ? (
+        <>
+          <label className={styles.fieldLabel} htmlFor={followUpFieldId}>Follow-up for the same AI chat</label>
+          <textarea id={followUpFieldId} className={styles.textArea} readOnly value={followUpPrompt} />
+          <div className={styles.buttonRow}><CopyButton text={followUpPrompt} label="Copy the follow-up" fallbackTargetId={followUpFieldId} /></div>
+        </>
+      ) : null}
     </div>
   );
 }
