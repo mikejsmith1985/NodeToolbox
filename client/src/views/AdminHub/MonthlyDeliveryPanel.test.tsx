@@ -4,7 +4,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts'
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/aiModeParts.ts'
 import { MonthlyDeliveryPanel } from './MonthlyDeliveryPanel.tsx'
 
 // The panel snapshots Team Dashboard profiles from the settings store; the store is mocked so the
@@ -240,7 +240,7 @@ describe('MonthlyDeliveryPanel — Run Now, last-run display, Copy Prompt (US2)'
     expect(screen.getByLabelText('Generated prompt')).toHaveValue('THE PROMPT TEXT')
   })
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', async () => {
     installFetch({
       'GET /api/monthly-delivery/config': () => savedConfig(),
       'GET /api/monthly-delivery/status': () => noRunYet(),
@@ -253,7 +253,7 @@ describe('MonthlyDeliveryPanel — Run Now, last-run display, Copy Prompt (US2)'
     render(<MonthlyDeliveryPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /run now/i }))
 
-    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument()
   })
 
   it('shows what the run did about delivery — delivered, failed, or skipped', async () => {

@@ -11,7 +11,7 @@ import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { getComponentKind } from '../AdminHub/lib/componentClassificationStore.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../components/AiModePromptParts/index.tsx';
 import { parsePiDateRange } from '../FeatureCanvas/logic/piSchedule.ts';
 import { loadHygieneFieldConfig } from '../Hygiene/checks/hygieneFieldConfig.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -616,7 +616,7 @@ export default function PiDeliveryPlanTab({ piName, teams = [] }: PiDeliveryPlan
               </button>
             )}
             {/* AI Mode drops whatever is pasted past 2,048 characters, so the whole prompt (every chunk) is also offered as a file (GH #499). */}
-            <AiPromptFile promptText={prompts.join(PROMPT_CHUNK_SEPARATOR)} fileBaseName="pi-delivery-plan-prompt" />
+            <AiModePromptParts promptText={prompts.join(PROMPT_CHUNK_SEPARATOR)} />
             {prompts.length > 0 && <textarea className={styles.promptArea} readOnly value={prompts.join(PROMPT_CHUNK_SEPARATOR)} onFocus={(event) => event.currentTarget.select()} />}
             <label className={styles.field} style={{ marginTop: '0.5rem' }}>Paste the AI&apos;s reply
               <textarea className={styles.replyArea} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Paste the filled-in tables (or JSON) here" />

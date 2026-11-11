@@ -6,7 +6,7 @@
 
 import { CheckIcon, ClipboardIcon } from '../AppIcons/index.tsx';
 import { useCopyFeedback } from '../../hooks/useCopyFeedback.ts';
-import { AiPromptFile } from '../AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../AiModePromptParts/index.tsx';
 import styles from './AiFollowUpPrompt.module.css';
 
 interface AiFollowUpPromptProps {
@@ -26,7 +26,7 @@ export function AiFollowUpPrompt({ followUpPrompt, fieldId = 'ai-follow-up-promp
     <div className={styles.followUp}>
       <label className={styles.label} htmlFor={fieldId}>Follow-up for the same AI chat</label>
       <p className={styles.hint}>Paste this into the same AI chat, then paste its reply above.</p>
-      <AiPromptFile promptText={followUpPrompt} fileBaseName="ai-follow-up" />
+      <AiModePromptParts promptText={followUpPrompt} />
       <textarea className={styles.textArea} id={fieldId} readOnly value={followUpPrompt} />
       <button className={styles.copyButton} onClick={() => confirmCopy(followUpPrompt)} type="button">
         {hasCopied ? <><CheckIcon /> Copied!</> : <><ClipboardIcon /> Copy the follow-up</>}

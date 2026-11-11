@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../../components/AiModePromptParts/index.tsx';
 import { useAiAssistStore } from '../../../../store/aiAssistStore.ts';
 import { saveFeatureReviewSimpleField } from '../../../SprintDashboard/featureReviewFixes.ts';
 import type { ReadinessLens, ReadinessWriteFieldIds } from '../readinessScan.ts';
@@ -121,7 +121,7 @@ export function ReadinessAiPanel({ lens, writeFieldIds, onProposalWritten }: Rea
       </header>
 
       {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-      <AiPromptFile promptText={prompt} fileBaseName="feature-readiness-prompt" />
+      <AiModePromptParts promptText={prompt} />
       <label className={styles.field}>
         AI prompt
         <textarea className={styles.textarea} aria-label="AI prompt" readOnly value={prompt} rows={4} />

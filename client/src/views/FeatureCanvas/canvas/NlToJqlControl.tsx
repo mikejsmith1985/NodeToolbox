@@ -10,7 +10,7 @@
 import { useMemo, useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../components/AiModePromptParts/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import { buildScopeQueryFollowUpPrompt, buildScopeQueryPrompt, parseScopeQueryResponse } from '../ai/canvasAiAssist.ts';
 import controlStyles from './canvasControls.module.css';
@@ -61,7 +61,7 @@ export function NlToJqlControl({ projectKey, piName, onAcceptJql }: NlToJqlContr
         <div className={controlStyles.popover} style={{ position: 'absolute', right: 0, top: 36, width: 340, padding: 12, zIndex: 30 }}>
           <input aria-label="Describe the scope" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="features for PI 26.3 with the ENCUC label" style={{ width: '100%', marginBottom: 6 }} />
           {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-          <AiPromptFile promptText={prompt} fileBaseName="scope-to-jql-prompt" />
+          <AiModePromptParts promptText={prompt} />
           <textarea readOnly aria-label="Generated prompt"value={prompt} rows={3} style={{ width: '100%', fontSize: 11 }} />
           <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} style={{ margin: '4px 0' }}>📋 Copy prompt</button>
           <textarea aria-label="Paste reply" value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Paste the AI reply" rows={3} style={{ width: '100%', fontSize: 11 }} />

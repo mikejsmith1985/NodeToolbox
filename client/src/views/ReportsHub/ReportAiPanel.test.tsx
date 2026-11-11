@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/aiModeParts.ts';
 
 // The clipboard helper the "Copy prompt" button calls; mocked so a click can be asserted in jsdom.
 const { mockCopyToClipboard } = vi.hoisted(() => ({ mockCopyToClipboard: vi.fn() }));
@@ -35,14 +35,14 @@ describe('ReportAiPanel', () => {
     expect(mockCopyToClipboard).toHaveBeenCalledWith('THE PROMPT TEXT');
   });
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', () => {
     act(() => setAiAssistUnlocked(true));
     const longPrompt = 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1);
     const { rerender } = render(<ReportAiPanel title="AI triage" prompt="SHORT" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
-    expect(screen.queryByRole('button', { name: 'Download the prompt (PDF)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Copy part 1 of \d+$/ })).not.toBeInTheDocument();
 
     rerender(<ReportAiPanel title="AI triage" prompt={longPrompt} ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
-    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('confirms a prompt copy by flipping the button label to ✓ Copied!', () => {

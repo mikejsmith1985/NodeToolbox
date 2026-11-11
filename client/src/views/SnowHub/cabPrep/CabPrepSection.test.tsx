@@ -13,7 +13,7 @@ vi.mock('../hooks/useAiAssist.ts', () => ({ useAiAssist: mockUseAiAssist }));
 
 import { CabPrepSection } from './CabPrepSection.tsx';
 import type { ChangeRequest } from '../../../types/snow.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/aiModeParts.ts';
 
 /** Class names are irrelevant here; the host tab supplies its own. */
 const STYLES = new Proxy({}, { get: (_target, key) => String(key) }) as Record<string, string>;
@@ -139,12 +139,12 @@ describe('CabPrepSection', () => {
     expect(promptField.value).toContain('Redeploy the previous artefact.');
   });
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', async () => {
     render(<CabPrepSection loadedChange={change({ backoutPlan: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) })} styles={STYLES} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Prepare for CAB review' }));
 
-    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('builds the pack from a pasted reply, leading with what cannot be answered', async () => {

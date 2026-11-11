@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writeFieldMappingOverride } from '../../../services/jiraFieldMapping.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/aiModeParts.ts';
 import { ReleasePriorityPanel } from './ReleasePriorityPanel.tsx';
 import { RELEASE_PRIORITY_REPLY_KIND } from './releasePriorityRank.ts';
 
@@ -107,7 +107,7 @@ describe('ReleasePriorityPanel', () => {
     expect(String(mockJiraGet.mock.calls[0][0])).toContain('customfield_10206');
   });
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', async () => {
     installContextFixtures();
     const longSummaryIssue = { ...ISSUES[0], fields: { ...ISSUES[0].fields, summary: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) } } as JiraIssue;
     render(
@@ -123,7 +123,7 @@ describe('ReleasePriorityPanel', () => {
       />,
     );
 
-    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('still offers a prompt when the extra reads fail, and says what is missing', async () => {

@@ -11,7 +11,7 @@
 import { useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../components/AiModePromptParts/index.tsx';
 import { useAiAssist } from '../hooks/useAiAssist.ts';
 import type { ChangeRequest } from '../../../types/snow.ts';
 import { buildCabFactSheet } from './cabFactSheet.ts';
@@ -224,7 +224,7 @@ export function CabPrepSection({ loadedChange, styles }: CabPrepSectionProps) {
               Copy this prompt into AI Assist
             </label>
             {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-            <AiPromptFile promptText={promptText} fileBaseName="cab-prep-prompt" />
+            <AiModePromptParts promptText={promptText} />
             <textarea className={styles.input} id="cab-prep-prompt"readOnly rows={6} value={promptText} />
             <label className={styles.fieldLabel} htmlFor="cab-prep-reply">
               Paste the assistant&apos;s reply here

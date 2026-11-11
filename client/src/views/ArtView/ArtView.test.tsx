@@ -97,7 +97,7 @@ vi.mock('../../services/confluenceApi.ts', () => ({
 
 import ArtView from './ArtView.tsx';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/aiModeParts.ts';
 
 const mockClipboardWrite = vi.fn().mockResolvedValue(undefined);
 const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
@@ -824,7 +824,7 @@ describe('ArtView', () => {
     expect(values.some((value) => value.includes('Cut costs'))).toBe(true);
   });
 
-  it('offers a monthly prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+  it('offers a monthly prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', () => {
     mockState.activeTab = 'monthly';
     setAiAssistUnlocked(true);
     renderArtView();
@@ -832,7 +832,7 @@ describe('ArtView', () => {
     fireEvent.change(screen.getAllByLabelText(/what was accomplished\?/i)[0], { target: { value: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) } });
     fireEvent.click(screen.getAllByRole('button', { name: /AI suggestions/i })[0]);
 
-    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('offers a follow-up for the same AI chat when the monthly reply could not be read', () => {

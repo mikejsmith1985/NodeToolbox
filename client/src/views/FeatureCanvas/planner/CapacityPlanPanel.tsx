@@ -20,7 +20,7 @@ import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
 import { buildPlanIngestFollowUpPrompt, buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../components/AiModePromptParts/index.tsx';
 import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
@@ -167,7 +167,7 @@ export function PlanProjectionView({ result, piName, todayIso, additionalDetails
       )}
 
       {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-      <AiPromptFile promptText={evaluationPromptText} fileBaseName="capacity-plan-evaluation-prompt" />
+      <AiModePromptParts promptText={evaluationPromptText} />
       <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -514,7 +514,7 @@ export function CapacityPlanPanel({
             />
             Include reassignments (writes assignees)
           </label>
-          <AiPromptFile promptText={translatePromptText} fileBaseName="capacity-plan-translate-prompt" />
+          <AiModePromptParts promptText={translatePromptText} />
           <button
             type="button"
             className={controlStyles.btn}
