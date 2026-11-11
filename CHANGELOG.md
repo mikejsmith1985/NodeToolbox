@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A long AI prompt now goes to Google AI Mode in parts that each fit its box (GH #499).** AI Mode would not read
+  the attached PDF or text file from v0.327.3; it answered "no response available". It does keep a conversation, so
+  every prompt and follow-up longer than 2,048 characters now has a **Copy part 1 of N** button. Each click copies
+  the next part and steps on. Paste every part into the same AI Mode chat:
+  - Part 1 explains the exchange.
+  - Every part but the last ends "Reply only READY FOR PART n".
+  - The last part asks for the answer using every part.
+
+  Parts are packed close to the limit at line ends, and line breaks are counted twice for safety. A 44,000-character
+  Risk Check comes to about 28 parts. Nothing is cut: the parts join back into the exact prompt. The PDF download is
+  removed, and the 128,000-character Copilot split is replaced, since AI Mode is the only assistant.
 - **A long AI prompt can be attached to Google AI Mode as a file (GH #499).** AI Mode's message box takes 2,048
   characters and quietly drops the rest, so the 24,000-character parts from v0.327.2 were cut too. Every AI prompt
   and follow-up longer than 2,048 characters now has a panel with three steps:

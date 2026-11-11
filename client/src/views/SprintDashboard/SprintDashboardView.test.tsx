@@ -205,7 +205,7 @@ import SprintDashboardView from './SprintDashboardView.tsx';
 import styles from './SprintDashboardView.module.css';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/aiModeParts.ts';
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
@@ -1095,7 +1095,7 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('button', { name: /Copy Prompt/i })).toBeInTheDocument();
   });
 
-  it('offers a release prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+  it('offers a release prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
@@ -1117,7 +1117,7 @@ describe('SprintDashboardView', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
 
-    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('pointing AI modal offers copy + paste-back only — no automated exchange button', async () => {

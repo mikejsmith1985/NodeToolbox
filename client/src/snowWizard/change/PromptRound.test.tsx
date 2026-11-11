@@ -6,16 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 import PromptRound from './PromptRound.tsx';
 
 describe('PromptRound', () => {
-  it('splits a prompt too long for one chat message into parts, each with its own copy button (GH #475)', () => {
-    const longPrompt = Array.from({ length: 3_000 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
+  it('offers a prompt too long for one AI Mode message in parts, the whole prompt still beside it (GH #499)', () => {
+    const longPrompt = Array.from({ length: 300 }, (_unused, lineIndex) => `line ${lineIndex} ${'w'.repeat(60)}`).join('\n');
     render(<PromptRound promptText={longPrompt} copyLabel="Copy the prompt" readButtonLabel="Read the reply" onReadReply={vi.fn(() => '')} />);
-    expect(screen.queryByRole('button', { name: 'Copy the prompt' })).toBeNull();
-    // Far past AI Mode's 2,048-character box, so it is also offered as a file to attach (GH #499).
-    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy part 1 of 2' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy part 2 of 2' })).toBeTruthy();
-    expect((screen.getByLabelText('Part 2 of 2') as HTMLTextAreaElement).value).toMatch(/^PART 2 OF 2 — the last part/);
-    expect(screen.getByText(/comes in 2 parts\. Paste them in order into the same chat/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy the prompt' })).toBeTruthy();
+    expect((screen.getByLabelText(/Copy this and paste it/) as HTMLTextAreaElement).value).toBe(longPrompt);
   });
 
   it('shows the prompt, waits for a reply, then reports what the reader said', () => {

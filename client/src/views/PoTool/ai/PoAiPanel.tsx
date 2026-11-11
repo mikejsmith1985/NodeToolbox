@@ -14,7 +14,7 @@
 import { useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../components/AiModePromptParts/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore';
 import styles from './PoAiPanel.module.css';
 
@@ -37,11 +37,6 @@ function buildTitleSlug(title: string): string {
 /** A stable element id for this panel's follow-up box, so two panels on one page are told apart. */
 function buildFollowUpFieldId(title: string): string {
   return `po-ai-follow-up-${buildTitleSlug(title)}`;
-}
-
-/** The downloaded prompt file's name without its extension, e.g. "propose-a-split-prompt". */
-function buildPromptFileBaseName(title: string): string {
-  return `${buildTitleSlug(title)}-prompt`;
 }
 
 interface PoAiPanelProps {
@@ -118,7 +113,7 @@ export default function PoAiPanel({ title, buildPrompt, onIngest, helpText }: Po
             Prompt — read it, then copy it into your assistant
           </label>
           {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-          <AiPromptFile promptText={promptText} fileBaseName={buildPromptFileBaseName(title)} />
+          <AiModePromptParts promptText={promptText} />
           <textarea className={styles.promptArea} id="po-ai-prompt" readOnly value={promptText} />
           <button className={styles.secondaryButton} type="button" onClick={handleCopyPrompt}>
             {hasCopiedPrompt ? '✓ Copied' : '📋 Copy prompt'}

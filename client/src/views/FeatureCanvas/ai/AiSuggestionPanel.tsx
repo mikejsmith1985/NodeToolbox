@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AiFollowUpPrompt } from '../../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../../components/AiModePromptParts/index.tsx';
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
 import { IN_PROGRESS_STATUS_CATEGORY } from '../logic/wip.ts';
@@ -278,7 +278,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsu
         </p>
       )}
       {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-      <AiPromptFile promptText={prompt} fileBaseName={kind === 'masterPlan' ? 'canvas-master-plan-prompt' : 'canvas-suggestions-prompt'} />
+      <AiModePromptParts promptText={prompt} />
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
       <button type="button" className={controlStyles.btn} onClick={() => copyToClipboard(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the AI reply here (its filled-in table, or JSON)" rows={4} style={{ width: '100%', fontSize: 11 }} />

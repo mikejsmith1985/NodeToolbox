@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../../utils/aiModeParts.ts';
 import { NlToJqlControl } from './NlToJqlControl.tsx';
 
 describe('NlToJqlControl', () => {
@@ -18,14 +18,14 @@ describe('NlToJqlControl', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', () => {
     act(() => setAiAssistUnlocked(true));
     render(<NlToJqlControl projectKey="ENCUC" piName="PI 26.3" onAcceptJql={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Ask/ }));
     fireEvent.change(screen.getByLabelText(/Describe the scope/), { target: { value: 'x'.repeat(AI_MODE_MESSAGE_CHARACTER_LIMIT + 1) } });
 
-    expect(screen.getByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 
   it('proposes a JQL from a valid reply and accepts it into the scope box', () => {

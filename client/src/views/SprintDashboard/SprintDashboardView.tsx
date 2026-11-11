@@ -128,7 +128,7 @@ import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../components/AiModePromptParts/index.tsx';
 import { buildPointingReplyFormLines, parsePointingAiReply } from './aiReply/pointingAiAssistReply.ts';
 
 // ── Named constants ──
@@ -4561,7 +4561,7 @@ function PointingTab({
                 all queue issues, and their algorithm estimates as a starting point.
               </p>
               {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-              <AiPromptFile promptText={generatedAiAssistPromptText} fileBaseName="pointing-prompt" />
+              <AiModePromptParts promptText={generatedAiAssistPromptText} />
               <textarea
                 aria-label="AI Assist pointing prompt"
                 className={styles.releasePromptTextArea}
@@ -6447,7 +6447,7 @@ function ReleasesTab({
               Copy this prompt into AI Assist, then paste the JSON response back into Toolbox to render the release-notes table.
             </p>
             {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-            <AiPromptFile promptText={releasePromptModalState.promptText} fileBaseName="release-notes-prompt" />
+            <AiModePromptParts promptText={releasePromptModalState.promptText} />
             <textarea
               aria-label="AI Assist release prompt"
               className={styles.releasePromptTextArea}
@@ -6488,7 +6488,7 @@ function ReleasesTab({
               Assesses the risk of skipping Dev-environment testing and promoting straight to Integration.
               Copy the prompt into AI Assist, then paste the Markdown report below — it renders under the release.
             </p>
-            <AiPromptFile promptText={devSkipRiskPromptModalState.promptText} fileBaseName="dev-skip-test-risk-prompt" />
+            <AiModePromptParts promptText={devSkipRiskPromptModalState.promptText} />
             <textarea
               aria-label="Dev-skip test risk prompt"
               className={styles.releasePromptTextArea}

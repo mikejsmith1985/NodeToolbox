@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { AiFollowUpPrompt } from '../../components/AiFollowUpPrompt/index.tsx';
-import { AiPromptFile } from '../../components/AiPromptFile/index.tsx';
+import { AiModePromptParts } from '../../components/AiModePromptParts/index.tsx';
 import {
   buildMonthlyReportFollowUpPrompt, buildMonthlyReportReplyForm, readMonthlyReportColumnHeader, readMonthlyReportReplyEntries,
 } from './monthlyReportAiReply.ts';
@@ -2850,7 +2850,7 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCard
           <div className={styles.monthlyAiDraftPanel}>
             <label className={styles.monthlyFieldLabel}>1. Copy this prompt into the AI assistant</label>
             {/* AI Mode drops whatever is pasted past 2,048 characters, so a long prompt is also offered as a file (GH #499). */}
-            <AiPromptFile promptText={aiPrompt} fileBaseName="monthly-report-prompt" />
+            <AiModePromptParts promptText={aiPrompt} />
             <textarea className={styles.monthlyTextarea} readOnly value={aiPrompt} rows={5} aria-label="AI prompt" />
             <button
               className={styles.secondaryBtn}

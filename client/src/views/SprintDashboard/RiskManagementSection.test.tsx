@@ -16,7 +16,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 import RiskManagementSection from './RiskManagementSection.tsx';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
-import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/promptFile.ts';
+import { AI_MODE_MESSAGE_CHARACTER_LIMIT } from '../../utils/aiModeParts.ts';
 
 // ── Inline test utilities (mirror the module-private helpers) ──
 
@@ -226,7 +226,7 @@ describe('RiskManagementSection — AI Assist unlock', () => {
     expect(screen.getByLabelText('AI Assist risk refinement response')).toBeInTheDocument();
   });
 
-  it('offers a prompt too long for AI Mode\'s message box as a file to attach (GH #499)', async () => {
+  it('offers a prompt too long for AI Mode\'s message box in parts that each fit AI Mode (GH #499)', async () => {
     setAiAssistUnlocked(true);
     mockJiraGet.mockResolvedValue({
       issues: [{
@@ -246,6 +246,6 @@ describe('RiskManagementSection — AI Assist unlock', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
 
-    expect(await screen.findByRole('button', { name: 'Download the prompt (PDF)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeInTheDocument();
   });
 });
