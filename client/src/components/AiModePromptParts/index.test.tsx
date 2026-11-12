@@ -54,4 +54,16 @@ describe('AiModePromptParts', () => {
     rerender(<AiModePromptParts promptText={`${LONG_PROMPT}\nmore`} writeText={vi.fn()} />);
     expect(screen.getByRole('button', { name: /^Copy part 1 of \d+$/ })).toBeTruthy();
   });
+
+  it('saves the whole prompt to a dated text file', async () => {
+    const saveFile = vi.fn();
+    render(<AiModePromptParts promptText={LONG_PROMPT} writeText={vi.fn()} saveFile={saveFile} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Save prompt to file/ }));
+
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    const savedFile = saveFile.mock.calls[0][0] as { fileName: string; blob: Blob };
+    expect(savedFile.fileName).toMatch(/^ai-mode-prompt-\d{4}-\d{2}-\d{2}_\d{4}\.txt$/);
+    expect(await savedFile.blob.text()).toBe(LONG_PROMPT);
+  });
 });

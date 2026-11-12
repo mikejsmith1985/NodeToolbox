@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Save an AI prompt to a file (GH #499).** Every AI panel that already offers the Google AI Mode parts stepper now
+  also has a **Save prompt to file** button. It downloads the whole prompt as one dated text file
+  (`ai-mode-prompt-YYYY-MM-DD_HHmm.txt`), so a prompt too long for AI Mode can be handed to an assistant that reads a
+  file in one go instead of being pasted part by part. The button appears on all surfaces at once — it lives in the
+  shared parts panel.
+
 ### Fixed
 - **A long AI prompt now goes to Google AI Mode in parts that each fit its box (GH #499).** AI Mode would not read
   the attached PDF or text file from v0.327.3; it answered "no response available". It does keep a conversation, so

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AI_MODE_MESSAGE_CHARACTER_LIMIT,
+  buildAiModePromptFile,
   isPromptTooLongForAiMode,
   measureAiModeMessage,
   splitPromptForAiMode,
@@ -64,5 +65,19 @@ describe('splitPromptForAiMode', () => {
     const parts = splitPromptForAiMode(promptText);
     parts.forEach((part) => expect(measureAiModeMessage(part.messageText)).toBeLessThanOrEqual(AI_MODE_MESSAGE_CHARACTER_LIMIT));
     expect(parts.map((part) => part.bodyText).join('')).toBe(promptText);
+  });
+});
+
+describe('buildAiModePromptFile', () => {
+  it('wraps the whole prompt in a dated .txt file, losing nothing', async () => {
+    const promptFile = buildAiModePromptFile('Line one\nLine two', new Date('2026-11-12T13:05:00'));
+    expect(promptFile.fileName).toBe('ai-mode-prompt-2026-11-12_1305.txt');
+    expect(promptFile.blob.type).toBe('text/plain');
+    expect(await promptFile.blob.text()).toBe('Line one\nLine two');
+  });
+
+  it('pads single-digit months, days, hours and minutes to two digits', () => {
+    const promptFile = buildAiModePromptFile('x', new Date('2026-01-09T08:07:00'));
+    expect(promptFile.fileName).toBe('ai-mode-prompt-2026-01-09_0807.txt');
   });
 });

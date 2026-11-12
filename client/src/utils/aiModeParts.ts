@@ -128,3 +128,21 @@ export function splitPromptForAiMode(promptText: string, messageLimit = AI_MODE_
     return { partNumber, messageText, bodyText };
   });
 }
+
+// ── Save the whole prompt to a file ──
+
+/** A one- or two-digit number as two digits, so 9 reads as "09" in a file name. */
+function padToTwoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * The whole prompt as a plain-text file for the browser to download, named with the date and time so repeated saves
+ * never overwrite one another. This is the escape hatch from AI Mode's box: a prompt saved this way can be handed to
+ * an assistant that reads a file in one go, instead of being pasted part by part.
+ */
+export function buildAiModePromptFile(promptText: string, now: Date = new Date()): { fileName: string; blob: Blob } {
+  const datePart = `${now.getFullYear()}-${padToTwoDigits(now.getMonth() + 1)}-${padToTwoDigits(now.getDate())}`;
+  const timePart = `${padToTwoDigits(now.getHours())}${padToTwoDigits(now.getMinutes())}`;
+  return { fileName: `ai-mode-prompt-${datePart}_${timePart}.txt`, blob: new Blob([promptText], { type: 'text/plain' }) };
+}
