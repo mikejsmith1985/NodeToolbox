@@ -28,6 +28,7 @@ import { RcpRulesPanel } from './RcpRulesPanel.tsx'
 import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { TestStoryBackfillPanel } from './TestStoryBackfillPanel.tsx'
+import { SlQeContainerFixPanel } from './SlQeContainerFixPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -2945,6 +2946,8 @@ export default function AdminHubView() {
         <section id="admin-hub-test-story-backfill-panel" role="tabpanel" aria-labelledby="admin-hub-test-story-backfill-tab">
           {/* Fills empty description / AC on open [QE]/[SL] issues from their [DEV] story, Defect, or parent. */}
           <TestStoryBackfillPanel />
+          {/* One-time #508 clean-up: flip backwards Container links, clone, and cancel/label the fixed SL/QE batch. */}
+          <SlQeContainerFixPanel />
         </section>
       )}
     </ViewFrame>

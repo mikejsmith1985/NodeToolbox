@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **One-time SL/QE container-link fix (GH #508).** A new admin-gated panel (Admin Hub → Test Story Backfill tab,
+  below the backfill panel) remediates a fixed batch of SL/QE test stories whose "Container" link pointed the wrong
+  way. For each story it re-reads the dev story's **live** status and acts: dev still active → flip the link so the
+  dev story is the container, overwrite the test story's Description + Acceptance Criteria from the dev, add the
+  `msreview` label and assign Belew, Dennis; dev awaiting test → same plus move the test story to Ready to Work; dev
+  already done/cancelled → cancel the test story. It previews the whole plan (with a per-story pilot option) and writes
+  nothing until **Apply**; already-cancelled stories are left untouched.
 - **Save an AI prompt to a file (GH #499).** Every AI panel that already offers the Google AI Mode parts stepper now
   also has a **Save prompt to file** button. It downloads the whole prompt as one dated text file
   (`ai-mode-prompt-YYYY-MM-DD_HHmm.txt`), so a prompt too long for AI Mode can be handed to an assistant that reads a
