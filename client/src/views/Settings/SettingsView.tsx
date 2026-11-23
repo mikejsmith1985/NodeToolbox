@@ -3,10 +3,10 @@
 import type { ChangeEventHandler, FormEventHandler } from 'react';
 import { useEffect, useState } from 'react';
 
-import { fetchProxyConfig, fetchProxyStatus, updateProxyConfig } from '@/services/proxyApi.ts';
+import { fetchProxyStatus, fetchServiceBaseUrls, saveServiceBaseUrl } from '@/services/proxyApi.ts';
 import { useSettingsStore } from '@/store/settingsStore.ts';
 import type { ToolTextSize } from '@/store/settingsStore.ts';
-import type { ProxyConfig, Theme } from '@/types/config.ts';
+import type { Theme } from '@/types/config.ts';
 import styles from './SettingsView.module.css';
 
 const SETTINGS_HEADING = 'Settings';
@@ -28,7 +28,7 @@ const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
 const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
 const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
 
-type EditableProxyFieldKey = 'jiraBaseUrl' | 'snowBaseUrl' | 'confluenceBaseUrl';
+type EditableProxyFieldKey = 'jira' | 'snow' | 'confluence';
 
 interface SettingsInputCardProps {
   title: string;
@@ -181,13 +181,6 @@ function VersionCard({ proxyVersion, handleVersionRefresh }: VersionCardProps) {
   );
 }
 
-function createProxyUpdatePayload(
-  fieldKey: EditableProxyFieldKey,
-  fieldValue: string,
-): Partial<ProxyConfig> {
-  return { [fieldKey]: fieldValue } as Partial<ProxyConfig>;
-}
-
 async function loadProxyConfiguration({
   applyJiraBaseUrl,
   applySnowBaseUrl,
@@ -195,10 +188,10 @@ async function loadProxyConfiguration({
   setSaveStatusMessage,
 }: ProxyConfigLoadHandlers): Promise<void> {
   try {
-    const proxyConfig = await fetchProxyConfig();
-    applyJiraBaseUrl(proxyConfig.jiraBaseUrl);
-    applySnowBaseUrl(proxyConfig.snowBaseUrl);
-    applyConfluenceBaseUrl(proxyConfig.confluenceBaseUrl);
+    const serviceBaseUrls = await fetchServiceBaseUrls();
+    applyJiraBaseUrl(serviceBaseUrls.jira);
+    applySnowBaseUrl(serviceBaseUrls.snow);
+    applyConfluenceBaseUrl(serviceBaseUrls.confluence);
     setSaveStatusMessage(EMPTY_STATUS_MESSAGE);
   } catch {
     setSaveStatusMessage(LOAD_FAILURE_MESSAGE);
@@ -221,8 +214,8 @@ async function saveProxyField({
   setSaveStatusMessage,
 }: ProxyFieldSaveOptions): Promise<void> {
   try {
-    await updateProxyConfig(createProxyUpdatePayload(fieldKey, fieldValue));
-    persistValue(fieldValue);
+    await saveServiceBaseUrl(fieldKey, fieldValue);
+    persistValue(fieldValue.trim());
     setSaveStatusMessage(SAVE_SUCCESS_MESSAGE);
   } catch {
     setSaveStatusMessage(SAVE_FAILURE_MESSAGE);
@@ -268,7 +261,7 @@ export default function SettingsView() {
 
   async function saveJiraBaseUrl(): Promise<void> {
     await saveProxyField({
-      fieldKey: 'jiraBaseUrl',
+      fieldKey: 'jira',
       fieldValue: jiraBaseUrlInput,
       persistValue: setStoredJiraBaseUrl,
       setSaveStatusMessage,
@@ -277,7 +270,7 @@ export default function SettingsView() {
 
   async function saveSnowBaseUrl(): Promise<void> {
     await saveProxyField({
-      fieldKey: 'snowBaseUrl',
+      fieldKey: 'snow',
       fieldValue: snowBaseUrlInput,
       persistValue: setStoredSnowBaseUrl,
       setSaveStatusMessage,
@@ -286,7 +279,7 @@ export default function SettingsView() {
 
   async function saveConfluenceBaseUrl(): Promise<void> {
     await saveProxyField({
-      fieldKey: 'confluenceBaseUrl',
+      fieldKey: 'confluence',
       fieldValue: confluenceBaseUrlInput,
       persistValue: setStoredConfluenceBaseUrl,
       setSaveStatusMessage,

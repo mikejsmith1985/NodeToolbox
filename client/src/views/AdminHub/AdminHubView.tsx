@@ -2739,7 +2739,7 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       <RcpRulesPanel />
       {/* The team's standing answers to the CHG risk check (GH #415) — settled without asking. */}
       <ChgTeamStandardsPanel />
-      <CredentialManagementSection />
+      <CredentialManagementSection isAdminUnlocked={state.isAdminUnlocked} />
 
       <HygieneRulesSection
         hygieneRules={state.hygieneRules}

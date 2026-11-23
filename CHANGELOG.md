@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Jira and ServiceNow base URLs can be pasted in Admin Hub again.** Admin Hub → Credential Management showed both
+  URLs as read-only text, so after a Jira re-instance migration there was nowhere to paste the new address. Once Admin
+  Hub is unlocked they are now real inputs with **Save Jira** / **Save ServiceNow**; locked, they stay read-only with a
+  note on how to edit them.
+- **Settings → Jira / ServiceNow / Confluence base URL now actually saves.** It sent a flat `{ jiraBaseUrl }` body that
+  the server accepts with a 200 and ignores, so it reported "Saved." while the proxies kept the old URL; it also read
+  the URLs from the wrong place on load. Both screens now share one helper that reads and writes the server's real
+  `{ jira: { baseUrl } }` shape.
+
 ### Added
 - **Enrollment Dashboard Kit (GH #511).** A new Admin Hub → **📊 Enrollment Dashboard** tab rebuilds the saved Jira
   filters behind the Enrollment Master Dashboard after a migration. **Discover** reads the Product Owner field (via

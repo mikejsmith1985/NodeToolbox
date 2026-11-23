@@ -46,6 +46,41 @@ export async function fetchJiraBaseUrl(): Promise<string> {
   return body.jira?.baseUrl ?? '';
 }
 
+/** A service whose base URL the server keeps, and that the Settings and Admin Hub screens edit. */
+export type ServiceWithBaseUrl = 'jira' | 'snow' | 'confluence';
+
+/** Each service's base URL as the server holds it; '' when not configured. */
+export type ServiceBaseUrls = Record<ServiceWithBaseUrl, string>;
+
+/**
+ * Reads every service base URL from /api/proxy-config. The endpoint nests each one under
+ * `<service>.baseUrl`; reading the flat `ProxyConfig` fields instead returns undefined.
+ */
+export async function fetchServiceBaseUrls(): Promise<ServiceBaseUrls> {
+  const response = await fetch(PROXY_CONFIG_ENDPOINT);
+  assertSuccessfulResponse(response, 'proxy-config fetch failed');
+  const body = await parseJsonResponse<Partial<Record<ServiceWithBaseUrl, { baseUrl?: string }>>>(response);
+  return {
+    jira: body.jira?.baseUrl ?? '',
+    snow: body.snow?.baseUrl ?? '',
+    confluence: body.confluence?.baseUrl ?? '',
+  };
+}
+
+/**
+ * Saves one service's base URL on the server, which is the copy its proxy actually uses. The server only
+ * merges the nested `{ <service>: { baseUrl } }` shape — a flat `{ jiraBaseUrl }` body is accepted with a 200
+ * and silently ignored, which is how Settings used to report "Saved." while changing nothing.
+ */
+export async function saveServiceBaseUrl(service: ServiceWithBaseUrl, baseUrl: string): Promise<void> {
+  const response = await fetch(PROXY_CONFIG_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': JSON_CONTENT_TYPE },
+    body: JSON.stringify({ [service]: { baseUrl: baseUrl.trim() } }),
+  });
+  assertSuccessfulResponse(response, 'proxy-config update failed');
+}
+
 /** Persists updated proxy configuration to the Express backend. */
 export async function updateProxyConfig(config: Partial<ProxyConfig>): Promise<void> {
   const response = await fetch(PROXY_CONFIG_ENDPOINT, {

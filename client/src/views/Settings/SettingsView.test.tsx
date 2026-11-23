@@ -1,27 +1,27 @@
 // SettingsView.test.tsx — Unit tests for the application settings view.
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fetchProxyConfigMock, fetchProxyStatusMock, updateProxyConfigMock } = vi.hoisted(() => ({
+  // Named for the helpers they stand in for: fetchServiceBaseUrls / saveServiceBaseUrl.
   fetchProxyConfigMock: vi.fn(),
   fetchProxyStatusMock: vi.fn(),
   updateProxyConfigMock: vi.fn(),
 }));
 
 vi.mock('@/services/proxyApi.ts', () => ({
-  fetchProxyConfig: fetchProxyConfigMock,
+  fetchServiceBaseUrls: fetchProxyConfigMock,
   fetchProxyStatus: fetchProxyStatusMock,
-  updateProxyConfig: updateProxyConfigMock,
+  saveServiceBaseUrl: updateProxyConfigMock,
 }));
 
 import SettingsView from './SettingsView.tsx';
 
 const MOCK_PROXY_CONFIG = {
-  jiraBaseUrl: 'https://jira.example.com',
-  snowBaseUrl: 'https://snow.example.com',
-  confluenceBaseUrl: 'https://confluence.example.com',
-  adminPin: '1234',
+  jira: 'https://jira.example.com',
+  snow: 'https://snow.example.com',
+  confluence: 'https://confluence.example.com',
 };
 
 const MOCK_PROXY_STATUS = {
@@ -67,6 +67,18 @@ describe('SettingsView', () => {
 
     expect(screen.getByDisplayValue('https://snow.example.com')).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://confluence.example.com')).toBeInTheDocument();
+  });
+
+  it('saves an edited Jira URL to the server in the shape it merges (it used to be silently ignored)', async () => {
+    render(<SettingsView />);
+    const jiraInput = await screen.findByDisplayValue('https://jira.example.com');
+
+    fireEvent.change(jiraInput, { target: { value: 'https://jira.new.example.com' } });
+    fireEvent.blur(jiraInput);
+
+    await waitFor(() => {
+      expect(updateProxyConfigMock).toHaveBeenCalledWith('jira', 'https://jira.new.example.com');
+    });
   });
 
   it('shows the theme toggle controls', async () => {

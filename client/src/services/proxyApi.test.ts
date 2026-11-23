@@ -7,8 +7,10 @@ import {
   fetchJiraBaseUrl,
   fetchProxyConfig,
   fetchProxyStatus,
+  fetchServiceBaseUrls,
   probeJiraConnection,
   probeSnowConnection,
+  saveServiceBaseUrl,
   updateProxyConfig,
 } from './proxyApi.ts';
 
@@ -33,6 +35,33 @@ beforeEach(() => {
 });
 
 describe('proxyApi', () => {
+  it('fetchServiceBaseUrls reads each URL from the real nested proxy-config shape', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      jira: { baseUrl: 'https://jira.new.example.com' },
+      snow: { baseUrl: 'https://snow.new.example.com' },
+      confluence: {},
+    })));
+    await expect(fetchServiceBaseUrls()).resolves.toEqual({
+      jira: 'https://jira.new.example.com',
+      snow: 'https://snow.new.example.com',
+      confluence: '',
+    });
+  });
+
+  it('saveServiceBaseUrl posts the nested shape the server merges, trimmed', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ success: true })));
+    await saveServiceBaseUrl('snow', '  https://snow.new.example.com  ');
+    expect(fetch).toHaveBeenCalledWith('/api/proxy-config', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ snow: { baseUrl: 'https://snow.new.example.com' } }),
+    }));
+  });
+
+  it('saveServiceBaseUrl throws when the server refuses', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('nope', { status: 500 }));
+    await expect(saveServiceBaseUrl('jira', 'https://x')).rejects.toThrow(/500/);
+  });
+
   it('fetchProxyStatus calls the status endpoint and returns parsed JSON', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
