@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Enrollment Dashboard Kit (GH #511).** A new Admin Hub → **📊 Enrollment Dashboard** tab rebuilds the saved Jira
+  filters behind the Enrollment Master Dashboard after a migration. **Discover** reads the Product Owner field (via
+  Field Mapping), each team's PO (a dropdown from Jira's user search, pre-selected for Smita Phatate / Jen Watkins),
+  the team project ids and the instance's own done statuses. **Dry run** builds every filter — All Work (ENCUC + ENFCT
+  plus each PO's Epics; the old Project Manager clause is gone), Team CUC, Team Transformers, Team Work (no Epics, no
+  sub-tasks, so Epic sizes stop inflating WIP and points), Epics, In Progress, Done 30 Days, Upcoming, Flagged and
+  Stuck 10 Days — and test-runs each JQL for a live issue count. **Apply** creates or updates them as favourites and
+  shares them with both team projects; a filter whose JQL Jira rejected is skipped. The tab also lists the clause-only
+  JQL to paste into the Rich Filters smart filter, views and static filters.
+- **Dashboard API probe (GH #511, read-only).** Beside the kit, one button GETs Jira's dashboard, filter and plugin
+  endpoints plus likely Rich Filters paths, and produces a copyable report. It decides whether a later release can
+  import gadgets and the rich filter itself; it never writes.
 - **One-time SL/QE container-link fix (GH #508).** A new admin-gated panel (Admin Hub → Test Story Backfill tab,
   below the backfill panel) remediates a fixed batch of SL/QE test stories whose "Container" link pointed the wrong
   way. For each story it re-reads the dev story's **live** status and acts: dev still active → flip the link so the

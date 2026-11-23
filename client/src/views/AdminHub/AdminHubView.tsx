@@ -29,6 +29,8 @@ import { ComponentManagerPanel } from './ComponentManagerPanel.tsx'
 import { SubtaskPromotionPanel } from './SubtaskPromotionPanel.tsx'
 import { TestStoryBackfillPanel } from './TestStoryBackfillPanel.tsx'
 import { SlQeContainerFixPanel } from './SlQeContainerFixPanel.tsx'
+import { EnrollmentDashboardKitPanel } from './EnrollmentDashboardKitPanel.tsx'
+import { DashboardApiProbePanel } from './DashboardApiProbePanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -78,7 +80,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'test-story-backfill' | 'change-audit' | 'settings-backup' | 'field-mapping'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'monthly-delivery' | 'confluence-docs' | 'component-manager' | 'dev-panel' | 'sprint-release' | 'subtask-promotion' | 'test-story-backfill' | 'change-audit' | 'settings-backup' | 'field-mapping' | 'enrollment-dashboard'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -94,6 +96,7 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'test-story-backfill', label: '🧪 QE/SL Backfill' },
   { key: 'settings-backup', label: '💾 Settings Backup' },
   { key: 'field-mapping', label: '🔗 Field Mapping' },
+  { key: 'enrollment-dashboard', label: '📊 Enrollment Dashboard' },
 ]
 
 // The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
@@ -2948,6 +2951,15 @@ export default function AdminHubView() {
           <TestStoryBackfillPanel />
           {/* One-time #508 clean-up: flip backwards Container links, clone, and cancel/label the fixed SL/QE batch. */}
           <SlQeContainerFixPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'enrollment-dashboard' && (
+        <section id="admin-hub-enrollment-dashboard-panel" role="tabpanel" aria-labelledby="admin-hub-enrollment-dashboard-tab">
+          {/* GH #511: rebuild the Enrollment Master Dashboard's saved filters after a Jira migration. */}
+          <EnrollmentDashboardKitPanel />
+          {/* GH #511: read-only probe — can Toolbox import gadgets and the rich filter too? */}
+          <DashboardApiProbePanel />
         </section>
       )}
     </ViewFrame>
