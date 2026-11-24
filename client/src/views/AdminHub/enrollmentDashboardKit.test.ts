@@ -1,20 +1,20 @@
-// enrollmentDashboardKit.test.ts — Proves the Enrollment Dashboard Kit builds the right JQL and plans safe writes.
+// enrollmentDashboardKit.test.ts — Proves the Enrollment Dashboard Kit builds the right per-gadget clauses.
 //
-// The kit writes saved filters to production Jira, so these tests pin the two things that matter:
-// the JQL scopes each team exactly (team project + that team's PO-owned Epics, nothing else), and the
-// planner only creates what is missing, updates what drifted, and leaves matching filters alone.
+// The dashboard runs on ONE saved filter the owner already wrote ("All of Enrollment Query"); every gadget narrows
+// it with a Rich Filters clause. These tests pin that the kit finds that filter by name, scopes each clause inside
+// it for a live count, and builds each team's clause exactly (team project + that team's PO-owned Epics).
 
 import { describe, expect, it } from 'vitest';
 
 import {
+  BASE_FILTER_NAME,
   KIT_TEAMS,
-  buildKitFilters,
   buildRichFilterClauses,
   buildFieldJqlReference,
+  pickBaseFilterId,
   quoteJqlValue,
-  planFilterActions,
-  planMissingProjectShares,
   readDoneStatusNames,
+  scopeClauseToBase,
   type KitInputs,
 } from './enrollmentDashboardKit.ts';
 
@@ -24,11 +24,11 @@ const INPUTS: KitInputs = {
   doneStatusNames: ['Done', 'Cancelled'],
 };
 
-/** Finds one built filter by its name suffix so each test reads like the dashboard it feeds. */
-function findFilter(suffix: string) {
-  const filter = buildKitFilters(INPUTS).find((candidate) => candidate.name.endsWith(suffix));
-  if (!filter) throw new Error(`no filter ending "${suffix}"`);
-  return filter;
+/** Finds one clause by its name so each test reads like the dashboard gadget it feeds. */
+function findClause(name: string) {
+  const clause = buildRichFilterClauses(INPUTS).find((candidate) => candidate.name === name);
+  if (!clause) throw new Error(`no clause named "${name}"`);
+  return clause;
 }
 
 describe('KIT_TEAMS', () => {
@@ -68,65 +68,62 @@ describe('buildFieldJqlReference', () => {
   });
 });
 
-describe('buildKitFilters', () => {
-  it('scopes the base filter to both team projects plus Epics owned by either PO — no PM clause', () => {
-    const base = findFilter('All Work');
-    expect(base.jql).toBe(
-      'project in (ENCUC, ENFCT) OR (issuetype = Epic AND "Product Owner" in ("U581996", "U586310"))',
-    );
-    expect(base.jql).not.toMatch(/Project Manager/i);
-  });
-
-  it('scopes each team to its own project plus only its own PO\'s Epics', () => {
-    expect(findFilter('Team CUC').jql).toBe('project = ENCUC OR (issuetype = Epic AND "Product Owner" = "U581996")');
-    expect(findFilter('Team Transformers').jql).toBe(
-      'project = ENFCT OR (issuetype = Epic AND "Product Owner" = "U586310")',
-    );
+describe('buildRichFilterClauses', () => {
+  it('scopes each team to its own project plus only its own PO Epics — no PM clause', () => {
+    expect(findClause('CUC')).toMatchObject({
+      tab: 'Smart filter "Team"', clause: 'project = ENCUC OR (issuetype = Epic AND "Product Owner" = "U581996")',
+    });
+    expect(findClause('TRANSFORMERS').clause).toBe('project = ENFCT OR (issuetype = Epic AND "Product Owner" = "U586310")');
+    expect(findClause('CUC').clause).not.toMatch(/Project Manager/i);
   });
 
   it('keeps Epics out of team-level work so Epic sizes never inflate WIP or points', () => {
-    const teamWork = findFilter('Team Work');
-    expect(teamWork.jql).toContain('project in (ENCUC, ENFCT)');
-    expect(teamWork.jql).toContain('issuetype != Epic');
-    expect(teamWork.jql).toContain('issuetype not in subTaskIssueTypes()');
+    const teamWork = findClause('Team Work').clause;
+    expect(teamWork).toContain('issuetype != Epic');
+    expect(teamWork).toContain('issuetype not in subTaskIssueTypes()');
   });
 
-  it('builds the Epics filter from PO ownership outside the team projects', () => {
-    expect(findFilter('Epics').jql).toBe(
+  it('builds the Epics view from PO ownership outside the team projects', () => {
+    expect(findClause('Epics').clause).toBe(
       'issuetype = Epic AND "Product Owner" in ("U581996", "U586310") AND project not in (ENCUC, ENFCT)',
     );
   });
 
-  it('defines "done recently" from the instance\'s own done statuses, not a hard-coded list', () => {
-    expect(findFilter('Done 30 Days').jql).toContain('status CHANGED TO ("Done", "Cancelled") AFTER -30d');
+  it('defines "done recently" from the instance own done statuses, not a hard-coded list', () => {
+    expect(findClause('Done 30 Days').clause).toContain('status CHANGED TO ("Done", "Cancelled") AFTER -30d');
   });
 
-  it('scopes every slice filter to team-level work', () => {
-    for (const suffix of ['In Progress', 'Done 30 Days', 'Upcoming', 'Flagged', 'Stuck 10 Days']) {
-      expect(findFilter(suffix).jql.startsWith('(project in (ENCUC, ENFCT) AND issuetype != Epic')).toBe(true);
-    }
+  it('gives the status slices as static filters', () => {
+    expect(findClause('In Progress')).toMatchObject({ tab: 'Static filter', clause: 'statusCategory = "In Progress"' });
   });
 
-  it('gives every filter a unique, prefixed name so re-runs find and update rather than duplicate', () => {
-    const names = buildKitFilters(INPUTS).map((filter) => filter.name);
-    expect(new Set(names).size).toBe(names.length);
-    expect(names.every((name) => name.startsWith('Enrollment Kit — '))).toBe(true);
-  });
-
-  it('omits the done-recently filter when the instance reports no done statuses', () => {
-    const filters = buildKitFilters({ ...INPUTS, doneStatusNames: [] });
-    expect(filters.some((filter) => filter.name.endsWith('Done 30 Days'))).toBe(false);
+  it('omits the done-recently clause when the instance reports no done statuses', () => {
+    const clauses = buildRichFilterClauses({ ...INPUTS, doneStatusNames: [] });
+    expect(clauses.some((clause) => clause.name === 'Done 30 Days')).toBe(false);
   });
 });
 
-describe('buildRichFilterClauses', () => {
-  it('returns clause-only JQL for the rich filter tabs (the base filter already scopes the data)', () => {
-    const clauses = buildRichFilterClauses(INPUTS);
-    const smartCuc = clauses.find((clause) => clause.name === 'CUC');
-    expect(smartCuc?.tab).toBe('Smart filter "Team"');
-    expect(smartCuc?.clause).toBe('project = ENCUC OR (issuetype = Epic AND "Product Owner" = "U581996")');
-    const inProgress = clauses.find((clause) => clause.name === 'In Progress');
-    expect(inProgress?.clause).toBe('statusCategory = "In Progress"');
+describe('pickBaseFilterId', () => {
+  it('finds the existing base filter by its exact name', () => {
+    expect(BASE_FILTER_NAME).toBe('All of Enrollment Query');
+    const filters = [{ id: '1', name: 'Other', jql: 'x' }, { id: '266430', name: 'All of Enrollment Query', jql: 'y' }];
+    expect(pickBaseFilterId(filters)).toBe('266430');
+  });
+
+  it('picks nothing when that filter is not among the favourites', () => {
+    expect(pickBaseFilterId([{ id: '1', name: 'Other', jql: 'x' }])).toBe('');
+  });
+});
+
+describe('scopeClauseToBase', () => {
+  it('runs a clause inside the base filter, so its count is what the gadget will show', () => {
+    expect(scopeClauseToBase('project in (ENCUC, ENFCT)', 'statusCategory = Done'))
+      .toBe('(project in (ENCUC, ENFCT)) AND (statusCategory = Done)');
+  });
+
+  it('drops the base filter ORDER BY, which is not allowed inside parentheses', () => {
+    expect(scopeClauseToBase('project = ENCUC ORDER BY Rank ASC', 'Flagged is not EMPTY'))
+      .toBe('(project = ENCUC) AND (Flagged is not EMPTY)');
   });
 });
 
@@ -140,34 +137,5 @@ describe('readDoneStatusNames', () => {
       [{ name: 'Story', statuses: [{ name: 'Closed', statusCategory: { key: 'done' } }] }],
     ];
     expect(readDoneStatusNames(projectStatuses)).toEqual(['Cancelled', 'Closed', 'Done']);
-  });
-});
-
-describe('planFilterActions', () => {
-  const desired = [
-    { name: 'Enrollment Kit — A', jql: 'project = ENCUC', description: 'a' },
-    { name: 'Enrollment Kit — B', jql: 'project = ENFCT', description: 'b' },
-    { name: 'Enrollment Kit — C', jql: 'issuetype = Epic', description: 'c' },
-  ];
-
-  it('creates missing filters, updates drifted ones, and leaves matching ones unchanged', () => {
-    const existing = [
-      { id: '10', name: 'Enrollment Kit — A', jql: 'project  =  ENCUC' },
-      { id: '11', name: 'Enrollment Kit — B', jql: 'project = OLD' },
-      { id: '12', name: 'Someone else\'s filter', jql: 'x' },
-    ];
-    const plan = planFilterActions(desired, existing);
-    expect(plan.map((row) => [row.name, row.action, row.existingId])).toEqual([
-      ['Enrollment Kit — A', 'unchanged', '10'],
-      ['Enrollment Kit — B', 'update', '11'],
-      ['Enrollment Kit — C', 'create', null],
-    ]);
-  });
-});
-
-describe('planMissingProjectShares', () => {
-  it('returns only the project ids the filter is not already shared with', () => {
-    const existing = [{ type: 'project', project: { id: '100' } }, { type: 'group', group: { name: 'x' } }];
-    expect(planMissingProjectShares(existing, ['100', '200'])).toEqual(['200']);
   });
 });

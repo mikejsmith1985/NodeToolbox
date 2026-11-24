@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Enrollment Dashboard Kit builds on your own base filter and no longer creates 11 saved filters.** The dashboard
+  runs on one saved filter, **All of Enrollment Query**, and each gadget narrows it with a Rich Filters clause.
+  The Kit now picks that filter from your favourites, counts every clause inside it so each number matches what
+  its gadget will show, and lists the clauses to copy. It writes nothing to Jira; the Apply step and filter
+  sharing are gone. If you already ran Apply, delete the "Enrollment Kit — …" filters in Jira.
 - **Jira works through the Toolbox Relay — no Jira token needed after a Jira move.** After the re-instance migration
   the server's stored Jira token belonged to the old instance, so every Jira call (e.g. the Enrollment Dashboard Kit's
   Discover) failed with 401. The one Toolbox Relay bookmark now also works on a signed-in **Jira** tab (recognised by

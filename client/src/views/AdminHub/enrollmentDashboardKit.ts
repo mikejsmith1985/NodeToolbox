@@ -1,16 +1,18 @@
-// enrollmentDashboardKit.ts — Pure definitions for the Enrollment Master Dashboard's saved Jira filters (GH #511).
+// enrollmentDashboardKit.ts — Pure definitions for the Enrollment Master Dashboard's Rich Filters clauses (GH #511).
 //
 // Background (plain English): each Jira migration wipes the Enrollment dashboard, and nobody remembers how
-// it was built. This module is the written-down recipe. It knows the two Enrollment teams: Cleanup Crew
-// (CUC) works in ENCUC and Transformers in ENFCT, and each team's Epics live in OTHER projects, owned by
-// that team's Product Owner. From that it builds the JQL for every saved filter the dashboard needs, and it
-// plans the safe set of writes (create what is missing, update what drifted, leave the rest alone). It never
-// talks to Jira; the Admin Hub panel feeds it live data and carries out the plan.
+// it was built. The dashboard runs on ONE saved filter the owner already wrote ("All of Enrollment Query"),
+// and every gadget narrows it with a Rich Filters clause (a smart filter, a view or a static filter). This
+// module is the written-down recipe for those clauses. It knows the two Enrollment teams: Cleanup Crew (CUC)
+// works in ENCUC and Transformers in ENFCT, and each team's Epics live in OTHER projects, owned by that team's
+// Product Owner. It never talks to Jira; the Admin Hub panel feeds it live data and only ever reads.
 
 // ── Named constants ──
 
-/** Every kit filter starts with this, so a re-run finds its own filters by name and never duplicates them. */
-export const KIT_FILTER_PREFIX = 'Enrollment Kit — ';
+/** The owner's own saved base filter that the whole dashboard runs on; the kit builds on it and never replaces it. */
+export const BASE_FILTER_NAME = 'All of Enrollment Query';
+/** JQL's sort suffix, which a saved filter may carry but which is not allowed inside parentheses. */
+const ORDER_BY_PATTERN = /\border\s+by\b/i;
 /** How far back "done recently" looks, as a JQL relative date. */
 const DONE_RECENTLY_WINDOW = '-30d';
 /** How long an in-progress item may sit without a status change before it counts as stuck. */
@@ -49,13 +51,6 @@ export interface KitInputs {
   productOwnerUserByTeam: Record<KitTeam['label'], string>;
   /** Every status name in the "done" category across both team projects. */
   doneStatusNames: readonly string[];
-}
-
-/** One saved Jira filter the kit owns. */
-export interface KitFilterDefinition {
-  name: string;
-  jql: string;
-  description: string;
 }
 
 /** One clause to type into a Rich Filters tab; the rich filter's base filter already supplies the scope. */
@@ -143,34 +138,7 @@ function buildSliceClauses(inputs: KitInputs): Array<{ name: string; clause: str
   ];
 }
 
-// ── The filters and clauses ──
-
-/** Builds every saved Jira filter the Enrollment dashboard uses, each standalone so plain gadgets can use it too. */
-export function buildKitFilters(inputs: KitInputs): KitFilterDefinition[] {
-  const teamWorkScope = buildTeamWorkScope();
-  const filters: KitFilterDefinition[] = [
-    {
-      name: `${KIT_FILTER_PREFIX}All Work`,
-      jql: `project in (${listTeamProjects()}) OR (issuetype = Epic AND ${inputs.productOwnerFieldReference} in (${listProductOwners(inputs)}))`,
-      description: 'Base filter for the Enrollment rich filter: both team projects plus each PO\'s Epics.',
-    },
-    ...KIT_TEAMS.map((team) => ({
-      name: `${KIT_FILTER_PREFIX}Team ${team.displayName}`,
-      jql: buildTeamClause(team, inputs),
-      description: `${team.displayName}: ${team.projectKey} plus Epics its Product Owner owns.`,
-    })),
-    { name: `${KIT_FILTER_PREFIX}Team Work`, jql: teamWorkScope, description: 'Stories, Defects and Tasks only.' },
-    {
-      name: `${KIT_FILTER_PREFIX}Epics`,
-      jql: `issuetype = Epic AND ${inputs.productOwnerFieldReference} in (${listProductOwners(inputs)}) AND project not in (${listTeamProjects()})`,
-      description: 'Enrollment Epics, which live outside the team projects.',
-    },
-  ];
-  for (const slice of buildSliceClauses(inputs)) {
-    filters.push({ name: `${KIT_FILTER_PREFIX}${slice.name}`, jql: `(${teamWorkScope}) AND ${slice.clause}`, description: slice.description });
-  }
-  return filters;
-}
+// ── The clauses ──
 
 /** Builds the clause-only JQL to type into the Rich Filters tabs (smart filter, views, static filters). */
 export function buildRichFilterClauses(inputs: KitInputs): RichFilterClause[] {
@@ -207,52 +175,29 @@ export function readDoneStatusNames(projectStatuses: readonly (readonly ProjectI
   return [...doneNames].sort();
 }
 
-// ── Write planning ──
+// ── The base filter ──
 
-/** A saved filter that already exists on Jira. */
-export interface ExistingFilter {
+/** A saved filter as GET /rest/api/2/filter/favourite returns it (the fields this module reads). */
+export interface SavedFilter {
   id: string;
   name: string;
   jql: string;
 }
 
-/** What the apply step will do with one kit filter. */
-export interface FilterPlanRow extends KitFilterDefinition {
-  action: 'create' | 'update' | 'unchanged';
-  existingId: string | null;
+/** Finds the owner's base filter among the favourites by its exact name; '' when it is not there. */
+export function pickBaseFilterId(filters: readonly SavedFilter[]): string {
+  return filters.find((filter) => filter.name === BASE_FILTER_NAME)?.id ?? '';
 }
 
-/** Collapses whitespace so cosmetic spacing differences never count as drift. */
-function normalizeJql(jql: string): string {
-  return String(jql || '').replace(/\s+/g, ' ').trim();
+/** The base filter's JQL without any ORDER BY, so it can be wrapped in parentheses and combined. */
+export function stripOrderBy(jql: string): string {
+  return String(jql || '').split(ORDER_BY_PATTERN)[0].trim();
 }
 
-/** Matches each wanted filter to an existing one by exact name, then decides create, update or leave alone. */
-export function planFilterActions(
-  desired: readonly KitFilterDefinition[],
-  existing: readonly ExistingFilter[],
-): FilterPlanRow[] {
-  return desired.map((filter) => {
-    const match = existing.find((candidate) => candidate.name === filter.name);
-    if (!match) return { ...filter, action: 'create', existingId: null };
-    const isSame = normalizeJql(match.jql) === normalizeJql(filter.jql);
-    return { ...filter, action: isSame ? 'unchanged' : 'update', existingId: match.id };
-  });
-}
-
-/** The slice of GET /rest/api/2/filter/{id}/permission this module reads. */
-export interface SharePermission {
-  type: string;
-  project?: { id?: string };
-}
-
-/** Returns the project ids a filter still needs sharing with, so re-runs never add a duplicate share. */
-export function planMissingProjectShares(
-  existingPermissions: readonly SharePermission[],
-  wantedProjectIds: readonly string[],
-): string[] {
-  const sharedProjectIds = new Set(
-    existingPermissions.filter((permission) => permission.type === 'project').map((permission) => String(permission.project?.id)),
-  );
-  return wantedProjectIds.filter((projectId) => !sharedProjectIds.has(projectId));
+/**
+ * Runs one Rich Filters clause inside the base filter, which is exactly what the gadget will show — so the
+ * live count the panel reports for a clause is the number the dashboard will display.
+ */
+export function scopeClauseToBase(baseJql: string, clause: string): string {
+  return `(${stripOrderBy(baseJql)}) AND (${clause})`;
 }

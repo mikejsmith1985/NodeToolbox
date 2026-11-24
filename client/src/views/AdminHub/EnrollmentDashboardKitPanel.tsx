@@ -1,24 +1,23 @@
-// EnrollmentDashboardKitPanel.tsx — Admin Hub panel that rebuilds the Enrollment dashboard's saved filters (GH #511).
+// EnrollmentDashboardKitPanel.tsx — Admin Hub panel that lists the Enrollment dashboard's Rich Filters clauses (GH #511).
 //
-// After a Jira migration the Enrollment Master Dashboard has to be rebuilt by hand. This panel does the part
-// Jira lets us automate: it discovers the live pieces (Product Owner field, each team's PO, done statuses),
-// builds every saved filter the dashboard needs, checks each one's JQL against Jira with an issue count,
-// previews create / update / unchanged, and only on Apply writes the filters and shares them with both team
-// projects. It also lists the clause-only JQL to paste into the Rich Filters tabs, which have no public API.
+// After a Jira migration the Enrollment Master Dashboard has to be rebuilt by hand. It runs on ONE saved filter
+// the owner already wrote ("All of Enrollment Query"), and every gadget narrows it with a Rich Filters clause.
+// This panel finds that filter, works out the live pieces each clause needs (Product Owner field, each team's
+// PO, done statuses), then counts every clause INSIDE the base filter so each number matches what the gadget
+// will show. It only ever reads: the clauses are copied into Rich Filters by hand, which has no public API.
 
 import React, { useState } from 'react';
 
-import { jiraGet, jiraPost, jiraPut, searchUsers } from '../../services/jiraApi.ts';
+import { jiraGet, searchUsers } from '../../services/jiraApi.ts';
 import {
   FIELD_MAPPING_ENTRIES, readFieldMappingOverrides, resolveFieldMapping,
 } from '../../services/jiraFieldMapping.ts';
 import type { JiraField, JiraUser } from '../../types/jira.ts';
 import styles from './AdminHubView.module.css';
 import {
-  KIT_TEAMS, buildKitFilters, buildRichFilterClauses, buildFieldJqlReference, planFilterActions,
-  planMissingProjectShares, readDoneStatusNames,
-  type ExistingFilter, type FilterPlanRow, type KitInputs, type KitTeam, type ProjectIssueTypeStatuses,
-  type RichFilterClause, type SharePermission,
+  BASE_FILTER_NAME, KIT_TEAMS, buildFieldJqlReference, buildRichFilterClauses, pickBaseFilterId,
+  readDoneStatusNames, scopeClauseToBase, stripOrderBy,
+  type KitInputs, type KitTeam, type ProjectIssueTypeStatuses, type RichFilterClause, type SavedFilter,
 } from './enrollmentDashboardKit.ts';
 import { describeJiraFailure } from './subtaskStoryPromotion.ts';
 
@@ -30,31 +29,33 @@ type TeamLabel = KitTeam['label'];
 interface Discovery {
   productOwnerFieldReference: string | null;
   candidatesByTeam: Record<TeamLabel, JiraUser[]>;
-  projectIdByKey: Record<string, string>;
   doneStatusNames: string[];
-  existingFilters: ExistingFilter[];
+  favouriteFilters: SavedFilter[];
 }
 
-/** One previewed filter: the plan row plus what Jira said when its JQL was test-run. */
-interface PreviewRow extends FilterPlanRow {
+/** One live count: how many issues a JQL matches, or why Jira refused it. */
+interface CountResult {
   issueCount: number | null;
   jqlError: string | null;
 }
 
+/** One clause plus its count inside the base filter. */
+type CheckedClause = RichFilterClause & CountResult;
+
 // ── Small helpers ──
 
-/** Reads a human-actionable message off an unknown thrown value. */
 /** Jira's "you are not signed in" status — after a Jira move, the server's stored token is the usual cause. */
 const UNAUTHORIZED_SUFFIX = ': 401';
 const UNAUTHORIZED_FIX_HINT = ' — Jira did not accept the sign-in. Click the Toolbox Relay bookmark in a signed-in Jira tab, then try again.';
 
+/** Reads a human-actionable message off an unknown thrown value. */
 function toMessage(error: unknown): string {
   const rawMessage = error instanceof Error ? error.message : String(error);
   const hint = rawMessage.trim().endsWith(UNAUTHORIZED_SUFFIX) ? UNAUTHORIZED_FIX_HINT : '';
   return describeJiraFailure(rawMessage) + hint;
 }
 
-/** The identifier JQL and filters use for a user: username on Data Center, accountId on Cloud. */
+/** The identifier JQL uses for a user: username on Data Center, accountId on Cloud. */
 function readUserIdentifier(user: JiraUser): string {
   return user.name || user.accountId;
 }
@@ -75,30 +76,27 @@ function resolveProductOwnerFieldId(availableFields: readonly JiraField[]): stri
   return resolveFieldMapping(entry, availableFields, readFieldMappingOverrides(window.localStorage)).effectiveFieldId || '';
 }
 
-// ── Jira reads ──
+// ── Jira reads (the panel never writes) ──
 
-/** Reads every live input the kit needs. Read-only: GET requests only. */
+/** Reads every live input the clauses need. */
 async function discoverInstance(): Promise<Discovery> {
   const fields = await jiraGet<JiraField[]>('/rest/api/2/field');
   const productOwnerFieldReference = buildFieldJqlReference(resolveProductOwnerFieldId(fields), fields);
   const candidatesByTeam = {} as Record<TeamLabel, JiraUser[]>;
-  const projectIdByKey: Record<string, string> = {};
   const projectStatuses: ProjectIssueTypeStatuses[][] = [];
   for (const team of KIT_TEAMS) {
     candidatesByTeam[team.label] = await searchUsers(team.productOwnerSearch).catch(() => []);
-    const project = await jiraGet<{ id: string }>(`/rest/api/2/project/${team.projectKey}`);
-    projectIdByKey[team.projectKey] = project.id;
     projectStatuses.push(await jiraGet<ProjectIssueTypeStatuses[]>(`/rest/api/2/project/${team.projectKey}/statuses`));
   }
-  const existingFilters = await jiraGet<ExistingFilter[]>('/rest/api/2/filter/favourite').catch(() => []);
+  const favouriteFilters = await jiraGet<SavedFilter[]>('/rest/api/2/filter/favourite').catch(() => []);
   return {
-    productOwnerFieldReference, candidatesByTeam, projectIdByKey,
-    doneStatusNames: readDoneStatusNames(projectStatuses), existingFilters: existingFilters ?? [],
+    productOwnerFieldReference, candidatesByTeam,
+    doneStatusNames: readDoneStatusNames(projectStatuses), favouriteFilters: favouriteFilters ?? [],
   };
 }
 
-/** Test-runs one JQL with zero results requested, so a typo or unsupported function shows before any write. */
-async function countJql(jql: string): Promise<{ issueCount: number | null; jqlError: string | null }> {
+/** Counts one JQL with zero results requested, so a typo or unsupported function shows before it is pasted. */
+async function countJql(jql: string): Promise<CountResult> {
   try {
     const search = await jiraGet<{ total?: number }>(`/rest/api/2/search?maxResults=0&jql=${encodeURIComponent(jql)}`);
     return { issueCount: search.total ?? 0, jqlError: null };
@@ -107,53 +105,33 @@ async function countJql(jql: string): Promise<{ issueCount: number | null; jqlEr
   }
 }
 
-// ── Jira writes (Apply only) ──
-
-/** Creates or updates one filter and returns its id; unchanged filters are returned as-is. */
-async function writeFilter(row: PreviewRow): Promise<string> {
-  const body = { name: row.name, description: row.description, jql: row.jql };
-  if (row.action === 'create') {
-    const created = await jiraPost<{ id: string }>('/rest/api/2/filter', { ...body, favourite: true });
-    return created.id;
-  }
-  if (row.action === 'update' && row.existingId) await jiraPut(`/rest/api/2/filter/${row.existingId}`, body);
-  return row.existingId ?? '';
-}
-
-/** Shares a filter with each team project it is not yet shared with (anyone who can browse that project). */
-async function shareFilter(filterId: string, projectIds: readonly string[]): Promise<number> {
-  const existing = await jiraGet<SharePermission[]>(`/rest/api/2/filter/${filterId}/permission`).catch(() => []);
-  const missing = planMissingProjectShares(existing ?? [], projectIds);
-  for (const projectId of missing) {
-    await jiraPost(`/rest/api/2/filter/${filterId}/permission`, { type: 'project', projectId });
-  }
-  return missing.length;
-}
-
 // ── The panel ──
 
-/** Admin Hub panel: discover → dry run (JQL test-run) → apply the Enrollment dashboard's saved filters. */
+/** Admin Hub panel: discover → check every Rich Filters clause inside the owner's base filter. Read-only. */
 export function EnrollmentDashboardKitPanel(): React.ReactElement {
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
+  const [baseFilterId, setBaseFilterId] = useState('');
   const [selectedUserByTeam, setSelectedUserByTeam] = useState<Record<TeamLabel, string>>({ CUC: '', TRANSFORMERS: '' });
-  const [preview, setPreview] = useState<PreviewRow[] | null>(null);
-  const [clauses, setClauses] = useState<RichFilterClause[]>([]);
-  const [log, setLog] = useState<string[]>([]);
+  const [baseCount, setBaseCount] = useState<CountResult | null>(null);
+  const [checkedClauses, setCheckedClauses] = useState<CheckedClause[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
 
+  const baseFilter = discovery?.favouriteFilters.find((filter) => filter.id === baseFilterId) ?? null;
+
   const runDiscover = async () => {
-    setIsBusy(true); setStatus('Reading the Product Owner field, team POs, projects and statuses…');
-    setPreview(null); setLog([]);
+    setIsBusy(true); setStatus('Reading your favourite filters, the Product Owner field, team POs and statuses…');
+    setCheckedClauses([]); setBaseCount(null);
     try {
       const found = await discoverInstance();
       setDiscovery(found);
+      setBaseFilterId(pickBaseFilterId(found.favouriteFilters));
       setSelectedUserByTeam({
         CUC: pickExpectedUser(found.candidatesByTeam.CUC, KIT_TEAMS[0].productOwnerNameWords),
         TRANSFORMERS: pickExpectedUser(found.candidatesByTeam.TRANSFORMERS, KIT_TEAMS[1].productOwnerNameWords),
       });
       setStatus(found.productOwnerFieldReference
-        ? 'Discovery complete — confirm each team\'s Product Owner, then run the dry run.'
+        ? 'Discovery complete — confirm the base filter and each team\'s Product Owner, then check the clauses.'
         : 'No Product Owner field found — map it in Admin Hub → Field Mapping, then discover again.');
     } catch (error) {
       setStatus(`Discovery failed: ${toMessage(error)}`);
@@ -161,7 +139,7 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
   };
 
   const buildInputs = (): KitInputs | null => {
-    if (!discovery?.productOwnerFieldReference) return null;
+    if (!discovery?.productOwnerFieldReference || !baseFilter) return null;
     if (!selectedUserByTeam.CUC || !selectedUserByTeam.TRANSFORMERS) return null;
     return {
       productOwnerFieldReference: discovery.productOwnerFieldReference,
@@ -170,81 +148,99 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
     };
   };
 
-  const runDryRun = async () => {
+  const runCheck = async () => {
     const inputs = buildInputs();
-    if (!inputs || !discovery) return;
-    setIsBusy(true); setStatus('Test-running every filter\'s JQL against Jira…'); setLog([]);
+    if (!inputs || !baseFilter) return;
+    setIsBusy(true); setStatus('Counting every clause inside the base filter…');
     try {
-      const plan = planFilterActions(buildKitFilters(inputs), discovery.existingFilters);
-      const rows: PreviewRow[] = [];
-      for (const row of plan) rows.push({ ...row, ...(await countJql(row.jql)) });
-      setPreview(rows);
-      setClauses(buildRichFilterClauses(inputs));
-      setStatus('Dry run complete — nothing was changed.');
-    } finally { setIsBusy(false); }
-  };
-
-  const runApply = async () => {
-    if (!preview || !discovery) return;
-    if (!window.confirm('Create / update these saved filters in Jira and share them with ENCUC and ENFCT?')) return;
-    setIsBusy(true); setStatus('Applying…');
-    const lines: string[] = [];
-    const appendLog = (line: string) => { lines.push(line); setLog([...lines]); };
-    const projectIds = Object.values(discovery.projectIdByKey);
-    try {
-      for (const row of preview) {
-        if (row.jqlError) { appendLog(`${row.name}: skipped — JQL rejected (${row.jqlError})`); continue; }
-        try {
-          const filterId = await writeFilter(row);
-          const sharedCount = await shareFilter(filterId, projectIds);
-          appendLog(`${row.name}: ${row.action} (id ${filterId})${sharedCount ? ` · shared with ${sharedCount} project(s)` : ''}`);
-        } catch (error) { appendLog(`${row.name}: ERROR — ${toMessage(error)}`); }
+      setBaseCount(await countJql(stripOrderBy(baseFilter.jql)));
+      const results: CheckedClause[] = [];
+      for (const clause of buildRichFilterClauses(inputs)) {
+        results.push({ ...clause, ...(await countJql(scopeClauseToBase(baseFilter.jql, clause.clause))) });
       }
-      setStatus('Apply finished — filters are in Jira under Filters → My filters / Favourites.');
+      setCheckedClauses(results);
+      setStatus('Check complete — nothing was changed in Jira. Copy each clause into Rich Filters.');
     } finally { setIsBusy(false); }
   };
 
   const changeTeamUser = (teamLabel: TeamLabel, identifier: string) => {
     setSelectedUserByTeam((current) => ({ ...current, [teamLabel]: identifier }));
-    setPreview(null);
+    setCheckedClauses([]);
+  };
+
+  const changeBaseFilter = (filterId: string) => {
+    setBaseFilterId(filterId);
+    setCheckedClauses([]); setBaseCount(null);
   };
 
   return (
     <section className={styles.panelCard}>
       <h3 className={styles.sectionTitle}>📊 Enrollment Dashboard Kit — #511</h3>
       <p className={styles.adminDescription}>
-        Rebuilds the saved Jira filters behind the Enrollment Master Dashboard: CUC (ENCUC) and Transformers (ENFCT)
-        team work, plus each team&apos;s Epics found by Product Owner. Every filter&apos;s JQL is test-run before anything
-        is written, and filters are shared with both team projects.
+        The Enrollment Master Dashboard runs on one saved filter — your <strong>{BASE_FILTER_NAME}</strong> — and every
+        gadget narrows it with a Rich Filters clause. This lists those clauses (CUC and Transformers team work, each
+        team&apos;s Epics found by Product Owner, and the status slices) and counts each one inside the base filter.
+        It only reads; nothing is written to Jira.
       </p>
 
       <div className={styles.panelSection}>
         <button className={styles.actionButton} onClick={runDiscover} disabled={isBusy} type="button">1 · Discover</button>
-        <button className={styles.actionButton} onClick={runDryRun} disabled={isBusy || !buildInputs()} type="button">
-          2 · 🔍 Dry run (preview)
-        </button>
-        <button className={styles.dangerButton} onClick={runApply} disabled={isBusy || !preview} type="button">
-          3 · ⚠️ Apply to Jira
+        <button className={styles.actionButton} onClick={runCheck} disabled={isBusy || !buildInputs()} type="button">
+          2 · 🔍 Check clauses
         </button>
       </div>
 
       {status && <p className={styles.panelStatusLine}>{status}</p>}
 
-      {discovery && <ProductOwnerPickers discovery={discovery} selected={selectedUserByTeam} onChange={changeTeamUser} isDisabled={isBusy} />}
-      {preview && <FilterPreviewTable rows={preview} />}
-      {preview && clauses.length > 0 && <RichFilterClauseTable clauses={clauses} />}
-
-      {log.length > 0 && (
-        <div className={styles.panelSection}>
-          <label className={styles.fieldLabel}>Apply log</label>
-          <pre className={styles.diagnosticsResultPre}>{log.join('\n')}</pre>
-        </div>
+      {discovery && (
+        <BaseFilterPicker
+          filters={discovery.favouriteFilters}
+          selectedId={baseFilterId}
+          baseCount={baseCount}
+          onChange={changeBaseFilter}
+          isDisabled={isBusy}
+        />
       )}
+      {discovery && <ProductOwnerPickers discovery={discovery} selected={selectedUserByTeam} onChange={changeTeamUser} isDisabled={isBusy} />}
+      {checkedClauses.length > 0 && <RichFilterClauseTable clauses={checkedClauses} />}
     </section>
   );
 }
 
 // ── Sub-views ──
+
+/** The base filter dropdown, filled from the person's own favourite filters (pick, never type). */
+function BaseFilterPicker(props: {
+  filters: readonly SavedFilter[];
+  selectedId: string;
+  baseCount: CountResult | null;
+  onChange: (filterId: string) => void;
+  isDisabled: boolean;
+}): React.ReactElement {
+  const { filters, selectedId, baseCount, onChange, isDisabled } = props;
+  const selected = filters.find((filter) => filter.id === selectedId);
+  return (
+    <div className={styles.panelSection}>
+      <label className={styles.fieldLabel} htmlFor="kit-base-filter">Base filter (the rich filter&apos;s saved filter)</label>
+      <select
+        id="kit-base-filter"
+        className={styles.inputField}
+        value={selectedId}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={isDisabled}
+      >
+        <option value="">— choose — (star the filter in Jira if it is missing)</option>
+        {filters.map((filter) => <option key={filter.id} value={filter.id}>{filter.name} ({filter.id})</option>)}
+      </select>
+      {selected && <p className={styles.panelStatusLine}><code>{selected.jql}</code></p>}
+      {baseCount && (
+        <p className={styles.panelStatusLine}>
+          {baseCount.jqlError ? `⚠️ ${baseCount.jqlError}` : `${baseCount.issueCount} issues in the base filter`}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** One Product Owner dropdown per team, filled from Jira's own user search (pick, never type). */
 function ProductOwnerPickers(props: {
@@ -285,41 +281,20 @@ function ProductOwnerPickers(props: {
   );
 }
 
-/** The dry-run table: each filter's planned action, its live issue count (or the JQL error), and its JQL. */
-function FilterPreviewTable({ rows }: { rows: readonly PreviewRow[] }): React.ReactElement {
-  return (
-    <div className={styles.panelSection}>
-      <label className={styles.fieldLabel}>Saved filters</label>
-      <table className={styles.rulesTable}>
-        <thead><tr><th>Filter</th><th>Action</th><th>Issues</th><th>JQL</th></tr></thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>{row.jqlError ? 'skip' : row.action}</td>
-              <td>{row.jqlError ? `⚠️ ${row.jqlError}` : row.issueCount}</td>
-              <td><code>{row.jql}</code></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** Clause-only JQL for the Rich Filters tabs, each copyable, because that app offers no public API. */
-function RichFilterClauseTable({ clauses }: { clauses: readonly RichFilterClause[] }): React.ReactElement {
+/** Each clause with its count inside the base filter (or Jira's refusal), copyable for the Rich Filters tabs. */
+function RichFilterClauseTable({ clauses }: { clauses: readonly CheckedClause[] }): React.ReactElement {
   const copyClause = (clause: string) => { void navigator.clipboard?.writeText(clause); };
   return (
     <div className={styles.panelSection}>
       <label className={styles.fieldLabel}>Rich filter clauses (paste into Rich Filters → Enrollment Master Dashboard)</label>
       <table className={styles.rulesTable}>
-        <thead><tr><th>Tab</th><th>Name</th><th>Clause</th><th /></tr></thead>
+        <thead><tr><th>Tab</th><th>Name</th><th>Issues</th><th>Clause</th><th /></tr></thead>
         <tbody>
           {clauses.map((clause) => (
             <tr key={`${clause.tab}-${clause.name}`}>
               <td>{clause.tab}</td>
               <td>{clause.name}</td>
+              <td>{clause.jqlError ? `⚠️ ${clause.jqlError}` : clause.issueCount}</td>
               <td><code>{clause.clause}</code></td>
               <td>
                 <button className={styles.actionButton} type="button" onClick={() => copyClause(clause.clause)}>Copy</button>

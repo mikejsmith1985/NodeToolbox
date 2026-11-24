@@ -2957,7 +2957,7 @@ export default function AdminHubView() {
 
       {activeAdminTab === 'enrollment-dashboard' && (
         <section id="admin-hub-enrollment-dashboard-panel" role="tabpanel" aria-labelledby="admin-hub-enrollment-dashboard-tab">
-          {/* GH #511: rebuild the Enrollment Master Dashboard's saved filters after a Jira migration. */}
+          {/* GH #511: list the Enrollment Master Dashboard's Rich Filters clauses on the owner's base filter (read-only). */}
           <EnrollmentDashboardKitPanel />
           {/* GH #511: read-only probe — can Toolbox import gadgets and the rich filter too? */}
           <DashboardApiProbePanel />
