@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Jira light stopped lying, and Jira works through the relay like ServiceNow and SharePoint.** The Jira light
+  went green whenever any token was stored, including one for the old instance after the migration. It now goes
+  green only while a Jira tab is relaying, or after a live call with the stored token has succeeded. Its panel
+  names the Jira each path reaches. If the relay is on a different Jira than the stored URL, the panel says so and
+  offers **Use … as the Jira URL**. It also has **Open Jira**, which opens a dedicated relay tab like ServiceNow's
+  (relaying from a tab you also work in ended the relay as soon as you moved to another page).
+- **Jira calls no longer quietly fall back to the old instance.** When the relay is off and was last on a
+  different Jira than the stored URL, `/jira-proxy` answers 503 and names both addresses. Before, it silently
+  read from (and wrote to) the old Jira.
+- **The Jira relay no longer drops under load.** It now runs up to six Jira calls at once instead of one at a
+  time, so a busy page no longer queues calls past the proxy's wait. The wait uses no timers, which Chrome slows
+  to about once a minute in background tabs. **Re-drag the Toolbox Relay bookmark.**
+- **A new Jira token can be entered.** Admin Hub → Credential Management (unlocked) has a write-only **Jira
+  Personal Access Token** field. The token is sent once, never shown back, and the box clears after saving.
 - **Enrollment Dashboard Kit builds on your own base filter and no longer creates 11 saved filters.** The dashboard
   runs on one saved filter, **All of Enrollment Query**, and each gadget narrows it with a Rich Filters clause.
   The Kit now picks that filter from your favourites, counts every clause inside it so each number matches what

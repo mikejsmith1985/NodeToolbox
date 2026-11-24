@@ -20,7 +20,9 @@
 
 import { useEffect, useState } from 'react';
 
-import { fetchServiceBaseUrls, saveServiceBaseUrl, type ServiceWithBaseUrl } from '../../services/proxyApi.ts';
+import {
+  fetchServiceBaseUrls, saveJiraPersonalAccessToken, saveServiceBaseUrl, type ServiceWithBaseUrl,
+} from '../../services/proxyApi.ts';
 import { useSettingsStore } from '../../store/settingsStore';
 import styles from './AdminHubView.module.css';
 
@@ -78,6 +80,54 @@ function LockedUrlRow({ label, urlValue }: { label: string; urlValue: string }) 
   );
 }
 
+/**
+ * Write-only Jira Personal Access Token entry. After the Jira migration the stored token belonged to the old
+ * instance and there was nowhere to put a new one. The token is sent once, never read back or shown, and the
+ * box empties on success so it does not sit on screen.
+ */
+function JiraTokenRow() {
+  const [tokenValue, setTokenValue] = useState('');
+  const [tokenMessage, setTokenMessage] = useState('');
+  const [isSavingToken, setIsSavingToken] = useState(false);
+
+  const saveToken = async () => {
+    if (tokenValue.trim() === '') return;
+    setIsSavingToken(true);
+    try {
+      await saveJiraPersonalAccessToken(tokenValue);
+      setTokenValue('');
+      setTokenMessage('✅ Jira token saved — direct Jira calls use it straight away.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setTokenMessage(`⚠️ Could not save the Jira token — ${reason}`);
+    } finally {
+      setIsSavingToken(false);
+    }
+  };
+
+  return (
+    <div className={styles.fieldRow}>
+      <label className={styles.fieldLabel} htmlFor="credential-jira-pat">Jira Personal Access Token</label>
+      <div className={styles.inputRow}>
+        <input
+          id="credential-jira-pat"
+          type="password"
+          autoComplete="new-password"
+          spellCheck={false}
+          className={styles.textInput}
+          value={tokenValue}
+          placeholder="Paste a token created in Jira → Profile → Personal Access Tokens"
+          onChange={(changeEvent) => setTokenValue(changeEvent.target.value)}
+        />
+        <button className={styles.actionButton} type="button" onClick={() => void saveToken()} disabled={isSavingToken || tokenValue.trim() === ''}>
+          Save Jira token
+        </button>
+      </div>
+      {tokenMessage && <p className={styles.panelStatusLine}>{tokenMessage}</p>}
+    </div>
+  );
+}
+
 // ── The section ──
 
 interface CredentialManagementSectionProps {
@@ -130,8 +180,8 @@ export default function CredentialManagementSection({ isAdminUnlocked }: Credent
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>🔑 Credential Management</h2>
       <p className={styles.adminDescription}>
-        Paste the Jira and ServiceNow base URLs here and press Save — the server&apos;s proxies use them straight
-        away. GitHub credentials are NOT set here: the server&apos;s token (used by the email intake, the deployments
+        Paste the Jira and ServiceNow base URLs (and a Jira token, if you use one instead of the Jira relay) here and
+        press Save — the server&apos;s proxies use them straight away. GitHub credentials are NOT set here: the server&apos;s token (used by the email intake, the deployments
         probe and the monitors) lives in <strong>Connectivity → GitHub</strong> below, and the Git Sync panel keeps
         its own browser-side token in <strong>My Issues → Git Sync</strong>.
       </p>
@@ -155,6 +205,8 @@ export default function CredentialManagementSection({ isAdminUnlocked }: Credent
         onChangeUrl={setJiraUrl}
         onSave={() => void saveUrl('jira', 'Jira', jiraUrl, setStoredJiraUrl)}
       />
+
+      <JiraTokenRow />
 
       <ServiceUrlRow
         inputId="credential-snow-base-url"

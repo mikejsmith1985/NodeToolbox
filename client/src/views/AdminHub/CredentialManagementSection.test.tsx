@@ -20,7 +20,8 @@ type MockSettingsState = {
   setChangeRequestGeneratorSnowUrl: (url: string) => void;
 };
 
-const { fetchServiceBaseUrlsMock, saveServiceBaseUrlMock, setJiraUrlMock, setSnowUrlMock } = vi.hoisted(() => ({
+const { fetchServiceBaseUrlsMock, saveServiceBaseUrlMock, saveJiraTokenMock, setJiraUrlMock, setSnowUrlMock } = vi.hoisted(() => ({
+  saveJiraTokenMock: vi.fn(),
   fetchServiceBaseUrlsMock: vi.fn(),
   saveServiceBaseUrlMock: vi.fn(),
   setJiraUrlMock: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../store/settingsStore', () => ({
 vi.mock('../../services/proxyApi.ts', () => ({
   fetchServiceBaseUrls: fetchServiceBaseUrlsMock,
   saveServiceBaseUrl: saveServiceBaseUrlMock,
+  saveJiraPersonalAccessToken: saveJiraTokenMock,
 }));
 
 import CredentialManagementSection from './CredentialManagementSection';
@@ -51,6 +53,7 @@ beforeEach(() => {
   mockSettingsState.changeRequestGeneratorSnowUrl = '';
   fetchServiceBaseUrlsMock.mockResolvedValue({ jira: 'https://old-jira.example.com', snow: '', confluence: '' });
   saveServiceBaseUrlMock.mockResolvedValue(undefined);
+  saveJiraTokenMock.mockResolvedValue(undefined);
 });
 
 describe('CredentialManagementSection', () => {
@@ -85,7 +88,7 @@ describe('CredentialManagementSection', () => {
 
     await userEvent.tripleClick(jiraInput);
     await userEvent.paste('https://new-jira.example.com');
-    await userEvent.click(screen.getByRole('button', { name: /save jira/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save jira$/i }));
 
     await waitFor(() => expect(saveServiceBaseUrlMock).toHaveBeenCalledWith('jira', 'https://new-jira.example.com'));
     expect(setJiraUrlMock).toHaveBeenCalledWith('https://new-jira.example.com');
@@ -103,6 +106,42 @@ describe('CredentialManagementSection', () => {
     await waitFor(() => expect(screen.getByText(/could not save/i)).toBeInTheDocument());
     expect(snowInput).toHaveValue('https://new-snow.example.com');
     expect(setSnowUrlMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('CredentialManagementSection — Jira token', () => {
+  // After the Jira migration the stored token belonged to the old instance and there was nowhere to put a new
+  // one. The field is write-only: the token is sent once, never shown back, and the box empties on success.
+  it('saves a pasted Jira token to the server and clears the box', async () => {
+    render(<CredentialManagementSection isAdminUnlocked />);
+    const tokenInput = screen.getByLabelText(/Jira Personal Access Token/i);
+    expect(tokenInput).toHaveAttribute('type', 'password');
+
+    await userEvent.click(tokenInput);
+    await userEvent.paste('new-jira-token');
+    await userEvent.click(screen.getByRole('button', { name: /save jira token/i }));
+
+    await waitFor(() => expect(saveJiraTokenMock).toHaveBeenCalledWith('new-jira-token'));
+    expect(await screen.findByText(/Jira token saved/i)).toBeInTheDocument();
+    expect(tokenInput).toHaveValue('');
+  });
+
+  it('keeps the token in the box and says so when the server refuses it', async () => {
+    saveJiraTokenMock.mockRejectedValue(new Error('proxy-config update failed: 500'));
+    render(<CredentialManagementSection isAdminUnlocked />);
+    const tokenInput = screen.getByLabelText(/Jira Personal Access Token/i);
+
+    await userEvent.click(tokenInput);
+    await userEvent.paste('new-jira-token');
+    await userEvent.click(screen.getByRole('button', { name: /save jira token/i }));
+
+    expect(await screen.findByText(/could not save the Jira token/i)).toBeInTheDocument();
+    expect(tokenInput).toHaveValue('new-jira-token');
+  });
+
+  it('offers no token field while Admin Hub is locked', () => {
+    render(<CredentialManagementSection isAdminUnlocked={false} />);
+    expect(screen.queryByLabelText(/Jira Personal Access Token/i)).not.toBeInTheDocument();
   });
 });
 

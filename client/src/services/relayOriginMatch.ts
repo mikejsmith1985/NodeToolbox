@@ -68,7 +68,7 @@ export function compareRelayOrigin(
 }
 
 /** The system a relay talks to, named as the reader knows it. */
-export type RelaySystemLabel = 'SharePoint' | 'ServiceNow';
+export type RelaySystemLabel = 'SharePoint' | 'ServiceNow' | 'Jira';
 
 /**
  * Says a mismatch out loud, before anything has failed.

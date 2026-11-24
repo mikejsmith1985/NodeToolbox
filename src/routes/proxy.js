@@ -52,6 +52,15 @@ function createProxyRouter(configuration) {
       return;
     }
 
+    // Never quietly answer from a DIFFERENT Jira than the one the relay was last on. After a migration the
+    // stored URL and token point at the old instance: falling back there shows old data as if it were current
+    // and sends writes to the wrong Jira. Say so instead, and name both addresses.
+    const staleInstanceMessage = describeStaleJiraFallback(relayBridge.getRelayOrigin('jira'), configuration.jira.baseUrl);
+    if (staleInstanceMessage) {
+      res.status(503).json({ error: 'Jira relay not connected', message: staleInstanceMessage });
+      return;
+    }
+
     proxyRequest(req, res, configuration.jira, jiraPath, null, configuration.sslVerify);
   });
 
@@ -173,6 +182,28 @@ async function forwardJiraThroughRelay(req, res, jiraPath) {
   } catch (relayError) {
     res.status(504).json({ error: 'Proxy error', message: 'Jira relay: ' + relayError.message });
   }
+}
+
+/** The origin (scheme + host + port) of a URL, lower-cased, or null when it cannot be read. */
+function readUrlOrigin(rawUrl) {
+  try {
+    return new URL(String(rawUrl || '')).origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When the Jira relay was last on a different Jira than the stored base URL, returns the message that
+ * explains it; otherwise null (no relay ever seen, or the same instance — the stored token is fine to use).
+ */
+function describeStaleJiraFallback(lastRelayOrigin, configuredBaseUrl) {
+  const relayOrigin = readUrlOrigin(lastRelayOrigin);
+  const configuredOrigin = readUrlOrigin(configuredBaseUrl);
+  if (!relayOrigin || !configuredOrigin || relayOrigin === configuredOrigin) return null;
+  return 'The Jira relay is not connected. Your Jira is ' + relayOrigin + ', but the stored Jira URL is '
+    + configuredOrigin + ', so Toolbox will not answer from there. Click the Toolbox Relay bookmark in your '
+    + relayOrigin + ' tab (or use Open Jira on the Jira light), and update the stored Jira URL.';
 }
 
 /** Writes a relayed body back with the content type a direct Jira call would have carried. */

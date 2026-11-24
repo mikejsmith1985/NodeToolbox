@@ -533,6 +533,19 @@ module.exports.getBridgeStatus = function getBridgeStatus(sys) {
  * @param {string} sys - System identifier: 'snow', 'jira', or 'conf'
  * @returns {{ active: boolean, lastRegisteredAt: number|null, lastDeregisteredAt: number|null, lastPolledAt: number|null, hasSessionToken: boolean }}
  */
+/**
+ * Where the bookmarklet for this system last reported it was running (its page origin), or null.
+ * Kept after the tab closes on purpose: it is the last Jira the person actually worked against, which is
+ * how the Jira proxy knows not to quietly fall back to a different, older instance.
+ *
+ * @param {string} sys - System identifier, e.g. 'jira'
+ * @returns {string|null}
+ */
+module.exports.getRelayOrigin = function getRelayOrigin(sys) {
+  const channel = bridgeState[sys];
+  return channel ? channel.relayOrigin : null;
+};
+
 module.exports.getBridgeDiag = function getBridgeDiag(sys) {
   const channel = bridgeState[sys];
   if (!channel) {

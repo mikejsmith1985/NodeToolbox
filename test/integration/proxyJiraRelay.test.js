@@ -105,4 +105,31 @@ describe('/jira-proxy/* through the Jira relay', () => {
     expect(response.status).toBe(200);
     expect(response.body.name).toBe('direct');
   });
+
+  it('refuses to fall back to a DIFFERENT Jira than the one the relay was last on', async () => {
+    // After a migration the stored URL and token point at the OLD instance. Quietly answering from there when
+    // the relay drops would show old data as if it were current — and send writes to the wrong Jira.
+    const app = buildTestApp();
+    await request(app).post('/api/relay-bridge/register?sys=jira&origin=' + encodeURIComponent('https://jira.new.example.com')).send({});
+    await request(app).post('/api/relay-bridge/deregister?sys=jira').send({});
+    const oldInstance = nock('https://jira.example.com').get('/rest/api/2/myself').reply(200, { name: 'old' });
+
+    const response = await request(app).get('/jira-proxy/rest/api/2/myself');
+
+    expect(response.status).toBe(503);
+    expect(response.body.message).toMatch(/jira\.new\.example\.com/);
+    expect(response.body.message).toMatch(/jira\.example\.com/);
+    expect(oldInstance.isDone()).toBe(false);
+  });
+
+  it('still falls back to the stored token when the relay was on the same Jira', async () => {
+    const app = buildTestApp();
+    await request(app).post('/api/relay-bridge/register?sys=jira&origin=' + encodeURIComponent('https://jira.example.com')).send({});
+    await request(app).post('/api/relay-bridge/deregister?sys=jira').send({});
+    nock('https://jira.example.com').get('/rest/api/2/myself').reply(200, { name: 'direct' });
+
+    const response = await request(app).get('/jira-proxy/rest/api/2/myself');
+
+    expect(response.status).toBe(200);
+  });
 });

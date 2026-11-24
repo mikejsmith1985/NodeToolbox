@@ -8,7 +8,8 @@
 import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
-import { openSharePointRelay, openSnowRelay, UNIFIED_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { openJiraRelay, openSharePointRelay, openSnowRelay, UNIFIED_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { saveServiceBaseUrl } from '../../services/proxyApi.ts';
 import { compareRelayOrigin, describeOriginMismatch, describeRefusal } from '../../services/relayOriginMatch.ts';
 import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
@@ -371,20 +372,97 @@ function SharePointPanel({
 }
 
 interface JiraPanelProps {
-  isJiraReady: boolean;
+  isJiraConnected: boolean;
+  /** A live call through the stored token succeeded against the stored Jira URL. */
+  isJiraTokenVerified: boolean;
+  isRelayAliveButRefused: boolean;
+  lastPingAt: string | null;
+  relayOrigin: string | null;
+  jiraBaseUrl: string | null;
 }
 
-/** Inline panel for the Jira indicator — shows Jira config state. */
-function JiraPanel({ isJiraReady }: JiraPanelProps) {
+/**
+ * Inline panel for the Jira indicator — the Jira relay, exactly like ServiceNow and SharePoint.
+ *
+ * This used to say "✅ Jira credentials configured" whenever any token was stored. After the Jira migration
+ * that token belonged to the OLD instance, so the panel was green while Jira calls reached the wrong Jira.
+ * It now reports the relay, and when the relay is on a different Jira than the stored URL it names both
+ * addresses and offers to save the relay's — picked from the live tab, never typed.
+ */
+function JiraPanel({ isJiraConnected, isJiraTokenVerified, isRelayAliveButRefused, lastPingAt, relayOrigin, jiraBaseUrl }: JiraPanelProps) {
+  const [saveMessage, setSaveMessage] = useState('');
+  const lastPingText = lastPingAt !== null ? new Date(lastPingAt).toLocaleTimeString() : null;
+  const originVerdict = compareRelayOrigin(relayOrigin, jiraBaseUrl);
+
+  async function handleUseRelayOrigin(relayJiraOrigin: string) {
+    try {
+      await saveServiceBaseUrl('jira', relayJiraOrigin);
+      setSaveMessage(`✅ Jira URL saved as ${relayJiraOrigin}.`);
+    } catch (error) {
+      setSaveMessage(`⚠️ Could not save the Jira URL — ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
+    clickEvent.preventDefault();
+    window.alert('Drag "Toolbox Relay" to your browser bookmarks bar first. Then click it from the Jira tab.');
+  }
+
   return (
     <div className={styles.panelContent}>
       <p className={styles.panelStatus}>
-        {isJiraReady ? '✅ Jira credentials configured' : '❌ Jira not configured'}
+        {isJiraConnected
+          ? `✅ Jira relay connected${relayOrigin ? ` to ${relayOrigin}` : ''}${lastPingText !== null ? ` — last ping at ${lastPingText}` : ''}`
+          : isRelayAliveButRefused
+            ? '⚠ Jira refused the last request — your Jira session may have expired; reload the Jira tab and click the bookmark again.'
+            : '❌ Jira relay not connected'}
       </p>
-      {!isJiraReady && (
-        <p className={styles.panelHint}>
-          Configure Jira credentials in Admin Hub → ⚙️ Config → Proxy & Server Setup
-        </p>
+      {!isJiraConnected && isJiraTokenVerified && (
+        <p className={styles.panelStatus}>✅ Jira reachable with the stored token at {jiraBaseUrl ?? 'the stored Jira URL'}</p>
+      )}
+
+      {originVerdict.kind === 'mismatch' && (
+        <>
+          <p className={styles.panelLabel} role="alert">
+            Your Jira relay is on {originVerdict.relayOrigin}, but the stored Jira URL is {originVerdict.configuredOrigin}.
+            Toolbox will not fall back to {originVerdict.configuredOrigin} when the relay is off.
+          </p>
+          <div className={styles.panelActions}>
+            <button className={styles.panelButton} type="button" onClick={() => void handleUseRelayOrigin(originVerdict.relayOrigin)}>
+              Use {originVerdict.relayOrigin} as the Jira URL
+            </button>
+          </div>
+        </>
+      )}
+      {saveMessage && <p className={styles.panelHint}>{saveMessage}</p>}
+
+      {!isJiraConnected && (
+        <>
+          <p className={styles.panelLabel}>To connect Jira:</p>
+          <ol className={styles.panelSteps}>
+            <li>Click <strong>Open Jira</strong> below — it opens Jira in its own relay tab that you leave alone</li>
+            <li>Drag <strong>Toolbox Relay</strong> to your bookmarks bar (once — re-drag after an update)</li>
+            <li>Click that bookmark in the Jira relay tab; this indicator turns green</li>
+          </ol>
+          <div className={styles.panelActions}>
+            {jiraBaseUrl && (
+              <button className={styles.panelButton} type="button" onClick={() => openJiraRelay(jiraBaseUrl)}>
+                🔗 Open Jira
+              </button>
+            )}
+            <BookmarkletInstallLink
+              bookmarkletCode={UNIFIED_RELAY_BOOKMARKLET_CODE}
+              className={styles.bookmarkletLink}
+              title="Drag this to your bookmarks bar"
+              onClick={handleBookmarkletClick}
+            >
+              🔖 Drag to bookmarks: Toolbox Relay
+            </BookmarkletInstallLink>
+          </div>
+          <p className={styles.panelHint}>
+            ⚠️ Don&apos;t click around in the relay tab — opening another page in it ends the relay. Work in a different Jira tab.
+          </p>
+        </>
       )}
     </div>
   );
@@ -404,7 +482,17 @@ function JiraPanel({ isJiraReady }: JiraPanelProps) {
 export function ConnectionBar() {
   const isAdminUnlocked = useAdminStore((state) => state.isAdminUnlocked);
 
-  const isJiraReady = useConnectionStore((state) => state.isJiraReady);
+  // Jira works like ServiceNow: green only while a Jira tab is relaying AND Jira accepts its calls. A stored
+  // token is not evidence — after the migration it belonged to the old instance and the light lied.
+  const jiraRelayStatus = useConnectionStore((state) => state.relayStatusBySystem?.jira);
+  const isJiraAuthorized = jiraRelayStatus?.isAuthorized ?? true;
+  const isJiraConnected = (jiraRelayStatus?.isConnected ?? false) && isJiraAuthorized;
+  const isJiraRelayAliveButRefused = (jiraRelayStatus?.isConnected ?? false) && !isJiraAuthorized;
+  const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
+  // A stored token counts only once a live call through it succeeded. The proxy refuses (503) to fall back to a
+  // different Jira than the relay was last on, so an old-instance token can no longer pass this check either.
+  const isJiraTokenVerified = useConnectionStore((state) => state.isJiraVerified);
+  const isJiraUsable = isJiraConnected || isJiraTokenVerified;
   const isSnowVerified = useConnectionStore((state) => state.isSnowVerified);
   const relayBridgeStatus = useConnectionStore((state) => state.relayBridgeStatus);
   const isRelayActive = relayBridgeStatus?.isConnected ?? false;
@@ -467,7 +555,7 @@ export function ConnectionBar() {
       <div className={styles.connectionBar} aria-label="Connection status">
         <ConnectionIndicatorButton
           label="Jira"
-          isReady={isJiraReady}
+          isReady={isJiraUsable}
           isExpanded={activePanel === 'jira'}
           panelId="conn-panel-jira"
           onClick={() => handleIndicatorClick('jira')}
@@ -508,7 +596,16 @@ export function ConnectionBar() {
 
       {activePanel !== null && (
         <div className={styles.connectPanel} role="region" aria-label="Connection details">
-          {activePanel === 'jira' && <JiraPanel isJiraReady={isJiraReady} />}
+          {activePanel === 'jira' && (
+            <JiraPanel
+              isJiraConnected={isJiraConnected}
+              isJiraTokenVerified={isJiraTokenVerified}
+              isRelayAliveButRefused={isJiraRelayAliveButRefused}
+              lastPingAt={jiraRelayStatus?.lastPingAt ?? null}
+              relayOrigin={jiraRelayStatus?.relayOrigin ?? null}
+              jiraBaseUrl={jiraBaseUrl}
+            />
+          )}
           {activePanel === 'snow' && (
             <SnowPanel
               isSnowActive={isSnowActive}

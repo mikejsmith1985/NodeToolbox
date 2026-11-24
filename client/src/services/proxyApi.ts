@@ -81,6 +81,19 @@ export async function saveServiceBaseUrl(service: ServiceWithBaseUrl, baseUrl: s
   assertSuccessfulResponse(response, 'proxy-config update failed');
 }
 
+/**
+ * Saves a new Jira Personal Access Token on the server, which sends it as a Bearer token on direct Jira calls.
+ * Write-only by design: the server never returns it, and nothing here keeps it after the request.
+ */
+export async function saveJiraPersonalAccessToken(personalAccessToken: string): Promise<void> {
+  const response = await fetch(PROXY_CONFIG_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': JSON_CONTENT_TYPE },
+    body: JSON.stringify({ jira: { pat: personalAccessToken.trim() } }),
+  });
+  assertSuccessfulResponse(response, 'proxy-config update failed');
+}
+
 /** Persists updated proxy configuration to the Express backend. */
 export async function updateProxyConfig(config: Partial<ProxyConfig>): Promise<void> {
   const response = await fetch(PROXY_CONFIG_ENDPOINT, {

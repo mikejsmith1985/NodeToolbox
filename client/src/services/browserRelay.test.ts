@@ -291,8 +291,8 @@ describe('shared pieces exported for the SNow Wizard (feature 040)', () => {
 
   it('leaves the ServiceNow bookmarklet byte-identical, and pins the unified one', () => {
     expect(fingerprint(SNOW_RELAY_BOOKMARKLET_CODE)).toBe('8787759255de13bd04547a7522805f7c8a540e472861767efa6e2ea8347a106c');
-    // The unified bookmark changed ON PURPOSE when it learned to relay Jira (v0.328.2) — re-drag it once.
-    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('dac4485deb29ff9520df312f4b99e35498d10c1e9be08037a2ae2ea31fa39b4e');
+    // The unified bookmark changed ON PURPOSE when it learned to relay Jira (v0.328.2) and to run Jira calls in parallel (v0.328.4) — re-drag it.
+    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('b60aba3c32313e2dd3d4ee906ce3e9e876c92332ff56cb82b4889cba8e132dcd');
   });
 
   it('exports the exact token resolver the ServiceNow bookmarklet runs', () => {
@@ -349,5 +349,34 @@ describe('the unified bookmarklet, run on a Jira page', () => {
     const siteCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/jira/rest/api/2/myself'));
     expect(siteCall?.[1]).toMatchObject({ method: 'GET', credentials: 'include' });
     expect(postedResults[0]).toMatchObject({ id: 'r1', sys: 'jira', ok: true, status: 200, data: '{"name":"me"}' });
+  });
+
+  it('keeps serving other Jira calls while one is slow, so a busy page never times out behind it', async () => {
+    // Toolbox fires dozens of Jira calls at once. Served one at a time, the queue outlasted the proxy's wait and
+    // the relay looked like it had dropped. The Jira relay now runs several at once — without timers, which a
+    // background tab throttles to once a minute.
+    addMetaTag('application-name', 'JIRA');
+    let pollCount = 0;
+    const postedResults: Array<{ id: string }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/api/relay-bridge/register')) return new Response('{}', { status: 200 });
+      if (url.includes('/api/relay-bridge/poll')) {
+        pollCount += 1;
+        if (pollCount === 1) return new Response(JSON.stringify({ request: { id: 'slow', method: 'GET', path: '/rest/slow' } }));
+        if (pollCount === 2) return new Response(JSON.stringify({ request: { id: 'fast', method: 'GET', path: '/rest/fast' } }));
+        return new Promise<Response>(() => undefined);
+      }
+      if (url.includes('/api/relay-bridge/result')) {
+        postedResults.push(JSON.parse(String(init?.body)));
+        return new Response('{}');
+      }
+      if (url.endsWith('/rest/slow')) return new Promise<Response>(() => undefined);
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('open', vi.fn());
+
+    new Function(UNIFIED_RELAY_BOOKMARKLET_CODE.replace(/^javascript:/, ''))();
+    await vi.waitFor(() => expect(postedResults.map((result) => result.id)).toEqual(['fast']));
   });
 });

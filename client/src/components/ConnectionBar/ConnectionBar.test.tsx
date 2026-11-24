@@ -10,9 +10,15 @@ import type { ProxyStatusResponse } from '../../types/config.ts';
 import { ConnectionBar } from './ConnectionBar.tsx';
 import styles from './ConnectionBar.module.css';
 
-const { openSnowRelayMock, openSharePointRelayMock } = vi.hoisted(() => ({
+const { openSnowRelayMock, openSharePointRelayMock, openJiraRelayMock, saveServiceBaseUrlMock } = vi.hoisted(() => ({
   openSnowRelayMock: vi.fn(),
   openSharePointRelayMock: vi.fn(),
+  openJiraRelayMock: vi.fn(),
+  saveServiceBaseUrlMock: vi.fn(),
+}));
+
+vi.mock('../../services/proxyApi.ts', () => ({
+  saveServiceBaseUrl: saveServiceBaseUrlMock,
 }));
 
 vi.mock('../../services/browserRelay.ts', () => ({
@@ -22,9 +28,24 @@ vi.mock('../../services/browserRelay.ts', () => ({
   UNIFIED_RELAY_BOOKMARKLET_CODE: 'javascript:mockUnifiedRelay()',
   openSnowRelay: openSnowRelayMock,
   openSharePointRelay: openSharePointRelayMock,
+  openJiraRelay: openJiraRelayMock,
 }));
 
 // ── Helpers ──
+
+function setJiraRelay(relayFields: { isConnected: boolean; isAuthorized: boolean; relayOrigin: string }): void {
+  useConnectionStore.setState({
+    relayStatusBySystem: {
+      jira: { system: 'jira', lastPingAt: '2026-11-24T10:00:00.000Z', version: null, ...relayFields },
+    },
+  });
+}
+
+function setJiraBaseUrl(jiraBaseUrl: string): void {
+  useConnectionStore.setState({
+    proxyStatus: { jira: { baseUrl: jiraBaseUrl } } as unknown as ProxyStatusResponse,
+  });
+}
 
 function resetConnectionStore(): void {
   useConnectionStore.setState(useConnectionStore.getInitialState());
@@ -104,18 +125,68 @@ describe('ConnectionBar', () => {
 
   // ── Jira indicator ──
 
-  it('shows the Jira indicator as ready when Jira is configured in the backend', () => {
+  // The Jira light used to go green whenever ANY credential was stored — including a token for the OLD Jira
+  // instance after a migration, which made it a lie. It now works like SNow: green only while a Jira tab is
+  // relaying and Jira is accepting its calls.
+
+  it('shows Jira as not ready with a stored token but no Jira relay', () => {
     useConnectionStore.setState({ isJiraReady: true });
+
+    render(<ConnectionBar />);
+
+    expect(screen.getByText('Jira')).toHaveClass(styles.notReady);
+  });
+
+  it('shows Jira as ready when a live call with the stored token succeeds, and names where it went', () => {
+    // A token for the NEW Jira is as good as the relay — but only once a real call proved it, never because a
+    // token merely exists. The panel names the URL so a token for the wrong Jira cannot hide.
+    setJiraBaseUrl('https://jira.new.example.com');
+    useConnectionStore.setState({ isJiraVerified: true });
+    render(<ConnectionBar />);
+
+    expect(screen.getByText('Jira')).toHaveClass(styles.ready);
+    fireEvent.click(screen.getByText('Jira'));
+    expect(screen.getByText(/stored token at https:\/\/jira\.new\.example\.com/)).toBeInTheDocument();
+  });
+
+  it('shows Jira as ready while a Jira tab is relaying and Jira accepts the calls', () => {
+    setJiraRelay({ isConnected: true, isAuthorized: true, relayOrigin: 'https://jira.new.example.com' });
 
     render(<ConnectionBar />);
 
     expect(screen.getByText('Jira')).toHaveClass(styles.ready);
   });
 
-  it('shows the Jira indicator as not ready when Jira is not configured', () => {
+  it('shows Jira as not ready when the relay is alive but Jira refuses it', () => {
+    setJiraRelay({ isConnected: true, isAuthorized: false, relayOrigin: 'https://jira.new.example.com' });
+
     render(<ConnectionBar />);
 
     expect(screen.getByText('Jira')).toHaveClass(styles.notReady);
+  });
+
+  it('offers to open a dedicated Jira relay tab at the configured Jira address', () => {
+    setJiraBaseUrl('https://jira.new.example.com');
+    render(<ConnectionBar />);
+
+    fireEvent.click(screen.getByText('Jira'));
+    fireEvent.click(screen.getByRole('button', { name: /open jira/i }));
+
+    expect(openJiraRelayMock).toHaveBeenCalledWith('https://jira.new.example.com');
+  });
+
+  it('names the stale stored Jira URL and saves the relay\u2019s address in one click', async () => {
+    setJiraBaseUrl('https://jira.old.example.com');
+    setJiraRelay({ isConnected: true, isAuthorized: true, relayOrigin: 'https://jira.new.example.com' });
+    saveServiceBaseUrlMock.mockResolvedValue(undefined);
+    render(<ConnectionBar />);
+
+    fireEvent.click(screen.getByText('Jira'));
+    expect(screen.getByText(/https:\/\/jira\.old\.example\.com/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /use https:\/\/jira\.new\.example\.com/i }));
+
+    expect(saveServiceBaseUrlMock).toHaveBeenCalledWith('jira', 'https://jira.new.example.com');
+    expect(await screen.findByText(/Jira URL saved/i)).toBeInTheDocument();
   });
 
   // ── SNow indicator (admin-gated) ──

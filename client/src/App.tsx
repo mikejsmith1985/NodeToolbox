@@ -63,6 +63,7 @@ const FEATURE_CANVAS_ROUTE = '/feature-canvas';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
 const SHAREPOINT_RELAY_SYSTEM: RelaySystem = 'sharepoint';
+const JIRA_RELAY_SYSTEM: RelaySystem = 'jira';
 const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
 const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
 const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
@@ -134,6 +135,8 @@ export default function App() {
   useRelayBridge(RELAY_SYSTEM);
   // Poll the SharePoint relay too (feature 008) — the per-system store keeps it independent of SNow.
   useRelayBridge(SHAREPOINT_RELAY_SYSTEM);
+  // And Jira: after a Jira migration the stored token is for the old instance, so Jira runs on its relay too.
+  useRelayBridge(JIRA_RELAY_SYSTEM);
 
   // After the SNow bookmarklet reloads this window to the root URL, navigate the user
   // back to wherever they were (e.g. /snow-hub) so their CRG wizard data is still there.

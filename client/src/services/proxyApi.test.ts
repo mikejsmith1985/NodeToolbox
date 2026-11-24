@@ -10,6 +10,7 @@ import {
   fetchServiceBaseUrls,
   probeJiraConnection,
   probeSnowConnection,
+  saveJiraPersonalAccessToken,
   saveServiceBaseUrl,
   updateProxyConfig,
 } from './proxyApi.ts';
@@ -182,6 +183,20 @@ describe('proxyApi', () => {
 
       expect(probeResult.isOk).toBe(false);
       expect(probeResult.statusCode).toBe(0);
+    });
+  });
+
+  describe('saveJiraPersonalAccessToken', () => {
+    it('posts the token in the nested shape the server merges, trimmed', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+      await saveJiraPersonalAccessToken('  new-token  ');
+      const [, requestInit] = vi.mocked(fetch).mock.calls[0];
+      expect(JSON.parse(String(requestInit?.body))).toEqual({ jira: { pat: 'new-token' } });
+    });
+
+    it('throws when the server refuses, so the screen never claims it saved', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: false, status: 500 } as Response);
+      await expect(saveJiraPersonalAccessToken('x')).rejects.toThrow(/500/);
     });
   });
 });
