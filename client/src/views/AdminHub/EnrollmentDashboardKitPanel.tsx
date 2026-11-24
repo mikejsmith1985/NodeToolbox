@@ -44,8 +44,14 @@ interface PreviewRow extends FilterPlanRow {
 // ── Small helpers ──
 
 /** Reads a human-actionable message off an unknown thrown value. */
+/** Jira's "you are not signed in" status — after a Jira move, the server's stored token is the usual cause. */
+const UNAUTHORIZED_SUFFIX = ': 401';
+const UNAUTHORIZED_FIX_HINT = ' — Jira did not accept the sign-in. Click the Toolbox Relay bookmark in a signed-in Jira tab, then try again.';
+
 function toMessage(error: unknown): string {
-  return describeJiraFailure(error instanceof Error ? error.message : String(error));
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const hint = rawMessage.trim().endsWith(UNAUTHORIZED_SUFFIX) ? UNAUTHORIZED_FIX_HINT : '';
+  return describeJiraFailure(rawMessage) + hint;
 }
 
 /** The identifier JQL and filters use for a user: username on Data Center, accountId on Cloud. */

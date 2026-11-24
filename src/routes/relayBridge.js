@@ -600,16 +600,18 @@ function parseRelayResultData(relayResultData) {
   return relayResultData || {};
 }
 
-module.exports.submitRelayRequest = async function submitRelayRequest(sys, request, timeoutMs = 30000) {
+/**
+ * Queues one request for the bookmarklet and waits for the raw result it posts back:
+ * { ok, status, data, error }. Shared by both public entry points below so the queue-and-wait
+ * mechanics (and the timeout clean-up) live in exactly one place.
+ */
+function enqueueAndAwaitRelayResult(sys, request, timeoutMs) {
   const channel = bridgeState[sys || 'snow'];
   if (!channel || !isRelayReady(channel)) {
-    throw new Error('Relay bridge is not active for ' + (sys || 'snow') + '. Ensure the bookmarklet is registered.');
+    return Promise.reject(new Error('Relay bridge is not active for ' + (sys || 'snow') + '. Ensure the bookmarklet is registered.'));
   }
 
-  // Generate a unique request ID
   const requestId = 'srv-req-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
-  // Queue the request via the standard mechanism (same as frontend)
   const entry = {
     id: requestId,
     sys: sys || 'snow',
@@ -629,40 +631,53 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
     clearTimeout(waiter.timer);
     waiter.res.json({ request: entry, shouldReregister: waiter.shouldReregister === true });
   } else {
-    // Queue it for the bookmarklet to fetch next
     channel.pendingRequests.push(entry);
   }
 
-  // Wait for the bookmarklet to post the result
   return new Promise((resolve, reject) => {
-    // Declared before the timeout so the timeout can CLEAR it. Previously the timeout only rejected,
-    // leaving this interval polling every 100ms for the life of the process — one abandoned poller per
-    // relay request that ever timed out, and nothing to ever stop them.
+    // Declared before the timeout so the timeout can CLEAR it — an abandoned 100ms poller per
+    // timed-out request used to run for the life of the process.
     let checkResult = null;
 
     const timer = setTimeout(() => {
       clearInterval(checkResult);
-      reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active and ServiceNow is accessible.'));
+      reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active and the ' + entry.sys + ' tab is open.'));
     }, timeoutMs);
 
-    // Check for result frequently since the bookmarklet may be slow
     checkResult = setInterval(() => {
-      if (channel.pendingResults[requestId]) {
-        clearTimeout(timer);
-        clearInterval(checkResult);
-        const result = channel.pendingResults[requestId];
-        delete channel.pendingResults[requestId];
-
-        if (result.ok) {
-          resolve(parseRelayResultData(result.data));
-        } else {
-          const error = new Error(result.error || 'Relay request failed');
-          error.status = result.status;
-          reject(error);
-        }
-      }
+      if (!channel.pendingResults[requestId]) return;
+      clearTimeout(timer);
+      clearInterval(checkResult);
+      const result = channel.pendingResults[requestId];
+      delete channel.pendingResults[requestId];
+      resolve(result);
     }, 100);
   });
+}
+
+module.exports.submitRelayRequest = async function submitRelayRequest(sys, request, timeoutMs = 30000) {
+  const result = await enqueueAndAwaitRelayResult(sys, request, timeoutMs);
+  if (result.ok) return parseRelayResultData(result.data);
+  const error = new Error(result.error || 'Relay request failed');
+  error.status = result.status;
+  throw error;
+};
+
+/**
+ * Sends one request through the relay and hands back what the far system said, untouched:
+ * { ok, status, data, error }. Unlike submitRelayRequest it neither parses the body nor turns an
+ * HTTP error into a thrown one, because the Jira proxy must pass Jira's own status and error body
+ * through to the browser exactly as a direct call would. Rejects only when no tab is relaying or
+ * the tab never answers.
+ *
+ * @param {string} sys - System identifier, e.g. 'jira'
+ * @param {{ method?: string, url: string, body?: any }} request
+ * @param {number} [timeoutMs]
+ * @returns {Promise<{ ok: boolean, status: number, data: any, error: string|null }>}
+ */
+module.exports.forwardRelayRequest = async function forwardRelayRequest(sys, request, timeoutMs = 30000) {
+  const result = await enqueueAndAwaitRelayResult(sys, request, timeoutMs);
+  return { ok: !!result.ok, status: result.status || 0, data: result.data === undefined ? null : result.data, error: result.error || null };
 };
 
 // Exposed for unit testing the JSON-string normalization that keeps server-side

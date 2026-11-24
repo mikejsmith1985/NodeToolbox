@@ -65,6 +65,31 @@ describe('GET /api/proxy-status', () => {
     expect(response.body.jira.ready).toBe(false);
   });
 
+  it('reports jira.ready=true with no stored token when a Jira tab is relaying', async () => {
+    // After a Jira migration the stored token is stale; the relay carries every /jira-proxy call instead.
+    const relayBridge = require('../../src/routes/relayBridge');
+    relayBridge._resetBridgeStateForTests();
+    const relayApp = express();
+    relayApp.use(express.json());
+    relayApp.use('/api/relay-bridge', relayBridge);
+    await request(relayApp).post('/api/relay-bridge/register?sys=jira').send({});
+    await request(relayApp).post('/api/relay-bridge/request').send({ sys: 'jira', id: 'prime', method: 'GET', path: '/x' });
+    await request(relayApp).get('/api/relay-bridge/poll?sys=jira');
+    const configuration = {
+      jira:      { baseUrl: 'https://jira.example.com', pat: '', username: '', apiToken: '' },
+      snow:      { baseUrl: '', username: '', password: '' },
+      github:    { baseUrl: 'https://api.github.com', pat: '' },
+      sslVerify: true,
+    };
+
+    const response = await request(buildTestApp(configuration)).get('/api/proxy-status');
+    relayBridge._resetBridgeStateForTests();
+
+    expect(response.body.jira.ready).toBe(true);
+    expect(response.body.jira.relayActive).toBe(true);
+    expect(response.body.jira.hasCredentials).toBe(false);
+  });
+
   it('returns blank first-install connection status for demo-mode requests', async () => {
     const configuration = {
       jira:       { baseUrl: 'https://acme.atlassian.net', pat: 'jira-pat', username: '', apiToken: '' },

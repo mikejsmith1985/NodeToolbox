@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Jira works through the Toolbox Relay — no Jira token needed after a Jira move.** After the re-instance migration
+  the server's stored Jira token belonged to the old instance, so every Jira call (e.g. the Enrollment Dashboard Kit's
+  Discover) failed with 401. The one Toolbox Relay bookmark now also works on a signed-in **Jira** tab (recognised by
+  the page itself, so a new Jira address needs no new bookmark; honours Jira's context path; same-site paths only).
+  While a Jira tab is relaying, `/jira-proxy` sends every call through it with your own session and passes Jira's
+  status and body back unchanged; with no Jira tab relaying, the stored token is used exactly as before. Jira shows
+  ready on the connection status while relaying. **Re-drag the Toolbox Relay bookmark once** to pick this up. The
+  Enrollment Dashboard Kit now says how to fix a 401 instead of showing the bare code.
 - **Jira and ServiceNow base URLs can be pasted in Admin Hub again.** Admin Hub → Credential Management showed both
   URLs as read-only text, so after a Jira re-instance migration there was nowhere to paste the new address. Once Admin
   Hub is unlocked they are now real inputs with **Save Jira** / **Save ServiceNow**; locked, they stay read-only with a

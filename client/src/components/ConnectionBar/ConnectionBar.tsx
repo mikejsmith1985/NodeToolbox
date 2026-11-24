@@ -111,7 +111,7 @@ function SnowPanel({
     clickEvent.preventDefault();
     window.alert(
       'Drag "Toolbox Relay" to your browser bookmarks bar first. ' +
-      'Then click it from the ServiceNow or SharePoint tab you want to relay.',
+      'Then click it from the ServiceNow, SharePoint or Jira tab you want to relay.',
     );
   }
 

@@ -1761,7 +1761,7 @@ function RelayActivationSection() {
     clickEvent.preventDefault()
     window.alert(
       'Drag "Toolbox Relay" to your browser bookmarks bar first. ' +
-      'Then click it from the ServiceNow or SharePoint tab you want to relay.',
+      'Then click it from the ServiceNow, SharePoint or Jira tab you want to relay.',
     )
   }
 
@@ -1785,7 +1785,8 @@ function RelayActivationSection() {
       <ol className={styles.relayInstructions}>
         <li>Drag the button below to your browser bookmarks bar.</li>
         <li>Open any ServiceNow page while logged in.</li>
-        <li>Click the <strong>Toolbox Relay</strong> bookmark — it works on ServiceNow and SharePoint alike.</li>
+        <li>Click the <strong>Toolbox Relay</strong> bookmark — it works on ServiceNow, SharePoint and Jira alike.</li>
+        <li>No Jira token after a Jira move? Click the same bookmark in a signed-in <strong>Jira</strong> tab — every Jira call then uses your own Jira login.</li>
         <li>The relay indicator above will turn green automatically.</li>
       </ol>
 

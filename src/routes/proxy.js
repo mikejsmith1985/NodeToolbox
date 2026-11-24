@@ -11,6 +11,12 @@ const { proxyRequest } = require('../utils/httpClient');
 const snowSession      = require('../services/snowSession');
 const { hasAnyGitHubAuth, resolveEffectiveGitHubToken } = require('../services/githubAppAuth');
 const { recordJiraWrite } = require('../services/jiraWriteJournal');
+const relayBridge      = require('./relayBridge');
+
+/** How long one relayed Jira call may take before the browser is told the Jira tab did not answer. */
+const JIRA_RELAY_TIMEOUT_MS = 60000;
+/** Methods that never carry a body, so nothing is forwarded for them. */
+const BODYLESS_METHODS = ['GET', 'HEAD', 'DELETE'];
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -37,6 +43,14 @@ function createProxyRouter(configuration) {
     // that can answer "did this application change that issue?" after the fact. Reads are ignored
     // by the journal itself. Recorded before forwarding so an attempt is never lost to a crash.
     recordJiraWrite({ method: req.method, path: jiraPath, source: 'ui' });
+
+    // A signed-in Jira tab running the relay bookmark wins over any stored token. After a Jira
+    // re-instance migration the stored token belongs to the old instance and is refused (401); the
+    // person's own browser session is always current, and needs nothing created or pasted.
+    if (shouldUseJiraRelay(req)) {
+      forwardJiraThroughRelay(req, res, jiraPath);
+      return;
+    }
 
     proxyRequest(req, res, configuration.jira, jiraPath, null, configuration.sslVerify);
   });
@@ -126,6 +140,55 @@ function createProxyRouter(configuration) {
  * @param {string} prefix      - The prefix to strip (e.g. /jira-proxy)
  * @returns {string} The downstream path (e.g. /rest/api/2/myself)
  */
+// ── Jira relay ────────────────────────────────────────────────────────────────
+
+/**
+ * True when a Jira tab is relaying and this request can ride it. The relay carries JSON only, so a
+ * non-JSON write (a file attachment upload) still goes direct.
+ */
+function shouldUseJiraRelay(req) {
+  if (!relayBridge.getBridgeStatus('jira')) return false;
+  if (BODYLESS_METHODS.includes(req.method)) return true;
+  const hasNoBodyType = !req.headers['content-type'];
+  return hasNoBodyType || Boolean(req.is('application/json'));
+}
+
+/**
+ * Sends one Jira call through the relaying Jira tab and answers the browser with Jira's own status and
+ * body, so every caller sees exactly what a direct call would have returned.
+ */
+async function forwardJiraThroughRelay(req, res, jiraPath) {
+  const relayRequest = {
+    method: req.method,
+    url:    jiraPath,
+    body:   BODYLESS_METHODS.includes(req.method) ? null : (req.body === undefined ? null : req.body),
+  };
+  try {
+    const relayResult = await relayBridge.forwardRelayRequest('jira', relayRequest, JIRA_RELAY_TIMEOUT_MS);
+    if (!relayResult.status) {
+      res.status(502).json({ error: 'Proxy error', message: 'Jira relay: the Jira tab could not reach Jira — ' + (relayResult.error || 'no response') });
+      return;
+    }
+    sendRelayedBody(res, relayResult.status, relayResult.data);
+  } catch (relayError) {
+    res.status(504).json({ error: 'Proxy error', message: 'Jira relay: ' + relayError.message });
+  }
+}
+
+/** Writes a relayed body back with the content type a direct Jira call would have carried. */
+function sendRelayedBody(res, status, relayedData) {
+  res.status(status);
+  if (relayedData === null || relayedData === undefined || relayedData === '') {
+    res.end();
+    return;
+  }
+  const bodyText = typeof relayedData === 'string' ? relayedData : JSON.stringify(relayedData);
+  const trimmedBody = bodyText.trim();
+  const isJsonBody = trimmedBody.startsWith('{') || trimmedBody.startsWith('[');
+  res.setHeader('Content-Type', isJsonBody ? 'application/json;charset=UTF-8' : 'text/plain;charset=UTF-8');
+  res.send(bodyText);
+}
+
 function buildDownstreamPath(requestPath, prefix) {
   const downstreamPath = requestPath.substring(prefix.length);
   return downstreamPath || '/';

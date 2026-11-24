@@ -176,8 +176,33 @@ export const SHAREPOINT_RELAY_BOOKMARKLET_CODE = buildBookmarklet(
   RELAY_PREAMBLE + buildWrongPageGuard('your SharePoint site tab', SHAREPOINT_PAGE_TEST) + SHAREPOINT_RELAY_BODY,
 );
 
+// ── Jira relay ──
+//
+// After a Jira re-instance migration the server's stored Jira token belongs to the OLD instance, so every
+// /jira-proxy call is refused (401). Clicking the relay bookmark in a signed-in Jira tab makes that tab carry
+// the calls with the person's own session instead (routes/proxy.js prefers it whenever it is relaying).
+//
+// The page is recognised by what Jira renders, never by its address, so a new Jira address needs no new
+// bookmark. Calls go to the tab's own origin plus Jira's context path (a Jira served under /jira would 404
+// every call without it), carry X-Atlassian-Token so a session-authenticated write is not refused as a
+// possible XSRF, and are limited to same-site paths so the session can never be sent anywhere else.
+
+const JIRA_PAGE_TEST = 'document.querySelector("meta[name=application-name][content=JIRA]")!==null';
+
+const JIRA_RELAY_BODY = [
+  RELAY_TAB_GUARD,
+  'var sys="jira";',
+  'var isRunning=true;',
+  'var jiraContextPath=(document.querySelector("meta[name=ajs-context-path]")||{}).content||"";',
+  'async function postRelayResult(resultPayload){await fetch(relayServer+"/api/relay-bridge/result",{method:"POST",mode:"cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(resultPayload)});}',
+  'async function executeRelayRequest(relayRequest){try{if(typeof relayRequest.path!=="string"||relayRequest.path.charAt(0)!=="/"||relayRequest.path.charAt(1)==="/"){throw new Error("refused: only paths on this Jira are served");}var requestHeaders={"Accept":"application/json","X-Atlassian-Token":"no-check"};var requestController=new AbortController();var timeoutId=setTimeout(function(){requestController.abort();},relayRequest.timeoutMs||55000);var requestOptions={method:relayRequest.method||"GET",credentials:"include",headers:requestHeaders,signal:requestController.signal};if(relayRequest.body!=null){requestHeaders["Content-Type"]="application/json";requestOptions.body=JSON.stringify(relayRequest.body);}var jiraResponse=await fetch(location.origin+jiraContextPath+relayRequest.path,requestOptions);clearTimeout(timeoutId);var responseText=await jiraResponse.text();await postRelayResult({id:relayRequest.id,sys:sys,ok:jiraResponse.ok,status:jiraResponse.status,data:responseText,error:null});}catch(requestError){await postRelayResult({id:relayRequest.id,sys:sys,ok:false,status:0,data:null,error:requestError.message});}}',
+  'async function reannounceIfAsked(pollPayload){if(!pollPayload||!pollPayload.shouldReregister)return;try{await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&origin="+encodeURIComponent(location.origin),{method:"POST",mode:"cors",cache:"no-store"});showRelayStatus("🔌 Toolbox Relay reconnected — NodeToolbox restarted","#238636");}catch(reregisterError){}}async function pollRelayLoop(){while(isRunning){try{var pollResponse=await fetch(relayServer+"/api/relay-bridge/poll?sys="+sys,{method:"GET",mode:"cors",cache:"no-store"});var pollPayload=await pollResponse.json();await reannounceIfAsked(pollPayload);if(pollPayload&&pollPayload.request){await executeRelayRequest(pollPayload.request);}}catch(pollError){showRelayStatus("Toolbox Relay polling failed - "+pollError.message,"#991b1b");await new Promise(function(resolve){setTimeout(resolve,2000);});}}}',
+  'window.addEventListener("pagehide",function(){isRunning=false;try{navigator.sendBeacon(relayServer+"/api/relay-bridge/deregister?sys="+sys);}catch(beaconError){}});',
+  '(async function(){try{var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&origin="+encodeURIComponent(location.origin),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}showRelayStatus("\\uD83D\\uDD0C Toolbox Relay Active (Jira) \\u2014 NodeToolbox Connected","#238636");try{window.open("","toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("Toolbox Relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c Toolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
+].join('');
+
 /**
- * ONE bookmarklet for both systems, choosing by the tab it is clicked in.
+ * ONE bookmarklet for every relayed system (ServiceNow, SharePoint, Jira), choosing by the tab it is clicked in.
  *
  * Two bookmarks was never a requirement; it was an accident of the two being written months apart.
  * The page already knows which system it is, so the bookmark does not need to. The same click works
@@ -190,7 +215,8 @@ export const UNIFIED_RELAY_BOOKMARKLET_CODE = buildBookmarklet(
   RELAY_PREAMBLE
   + `if(${SNOW_PAGE_TEST}){(function(){${SNOW_RELAY_BODY}})();}`
   + `else if(${SHAREPOINT_PAGE_TEST}){(function(){${SHAREPOINT_RELAY_BODY}})();}`
-  + 'else{alert("\\u26a0\\ufe0f Toolbox Relay\\n\\nClick this on a ServiceNow or SharePoint tab.\\n\\nCurrent domain: "+currentHostname);}',
+  + `else if(${JIRA_PAGE_TEST}){(function(){${JIRA_RELAY_BODY}})();}`
+  + 'else{alert("\\u26a0\\ufe0f Toolbox Relay\\n\\nClick this on a ServiceNow, SharePoint or Jira tab.\\n\\nCurrent domain: "+currentHostname);}',
 );
 
 /** Opens (or focuses) the SharePoint site in a named tab so the user can click the bookmarklet there. */

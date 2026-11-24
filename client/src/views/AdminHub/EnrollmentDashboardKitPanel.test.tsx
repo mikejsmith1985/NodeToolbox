@@ -95,4 +95,13 @@ describe('EnrollmentDashboardKitPanel', () => {
     ]);
     expect(screen.getByText(/Stuck 10 Days: skipped/)).toBeInTheDocument();
   });
+
+  it('says how to fix a 401 — click the relay bookmark in a signed-in Jira tab — instead of a bare code', async () => {
+    // After a Jira migration the stored token is stale and every call is refused; the fix is the relay, not a code.
+    jiraGetMock.mockRejectedValue(new Error('Jira GET /rest/api/2/field failed: 401'));
+    render(<EnrollmentDashboardKitPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /discover/i }));
+    await waitFor(() => expect(screen.getByText(/Discovery failed/i)).toBeInTheDocument());
+    expect(screen.getByText(/Toolbox Relay bookmark in a signed-in Jira tab/i)).toBeInTheDocument();
+  });
 });

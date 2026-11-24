@@ -156,7 +156,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
 
     const isJiraHasBasicAuth = !!(configuration.jira.username && configuration.jira.apiToken);
     const isJiraHasPat       = !!configuration.jira.pat;
-    const isJiraReady        = isServiceBaseUrlSet(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
+    // A signed-in Jira tab running the relay bookmark carries every /jira-proxy call, so it makes Jira
+    // ready on its own — no stored token needed (see routes/proxy.js).
+    const isJiraRelayActive  = relayBridge.getBridgeStatus('jira');
+    const isJiraReady        = isJiraRelayActive || (isServiceBaseUrlSet(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat));
 
     const isSnowHasBasicAuth    = !!(configuration.snow.username && configuration.snow.password);
     const isSnowSessionCurrent  = snowSession.isSessionActive();
@@ -180,6 +183,7 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         configured:     isServiceBaseUrlSet(configuration.jira),
         hasCredentials: isJiraHasBasicAuth || isJiraHasPat,
         ready:          isJiraReady,
+        relayActive:    isJiraRelayActive,
         baseUrl:        isServiceBaseUrlSet(configuration.jira) ? configuration.jira.baseUrl : null,
       },
       snow: {

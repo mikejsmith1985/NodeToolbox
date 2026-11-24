@@ -788,3 +788,30 @@ describe('relay authorization', () => {
     expect(response.body.isAuthorized).toBe(true);
   });
 });
+
+describe('forwardRelayRequest() — a raw pass-through for the Jira proxy', () => {
+  async function bringJiraChannelOnline(app) {
+    await request(app).post('/api/relay-bridge/register?sys=jira').send({});
+    await request(app).post('/api/relay-bridge/request').send({ sys: 'jira', id: 'prime-ready', method: 'GET', path: '/x' });
+    await request(app).get('/api/relay-bridge/poll?sys=jira');
+  }
+
+  it('hands back the status and the body exactly as Jira sent them, even for an error', async () => {
+    const app = buildTestApp();
+    await bringJiraChannelOnline(app);
+
+    const forwardPromise = relayBridgeRouter.forwardRelayRequest('jira', { method: 'GET', url: '/rest/api/2/search?jql=bad' }, 5000);
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=jira');
+    expect(pollResponse.body.request.path).toBe('/rest/api/2/search?jql=bad');
+    await request(app).post('/api/relay-bridge/result').send({
+      id: pollResponse.body.request.id, sys: 'jira', ok: false, status: 400, data: '{"errorMessages":["bad jql"]}',
+    });
+
+    await expect(forwardPromise).resolves.toEqual({ ok: false, status: 400, data: '{"errorMessages":["bad jql"]}', error: null });
+  });
+
+  it('rejects when no Jira tab is relaying', async () => {
+    await expect(relayBridgeRouter.forwardRelayRequest('jira', { method: 'GET', url: '/rest/api/2/field' }, 50))
+      .rejects.toThrow(/not active for jira/);
+  });
+});

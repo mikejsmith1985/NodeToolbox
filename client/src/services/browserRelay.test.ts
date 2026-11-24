@@ -199,6 +199,25 @@ describe('the bookmarklets parse as JavaScript', () => {
     expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('sharepoint.com');
   });
 
+  it('the one bookmarklet also relays Jira, recognised by the page itself rather than its address', () => {
+    // After a Jira re-instance migration the server's stored token belongs to the old instance (401 on
+    // every call). A relaying Jira tab carries the calls with the person's own session instead. The page
+    // is recognised by what Jira renders, so a new Jira address never needs a new bookmark.
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('var sys="jira"');
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('meta[name=application-name][content=JIRA]');
+  });
+
+  it('the Jira relay sends the Jira anti-XSRF header and honours a Jira context path', () => {
+    // Without X-Atlassian-Token a session-authenticated write is refused as a possible XSRF; a Jira served
+    // under /jira would 404 every call if the context path were dropped.
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('"X-Atlassian-Token":"no-check"');
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('meta[name=ajs-context-path]');
+  });
+
+  it('the Jira relay serves same-site paths only, so the session is never sent elsewhere', () => {
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('relayRequest.path.charAt(1)==="/"');
+  });
+
   it('runs each relay in its own function, so the two cannot collide', () => {
     // Both bodies declare showRelayStatus, sys, isRunning and a poll loop. Sharing one scope would
     // be a redeclaration, and the whole bookmarklet would do nothing at all.
@@ -270,9 +289,10 @@ describe('shared pieces exported for the SNow Wizard (feature 040)', () => {
     return createHash('sha256').update(sourceText).digest('hex');
   }
 
-  it('leaves both existing bookmarklets byte-identical', () => {
+  it('leaves the ServiceNow bookmarklet byte-identical, and pins the unified one', () => {
     expect(fingerprint(SNOW_RELAY_BOOKMARKLET_CODE)).toBe('8787759255de13bd04547a7522805f7c8a540e472861767efa6e2ea8347a106c');
-    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('2abdce9e9c917061c7cffd8c0d9c1315afe98e2c16e210c586c90a5a7050d4c7');
+    // The unified bookmark changed ON PURPOSE when it learned to relay Jira (v0.328.2) — re-drag it once.
+    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('dac4485deb29ff9520df312f4b99e35498d10c1e9be08037a2ae2ea31fa39b4e');
   });
 
   it('exports the exact token resolver the ServiceNow bookmarklet runs', () => {
@@ -282,5 +302,52 @@ describe('shared pieces exported for the SNow Wizard (feature 040)', () => {
 
   it('exports the ServiceNow host fragments', () => {
     expect(SNOW_HOSTNAME_FRAGMENTS).toEqual(['service-now', 'servicenow']);
+  });
+});
+
+describe('the unified bookmarklet, run on a Jira page', () => {
+  const addedMetaTags: HTMLMetaElement[] = [];
+
+  function addMetaTag(name: string, content: string): void {
+    const metaTag = document.createElement('meta');
+    metaTag.setAttribute('name', name);
+    metaTag.setAttribute('content', content);
+    document.head.appendChild(metaTag);
+    addedMetaTags.push(metaTag);
+  }
+
+  afterEach(() => {
+    addedMetaTags.splice(0).forEach((metaTag) => metaTag.remove());
+    vi.unstubAllGlobals();
+  });
+
+  it('registers as the Jira relay and runs a queued call under Jira’s context path with the session', async () => {
+    addMetaTag('application-name', 'JIRA');
+    addMetaTag('ajs-context-path', '/jira');
+    let pollCount = 0;
+    const postedResults: unknown[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/api/relay-bridge/register')) return new Response('{}', { status: 200 });
+      if (url.includes('/api/relay-bridge/poll')) {
+        pollCount += 1;
+        if (pollCount > 1) return new Promise<Response>(() => undefined); // later polls just wait
+        return new Response(JSON.stringify({ request: { id: 'r1', method: 'GET', path: '/rest/api/2/myself' } }));
+      }
+      if (url.includes('/api/relay-bridge/result')) {
+        postedResults.push(JSON.parse(String(init?.body)));
+        return new Response('{}');
+      }
+      return new Response('{"name":"me"}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('open', vi.fn());
+
+    new Function(UNIFIED_RELAY_BOOKMARKLET_CODE.replace(/^javascript:/, ''))();
+    await vi.waitFor(() => expect(postedResults).toHaveLength(1));
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('register?sys=jira');
+    const siteCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/jira/rest/api/2/myself'));
+    expect(siteCall?.[1]).toMatchObject({ method: 'GET', credentials: 'include' });
+    expect(postedResults[0]).toMatchObject({ id: 'r1', sys: 'jira', ok: true, status: 200, data: '{"name":"me"}' });
   });
 });
