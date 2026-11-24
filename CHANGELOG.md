@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Hub's CHG Generator now runs the SNow Wizard's change flow.** Creating or modifying a change in Toolbox is
+  the same guided flow as the Wizard, one step per screen: scope, AI Assist, details, planning, environments, tasks,
+  checks with fixes, Production paperwork, then Create or Save. It is the Wizard's own code, not a copy, so a fix
+  to one is a fix to both. It runs on Toolbox's relay and Jira proxy and keeps its own drafts, templates and "pick
+  up where you left off". The previous Create/Modify screens stay one click away under **Classic screens**, and
+  Toolbox remembers which you chose. Inside Toolbox the flow's change links use Toolbox's ServiceNow address.
+
 ### Fixed
 - **The Dashboard API Probe (#511) now follows Jira's redirects.** The four Rich Filters addresses answered 302, but
   the Jira proxy dropped the redirect's target, so the report could not say where they led. The proxy now passes it

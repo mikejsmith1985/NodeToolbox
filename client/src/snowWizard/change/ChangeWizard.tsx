@@ -414,7 +414,7 @@ function ChangeJobFrame({ crg, session, updateSession, progress, currentStepId, 
 interface ChangeLandingProps {
   resumableJobs: readonly WizardJob[];
   openJob: (jobKind: WizardJobKind, startingPoint?: ChangeStartingPoint | null) => void;
-  onExit: () => void;
+  onExit?: () => void;
 }
 
 /**
@@ -437,8 +437,14 @@ function ChangeLanding({ resumableJobs, openJob, onExit }: ChangeLandingProps) {
   );
 }
 
+/**
+ * What the change job takes. Inside the Wizard, `onExit` goes back to its Home. SNow Hub mounts the same flow with no
+ * `onExit`: it is the flow's home, so the job's own first screen is where leaving a job lands.
+ */
+export type ChangeWizardProps = Partial<WizardJobProps>;
+
 /** The "Make or change a change" job. */
-export default function ChangeWizard({ onExit }: WizardJobProps) {
+export default function ChangeWizard({ onExit }: ChangeWizardProps) {
   const jobs = useWizardJobStore((state) => state.jobs);
   const [activeJob, setActiveJob] = useState<WizardJob | null>(null);
   const [startingPoint, setStartingPoint] = useState<ChangeStartingPoint | null>(null);
@@ -467,6 +473,13 @@ export default function ChangeWizard({ onExit }: WizardJobProps) {
     setActiveJob(null);
   }
 
+  /** "Save and leave": the job stays saved; the first screen shows again (and the Wizard then goes on to its Home). */
+  function leaveJob() {
+    setStartingPoint(null);
+    setActiveJob(null);
+    onExit?.();
+  }
+
   if (!activeJob) return <ChangeLanding resumableJobs={resumableJobs} openJob={openJob} onExit={onExit} />;
-  return <ChangeJob key={activeJob.jobId} job={activeJob} resumedAgeText={resumedAgeText} startingPoint={startingPoint} onExit={onExit} onStartOver={() => startOver(activeJob)} />;
+  return <ChangeJob key={activeJob.jobId} job={activeJob} resumedAgeText={resumedAgeText} startingPoint={startingPoint} onExit={leaveJob} onStartOver={() => startOver(activeJob)} />;
 }

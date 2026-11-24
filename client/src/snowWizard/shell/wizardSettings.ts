@@ -5,6 +5,11 @@ import { DEFAULT_JIRA_URL, DEFAULT_SNOW_URL } from '../wizardDefaults.ts';
 
 export const SNOW_URL_STORAGE_KEY = 'snowWizard:snowUrl';
 export const JIRA_URL_STORAGE_KEY = 'snowWizard:jiraUrl';
+/**
+ * Toolbox's own ServiceNow address setting (settingsStore). SNow Hub runs the Wizard's change flow, so there the flow's
+ * links use the address set in Toolbox. The Wizard file never holds this key, so the Wizard is unchanged.
+ */
+export const TOOLBOX_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
 const INVALID_ADDRESS_MESSAGE = 'Enter the full address, starting with https://';
 
 /** The outcome of saving an address: saved, or refused with a reason the user can act on. */
@@ -50,9 +55,9 @@ function saveAddress(storageKey: string, addressText: string, defaultAddress: st
   return { isSaved: true, address: normalizedAddress };
 }
 
-/** The ServiceNow address to use: the saved one, else the built-in default (also when the browser refuses storage). */
+/** The ServiceNow address to use: the Wizard's saved one, else Toolbox's, else the built-in default (also when storage is refused). */
 export function loadSnowUrl(): string {
-  return loadAddress(SNOW_URL_STORAGE_KEY, DEFAULT_SNOW_URL);
+  return loadAddress(SNOW_URL_STORAGE_KEY, loadAddress(TOOLBOX_SNOW_URL_STORAGE_KEY, DEFAULT_SNOW_URL));
 }
 
 /** Saves a new ServiceNow address when it is a real web address; otherwise keeps the old one and says why. */

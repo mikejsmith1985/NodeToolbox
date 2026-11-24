@@ -339,10 +339,12 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('tab', { name: 'Sync Monitor' })).toBeInTheDocument();
   });
 
-  it('shows the CRG tab content by default', () => {
+  it('shows the guided change flow (same flow as the SNow Wizard) by default on the CHG Generator tab', () => {
+    localStorage.removeItem('tbxChgGeneratorView');
     render(<SnowHubView />);
 
-    expect(screen.getByRole('button', { name: 'Create New CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Back to home' })).not.toBeInTheDocument();
   });
 
   it('switches to the Modify mode when Modify Existing CHG button is clicked', async () => {
@@ -353,7 +355,8 @@ describe('SnowHubView', () => {
     const chgTab = screen.getByRole('tab', { name: 'CHG Generator' });
     expect(chgTab).toBeInTheDocument();
 
-    // Click on Modify Existing CHG button to switch modes
+    // The classic screens hold the Create / Modify toggle.
+    await user.click(screen.getByRole('button', { name: /Classic screens/ }));
     const modifyButton = screen.getByRole('button', { name: 'Modify Existing CHG' });
     await user.click(modifyButton);
 

@@ -207,3 +207,21 @@ describe('ChangeWizard — templates', () => {
     expect(screen.queryByText('OLD plan')).toBeNull();
   });
 });
+
+describe('ChangeWizard — inside SNow Hub (no home screen)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('tbxRcpRulesEnabled', 'false');
+  });
+
+  it('offers no way home, and "Save and leave" returns to its own first screen with the job kept', () => {
+    useWizardJobStore.setState({ jobs: {} });
+    render(<ChangeWizard />);
+    expect(screen.queryByRole('button', { name: 'Back to home' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Create a new change/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and leave' }));
+    expect(screen.getByRole('heading', { name: 'What do you want to do?' })).toBeTruthy();
+    expect(useWizardJobStore.getState().jobs.newChange?.status).toBe('inProgress');
+  });
+});
+

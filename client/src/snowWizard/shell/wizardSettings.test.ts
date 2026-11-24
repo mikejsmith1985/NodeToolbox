@@ -13,6 +13,7 @@ import {
   saveJiraUrl,
   saveSnowUrl,
   SNOW_URL_STORAGE_KEY,
+  TOOLBOX_SNOW_URL_STORAGE_KEY,
 } from './wizardSettings.ts';
 
 const INVALID_ADDRESS_PROBLEM = 'Enter the full address, starting with https://';
@@ -42,6 +43,13 @@ describe('normalizeAddress', () => {
 describe('loadSnowUrl / saveSnowUrl', () => {
   it('starts from the built-in default', () => {
     expect(loadSnowUrl()).toBe(DEFAULT_SNOW_URL);
+  });
+
+  it('inside Toolbox, falls back to the ServiceNow address set in Toolbox before the built-in default', () => {
+    localStorage.setItem(TOOLBOX_SNOW_URL_STORAGE_KEY, 'https://toolbox.service-now.com/');
+    expect(loadSnowUrl()).toBe('https://toolbox.service-now.com');
+    saveSnowUrl('https://wizard.service-now.com');
+    expect(loadSnowUrl()).toBe('https://wizard.service-now.com');
   });
 
   it('remembers a saved address', () => {

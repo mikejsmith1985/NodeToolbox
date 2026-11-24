@@ -15,7 +15,8 @@ interface ChooseModeStepProps {
   onCreate: () => void;
   onModify: () => void;
   onOpenTemplates: () => void;
-  onExit: () => void;
+  /** The way back to the Wizard's home; absent inside SNow Hub, which has no home screen to return to. */
+  onExit?: () => void;
 }
 
 const MINUTES_PER_HOUR = 60;
@@ -51,9 +52,11 @@ export default function ChooseModeStep({ resumableJobs, onCreate, onModify, onOp
         <ChoiceCard title="Modify a change in ServiceNow" description="Load any change by its number (or pick one of yours), fix what needs fixing, and save it."
           waitingJob={resumableJobs.find((job) => job.kind === 'modifyChange')} onChoose={onModify} />
       </div>
-      <div className={ownStyles.buttonRow}>
-        <button type="button" className={styles.secondaryButton} onClick={onExit}>Back to home</button>
-      </div>
+      {onExit && (
+        <div className={ownStyles.buttonRow}>
+          <button type="button" className={styles.secondaryButton} onClick={onExit}>Back to home</button>
+        </div>
+      )}
     </section>
   );
 }

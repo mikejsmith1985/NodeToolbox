@@ -33,4 +33,10 @@ describe('ChooseModeStep', () => {
     expect(screen.getByRole('button', { name: /^Create a new change/ }).textContent).toMatch(/Picks up the one you started 0 minute\(s\) ago\./);
     expect(screen.getByRole('button', { name: /^Modify a change in ServiceNow/ }).textContent).not.toMatch(/Picks up/);
   });
+
+  it('leaves out the way home when there is no home to go to (inside SNow Hub)', () => {
+    const { onCreate, onModify, onOpenTemplates } = buildHandlers();
+    render(<ChooseModeStep resumableJobs={[]} onCreate={onCreate} onModify={onModify} onOpenTemplates={onOpenTemplates} />);
+    expect(screen.queryByRole('button', { name: 'Back to home' })).toBeNull();
+  });
 });
