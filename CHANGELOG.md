@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Dashboard API Probe (#511) now follows Jira's redirects.** The four Rich Filters addresses answered 302, but
+  the Jira proxy dropped the redirect's target, so the report could not say where they led. The proxy now passes it
+  back as `X-Upstream-Location`, and the probe prints each hop under its endpoint. A redirect to the login page is
+  reported and not followed. A redirect to another Jira REST address is fetched and its result shown, up to three
+  hops.
 - **The Jira light stopped lying, and Jira works through the relay like ServiceNow and SharePoint.** The Jira light
   went green whenever any token was stored, including one for the old instance after the migration. It now goes
   green only while a Jira tab is relaying, or after a live call with the stored token has succeeded. Its panel

@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIssueLink, fetchJiraLabelSuggestions, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { createIssueLink, fetchJiraLabelSuggestions, readJiraRedirectTarget, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -30,6 +30,23 @@ beforeEach(() => {
 
 afterEach(() => {
   window.removeEventListener('toolbox:api', recordEvent);
+});
+
+describe('readJiraRedirectTarget', () => {
+  it('returns where Jira redirected a GET, read from the header the proxy passes it back in', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      status: 302,
+      headers: { get: (name: string) => (name.toLowerCase() === 'x-upstream-location' ? 'https://jira.example/login.jsp' : null) },
+    } as unknown as Response);
+
+    await expect(readJiraRedirectTarget('/rest/x/1.0/y')).resolves.toBe('https://jira.example/login.jsp');
+    expect(fetch).toHaveBeenCalledWith('/jira-proxy/rest/x/1.0/y');
+  });
+
+  it('returns null when the reply is not a redirect or names no target', async () => {
+    vi.mocked(fetch).mockResolvedValue({ status: 200, headers: { get: () => null } } as unknown as Response);
+    await expect(readJiraRedirectTarget('/rest/x')).resolves.toBeNull();
+  });
 });
 
 describe('jiraApi', () => {

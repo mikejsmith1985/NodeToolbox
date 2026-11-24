@@ -197,3 +197,46 @@ describe('proxyRequest() body forwarding', () => {
     }, 500);
   });
 });
+
+// ── proxyRequest() — upstream redirects ──────────────────────────────────────
+
+describe('proxyRequest() upstream redirects', () => {
+  const { Writable } = require('stream');
+  const REDIRECT_TARGET = 'https://jira.example.com/login.jsp?os_destination=%2Frest%2Fx';
+  let upstreamServer;
+  let upstreamPort;
+
+  beforeAll((done) => {
+    upstreamServer = http.createServer((req, res) => {
+      res.writeHead(302, { Location: REDIRECT_TARGET });
+      res.end();
+    });
+    upstreamServer.listen(0, '127.0.0.1', () => {
+      upstreamPort = upstreamServer.address().port;
+      done();
+    });
+  });
+
+  afterAll((done) => {
+    upstreamServer.close(done);
+  });
+
+  it('passes the redirect target on as X-Upstream-Location so the browser can see where Jira pointed', (done) => {
+    const capturedHeaders = {};
+    const mockClientRes = new Writable({ write(chunk, _encoding, callback) { callback(); } });
+    mockClientRes.headersSent = false;
+    mockClientRes.status = function(code) { this._statusCode = code; return this; };
+    mockClientRes.json = function() {};
+    mockClientRes.setHeader = function(name, value) { capturedHeaders[name.toLowerCase()] = value; };
+    mockClientRes.on('finish', () => {
+      expect(mockClientRes._statusCode).toBe(302);
+      expect(capturedHeaders['x-upstream-location']).toBe(REDIRECT_TARGET);
+      // A real Location header would make the browser follow it to another origin and lose the answer.
+      expect(capturedHeaders.location).toBeUndefined();
+      done();
+    });
+
+    const mockClientReq = { method: 'GET', headers: { accept: 'application/json' }, body: undefined };
+    proxyRequest(mockClientReq, mockClientRes, { baseUrl: `http://127.0.0.1:${upstreamPort}` }, '/rest/x', null, false);
+  });
+});

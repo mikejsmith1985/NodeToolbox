@@ -7,10 +7,10 @@
 
 import React, { useState } from 'react';
 
-import { jiraGet } from '../../services/jiraApi.ts';
+import { jiraGet, readJiraRedirectTarget } from '../../services/jiraApi.ts';
 import styles from './AdminHubView.module.css';
 import {
-  buildProbePaths, findRichFilterApps, formatProbeReport, readStatusFromFailure, summarizeProbeBody,
+  MAX_REDIRECT_HOPS, buildProbePaths, describeRedirectTarget, findRichFilterApps, isRedirectStatus, formatProbeReport, readStatusFromFailure, summarizeProbeBody,
   type ProbeResult,
 } from './dashboardApiProbe.ts';
 
@@ -32,6 +32,40 @@ async function probeOnePath(path: string): Promise<{ result: ProbeResult; body: 
   }
 }
 
+/**
+ * Follows a redirect chain for a path that answered 3xx: asks where Jira pointed, explains it, and GETs the
+ * target when it is another REST address — up to MAX_REDIRECT_HOPS times. Each hop becomes one report line.
+ */
+async function followRedirects(startPath: string, startStatus: number | null): Promise<string[]> {
+  const hopLines: string[] = [];
+  let currentPath = startPath;
+  let currentStatus = startStatus;
+  for (let hopIndex = 0; hopIndex < MAX_REDIRECT_HOPS; hopIndex += 1) {
+    const location = await readJiraRedirectTarget(currentPath).catch(() => null);
+    if (!location) {
+      hopLines.push('Jira did not say where it redirected to');
+      return hopLines;
+    }
+    const target = describeRedirectTarget(location);
+    hopLines.push(`${currentStatus ?? 'ERR'} → ${location} (${target.note})`);
+    if (!target.followPath) return hopLines;
+    const followed = await probeOnePath(target.followPath);
+    hopLines.push(`${followed.result.status ?? 'ERR'}  ${target.followPath}${followed.result.shape ? ` — ${followed.result.shape}` : ''}`);
+    if (!isRedirectStatus(followed.result.status)) return hopLines;
+    currentPath = target.followPath;
+    currentStatus = followed.result.status;
+  }
+  hopLines.push(`stopped after ${MAX_REDIRECT_HOPS} redirects`);
+  return hopLines;
+}
+
+/** Probes one path and, when it redirected, records where the redirect led. */
+async function probeAndFollow(path: string): Promise<{ result: ProbeResult; body: unknown }> {
+  const outcome = await probeOnePath(path);
+  if (!isRedirectStatus(outcome.result.status)) return outcome;
+  return { ...outcome, result: { ...outcome.result, redirects: await followRedirects(path, outcome.result.status) } };
+}
+
 /** Reads the dashboard ids out of GET /rest/api/2/dashboard. */
 function readDashboardIds(body: unknown): string[] {
   const dashboards = (body as { dashboards?: Array<{ id?: string }> } | null)?.dashboards;
@@ -45,7 +79,7 @@ async function runProbe(customPath: string): Promise<string> {
   const results: ProbeResult[] = [];
   let pluginBody: unknown = null;
   for (const path of paths) {
-    const outcome = path === MY_DASHBOARDS_PATH ? dashboardList : await probeOnePath(path);
+    const outcome = path === MY_DASHBOARDS_PATH ? dashboardList : await probeAndFollow(path);
     if (path === PLUGIN_LIST_PATH) pluginBody = outcome.body;
     results.push(outcome.result);
   }

@@ -43,6 +43,8 @@ export interface ProbeResult {
   status: number | null;
   shape: string;
   snippet: string;
+  /** For a redirect: one line per hop followed ("302 → target (note)", then the followed path's own status). */
+  redirects?: string[];
 }
 
 // ── Path planning ──
@@ -67,6 +69,48 @@ export function buildProbePaths(dashboardIds: readonly string[], customPath: str
   const trimmedCustomPath = customPath.trim();
   if (REST_PATH_PATTERN.test(trimmedCustomPath)) paths.push(trimmedCustomPath);
   return paths;
+}
+
+// ── Redirects ──
+
+/** How many redirects in a row the probe follows before giving up, so a redirect loop cannot run forever. */
+export const MAX_REDIRECT_HOPS = 3;
+/** Redirect statuses run from 300 up to (not including) 400. */
+const FIRST_REDIRECT_STATUS = 300;
+const FIRST_CLIENT_ERROR_STATUS = 400;
+/** Addresses Jira sends a request to when it wants a signed-in browser session instead of a token. */
+const LOGIN_TARGET_PATTERN = /login|os_destination|saml|\bsso\b|\/auth\b/i;
+/** Any base URL, used only to read a relative redirect target's path. */
+const RELATIVE_URL_BASE = 'https://jira.invalid';
+
+/** Reads the path and query out of an absolute or relative address; null when it cannot be parsed. */
+function readUrlPath(location: string): string | null {
+  try {
+    const targetUrl = new URL(location, RELATIVE_URL_BASE);
+    return `${targetUrl.pathname}${targetUrl.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/** True for an HTTP redirect status (3xx). */
+export function isRedirectStatus(status: number | null): boolean {
+  return status !== null && status >= FIRST_REDIRECT_STATUS && status < FIRST_CLIENT_ERROR_STATUS;
+}
+
+/**
+ * Decides what a redirect target means. A login page means the endpoint wants a signed-in browser session, so
+ * it is not followed (the relay, which runs in a signed-in Jira tab, may answer it). Another Jira REST address
+ * is followed. Anything else is reported but not followed, because the probe only reads REST.
+ */
+export function describeRedirectTarget(location: string): { followPath: string | null; note: string } {
+  if (LOGIN_TARGET_PATTERN.test(location)) {
+    return { followPath: null, note: 'login page — needs a signed-in Jira session; run the probe with the Jira relay connected' };
+  }
+  const targetPath = readUrlPath(location);
+  if (targetPath === null) return { followPath: null, note: 'unreadable address' };
+  if (REST_PATH_PATTERN.test(targetPath)) return { followPath: targetPath, note: 'followed' };
+  return { followPath: null, note: 'not a REST address — not followed' };
 }
 
 // ── Reply summarising ──
@@ -117,7 +161,8 @@ export function formatProbeReport(results: readonly ProbeResult[], richFilterApp
   ];
   const lines = results.map((result) => {
     const statusText = result.status === null ? 'ERR' : String(result.status);
-    return `${statusText}  ${result.path}${result.shape ? `\n     shape: ${result.shape}` : ''}\n     ${result.snippet}`;
+    const redirectLines = (result.redirects ?? []).map((hop) => `\n     ↳ ${hop}`).join('');
+    return `${statusText}  ${result.path}${result.shape ? `\n     shape: ${result.shape}` : ''}\n     ${result.snippet}${redirectLines}`;
   });
   return [...header, ...lines].join('\n');
 }

@@ -13,6 +13,8 @@ const https = require('https');
 
 /** User-Agent string sent on all outbound proxy requests */
 const PROXY_USER_AGENT = 'NodeToolbox/1.0.0';
+/** Response header carrying an upstream redirect's target back to the browser (see proxyRequest). */
+const UPSTREAM_LOCATION_HEADER = 'X-Upstream-Location';
 
 // ── Authentication Helpers ────────────────────────────────────────────────────
 
@@ -117,6 +119,12 @@ function proxyRequest(clientReq, clientRes, serviceConfig, targetPathWithQuery, 
     // Forward the upstream content-type so the browser parses the body correctly
     if (upstreamResponse.headers['content-type']) {
       clientRes.setHeader('Content-Type', upstreamResponse.headers['content-type']);
+    }
+    // A redirect's target is passed on under a different name, never as Location: a real Location would make
+    // the browser follow it to the upstream origin (blocked cross-origin) and the caller would learn nothing.
+    // Under this name the caller can see where the service pointed — the login page, or a real endpoint.
+    if (upstreamResponse.headers.location) {
+      clientRes.setHeader(UPSTREAM_LOCATION_HEADER, upstreamResponse.headers.location);
     }
     clientRes.status(upstreamResponse.statusCode);
     upstreamResponse.pipe(clientRes);

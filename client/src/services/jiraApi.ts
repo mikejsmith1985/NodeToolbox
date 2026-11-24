@@ -173,6 +173,24 @@ export async function jiraGet<ResponseBody>(path: string): Promise<ResponseBody>
   });
 }
 
+/** The header the server's Jira proxy uses to pass back where a Jira redirect pointed. */
+const UPSTREAM_LOCATION_HEADER = 'X-Upstream-Location';
+/** HTTP statuses from 300 up to (not including) 400 are redirects. */
+const FIRST_REDIRECT_STATUS = 300;
+const FIRST_CLIENT_ERROR_STATUS = 400;
+
+/**
+ * GETs a Jira path and returns where Jira redirected it, or null when it did not redirect. The proxy passes the
+ * target back under its own header (a real Location would send the browser off to Jira's origin and lose it),
+ * so a read-only probe can tell "redirects to the login page" apart from "this endpoint moved".
+ */
+export async function readJiraRedirectTarget(path: string): Promise<string | null> {
+  const response = await fetch(`${JIRA_PROXY_BASE}${path}`);
+  const isRedirect = response.status >= FIRST_REDIRECT_STATUS && response.status < FIRST_CLIENT_ERROR_STATUS;
+  if (!isRedirect) return null;
+  return response.headers.get(UPSTREAM_LOCATION_HEADER) || null;
+}
+
 /** Makes an authenticated POST request to the Jira REST API via proxy. */
 export async function jiraPost<ResponseBody>(
   path: string,
