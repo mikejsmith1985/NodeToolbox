@@ -24,7 +24,7 @@ export interface StorySection {
 /** The gadget at the very top: it filters every gadget below it at once. */
 export const DASHBOARD_CONTROLLER = {
   gadget: 'Rich Filter Controller',
-  settings: 'Dynamic filters: PI (Program Increment), Fix Version/s, Issue Type · Smart filter: Team. Place it first; every gadget below follows it.',
+  settings: 'Dynamic filters: PI (Program Increment), Fix Version/s, Issue Type · Smart filter: Team. Place it first; every gadget below follows it. The static filters appear on it as toggles that narrow every gadget at once.',
 } as const;
 
 const STORY_SECTIONS: readonly Omit<StorySection, 'step'>[] = [
@@ -32,7 +32,7 @@ const STORY_SECTIONS: readonly Omit<StorySection, 'step'>[] = [
     question: 'Will we make the PI?',
     whyItMatters: 'The Epics the teams committed to, and how far along each one is.',
     gadget: 'Rich Filter Statistics',
-    settings: 'View: Epics · Group by: Status · Show count and Story Points. Pick the PI in the controller.',
+    settings: 'View: Epics · Statistic type: Status · Show count and Story Points. Pick the PI in the controller.',
     clauseNames: ['Epics'],
   },
   {
@@ -46,29 +46,29 @@ const STORY_SECTIONS: readonly Omit<StorySection, 'step'>[] = [
     question: "What's in flight?",
     whyItMatters: 'Work in progress per team. Too much in flight slows everything down.',
     gadget: 'Rich Filter Statistics',
-    settings: 'View: Team Work · Static filter: In Progress · Group by: Team (smart filter), then Status.',
-    clauseNames: ['Team Work', 'In Progress'],
+    settings: 'View: WIP · Statistic type: Team (smart filter) · Show count and Story Points.',
+    clauseNames: ['WIP'],
   },
   {
     question: "What's stuck or blocked?",
     whyItMatters: 'The items that need the SM today.',
     gadget: 'Rich Filter Results',
-    settings: 'View: Team Work · Quick filters: Flagged, Stuck 10 Days, Unassigned In Progress · Columns: Key, Summary, Status, Assignee, Updated.',
-    clauseNames: ['Flagged', 'Stuck 10 Days', 'Unassigned In Progress'],
+    settings: 'View: Stuck & Blocked · Columns: Key, Summary, Status, Assignee, Updated · Sort: Updated, oldest first.',
+    clauseNames: ['Stuck & Blocked', 'Flagged', 'Stuck 10 Days', 'Unassigned In Progress'],
   },
   {
     question: 'Is anyone overloaded?',
     whyItMatters: 'Open work per person: overload and idle hands both show here.',
     gadget: 'Rich Filter Statistics',
-    settings: 'View: Team Work · Static filter: In Progress · Group by: Assignee · Show count and Story Points.',
-    clauseNames: ['Team Work', 'In Progress'],
+    settings: 'View: WIP · Statistic type: Assignee · Show count and Story Points.',
+    clauseNames: ['WIP'],
   },
   {
     question: 'Is there enough Ready to Work?',
     whyItMatters: 'On Kanban the team pulls from Ready to Work; an empty queue stalls the team.',
     gadget: 'Rich Filter Statistics',
-    settings: 'View: Team Work · Static filter: Ready to Work · Group by: Team. Ready but Unestimated shows what still needs sizing.',
-    clauseNames: ['Team Work', 'Ready to Work', 'Ready but Unestimated'],
+    settings: 'View: Ready Queue · Statistic type: Team (smart filter). The Ready but Unestimated count shows what still needs sizing.',
+    clauseNames: ['Ready Queue', 'Ready but Unestimated'],
   },
   {
     question: 'Is quality slipping?',

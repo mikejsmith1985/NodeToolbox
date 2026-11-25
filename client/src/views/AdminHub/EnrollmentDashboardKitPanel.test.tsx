@@ -77,7 +77,8 @@ describe('EnrollmentDashboardKitPanel', () => {
     expect(searchedJql[0]).toBe('project in (ENCUC, ENFCT)');
     expect(searchedJql.slice(1).every((jql) => jql.startsWith('(project in (ENCUC, ENFCT)) AND ('))).toBe(true);
     expect(screen.getAllByText(/Smart filter "Team"/).length).toBe(2);
-    expect(screen.getByText(/bad JQL/)).toBeInTheDocument();
+    // Stuck 10 Days and the Stuck & Blocked view both carry the rejected clause, so both rows flag it.
+    expect(screen.getAllByText(/bad JQL/).length).toBe(2);
     expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
   });
 

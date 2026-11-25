@@ -42,7 +42,7 @@ describe('buildDashboardStory', () => {
 
   it('names the clauses a step cannot use when the instance lacks them', () => {
     const readySection = buildDashboardStory().find((section) => section.question === 'Is there enough Ready to Work?');
-    expect(readySection && listMissingClauses(readySection, new Set(['Team Work']))).toEqual(['Ready to Work', 'Ready but Unestimated']);
+    expect(readySection && listMissingClauses(readySection, new Set(['Team Work']))).toEqual(['Ready Queue', 'Ready but Unestimated']);
   });
 });
 

@@ -7,7 +7,7 @@ import { DashboardStorySheet } from './DashboardStorySheet.tsx';
 
 const COUNTS = new Map<string, number | null>([
   ['Epics', 40], ['Team Work', 300], ['Done 30 Days', 30], ['In Progress', 25], ['Flagged', 2], ['Stuck 10 Days', 9],
-  ['Unassigned In Progress', 1], ['Ready to Work', 10], ['Ready but Unestimated', 3], ['Defects', 50], ['Open Defects', 12],
+  ['Unassigned In Progress', 1], ['Ready to Work', 10], ['WIP', 25], ['Stuck & Blocked', 11], ['Ready Queue', 10], ['Ready but Unestimated', 3], ['Defects', 50], ['Open Defects', 12],
 ]);
 
 describe('DashboardStorySheet', () => {
@@ -25,6 +25,6 @@ describe('DashboardStorySheet', () => {
 
   it('says which clauses a step is missing instead of showing a blank', () => {
     render(<DashboardStorySheet clauseCounts={new Map([['Team Work', 300]])} readySupply={null} />);
-    expect(screen.getAllByText(/Not available on this Jira: Ready to Work, Ready but Unestimated/).length).toBe(1);
+    expect(screen.getAllByText(/Not available on this Jira: Ready Queue, Ready but Unestimated/).length).toBe(1);
   });
 });

@@ -132,6 +132,26 @@ describe('buildRichFilterClauses — Kanban flow slices', () => {
   });
 });
 
+describe('buildRichFilterClauses — per-gadget views', () => {
+  // In Rich Filters a View narrows ONE gadget; a static filter is a controller toggle that narrows every gadget.
+  // So each gadget's own slice must be a View, built inside Team Work so Epics never count as work.
+  it('gives each gadget slice as a View inside Team Work', () => {
+    const teamWork = findClause('Team Work').clause;
+    expect(findClause('WIP')).toEqual({ tab: 'View', name: 'WIP', clause: `(${teamWork}) AND (statusCategory = "In Progress")` });
+    expect(findClause('Ready Queue')).toEqual({ tab: 'View', name: 'Ready Queue', clause: `(${teamWork}) AND (status = "Ready to Work")` });
+    const stuck = findClause('Stuck & Blocked');
+    expect(stuck.tab).toBe('View');
+    expect(stuck.clause.startsWith(`(${teamWork}) AND (`)).toBe(true);
+    expect(stuck.clause).toContain('Flagged is not EMPTY');
+    expect(stuck.clause).toContain('NOT status CHANGED AFTER -10d');
+    expect(stuck.clause).toContain('assignee is EMPTY');
+  });
+
+  it('leaves out the Ready Queue view when the instance has no Ready to Work status', () => {
+    expect(buildRichFilterClauses({ ...INPUTS, readyStatusName: null }).some((clause) => clause.name === 'Ready Queue')).toBe(false);
+  });
+});
+
 describe('readReadyStatusName', () => {
   it("finds the Ready to Work status in Jira's own list, whatever its capitalisation", () => {
     const projectStatuses = [[{ name: 'Story', statuses: [{ name: 'READY TO WORK' }, { name: 'Working' }] }]];
