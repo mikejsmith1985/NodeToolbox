@@ -262,8 +262,18 @@ const GADGET_ID_PATTERN = /"id"\s*:\s*"?(\d+)"?/;
 const REST_AREA_PATTERN = /\/rest\/([a-z][\w\-.]*)\/(\d+(?:\.\d+)*)\//gi;
 /** Anything naming the Rich Filters app (its vendor is Qotilabs). */
 const RICH_FILTER_MENTION_PATTERN = /[\w.:\-/]*(?:qotilabs|rich-?filters?)[\w.:\-/]*/gi;
-/** Embedded JSON escapes its slashes ("rest\/gadgets"); they are unescaped before scanning. */
+/** Embedded JSON escapes its slashes ("rest\/gadgets") and quotes ("); both are unescaped before scanning. */
 const ESCAPED_SLASH_PATTERN = /\\\//g;
+const ESCAPED_QUOTE_PATTERN = /\\u0022/gi;
+/** A full REST address the page uses, up to its query string. */
+const REST_ADDRESS_PATTERN = /\/rest\/[\w\-.]+(?:\/[\w\-.]+)*/g;
+/**
+ * Data the Rich Filters app embeds in the page for its own scripts, as WRM._unparsedData["<key>"]="<JS string>".
+ * Its dashboard export lives here, so the value is decoded and shown rather than only the key.
+ */
+const RICH_FILTER_PAGE_DATA_PATTERN = /WRM\._unparsedData\["(com\.qotilabs[^"]+)"\]\s*=\s*"((?:[^"\\]|\\.)*)"/g;
+/** The longest page-data value kept, so one large export does not swamp the report. */
+const PAGE_DATA_VALUE_LIMIT = 1500;
 
 /** What a dashboard page reveals: its gadgets (ids aligned with specs) and the addresses it uses. */
 export interface DashboardPageScan {
@@ -271,7 +281,26 @@ export interface DashboardPageScan {
   /** The gadget id at the same position as its spec, or '?' when the page gave none. */
   gadgetIds: string[];
   restAreas: string[];
+  /** Every full /rest/… address on the page, so the next probe can call the real ones. */
+  restAddresses: string[];
   richFilterMentions: string[];
+  /** The Rich Filters app's embedded page data, one "key = decoded value" line each. */
+  richFilterPageData: string[];
+}
+
+/** Decodes a JavaScript string literal's contents; a value that will not decode is kept as written. */
+function decodeJsString(literalContents: string): string {
+  try {
+    return JSON.parse(`"${literalContents}"`) as string;
+  } catch {
+    return literalContents;
+  }
+}
+
+/** Reads the Rich Filters app's embedded page data, decoded and capped. */
+function readRichFilterPageData(html: string): string[] {
+  return Array.from(html.matchAll(RICH_FILTER_PAGE_DATA_PATTERN), (match) => `${match[1]} = ${decodeJsString(match[2]).slice(0, PAGE_DATA_VALUE_LIMIT)}`)
+    .slice(0, PAGE_SCAN_LIST_LIMIT);
 }
 
 /** Distinct values in first-seen order, capped. */
@@ -289,13 +318,16 @@ export function buildDashboardPagePath(dashboardId: string): string {
  * REST areas it calls, and the Rich Filters app's real names and addresses.
  */
 export function scanDashboardPage(html: string): DashboardPageScan {
-  const page = html.replace(ESCAPED_SLASH_PATTERN, '/');
+  const page = html.replace(ESCAPED_SLASH_PATTERN, '/').replace(ESCAPED_QUOTE_PATTERN, '"');
   const gadgetBlocks = (page.match(GADGET_BLOCK_PATTERN) ?? []).slice(0, PAGE_SCAN_LIST_LIMIT);
   const gadgetSpecs = gadgetBlocks.map((block) => GADGET_SPEC_PATTERN.exec(block)?.[1] ?? '?');
   const gadgetIds = gadgetBlocks.map((block) => GADGET_ID_PATTERN.exec(block)?.[1] ?? '?');
   const restAreas = distinctCapped(Array.from(page.matchAll(REST_AREA_PATTERN), (match) => `/rest/${match[1]}/${match[2]}/`));
+  const restAddresses = distinctCapped(page.match(REST_ADDRESS_PATTERN) ?? []);
   const richFilterMentions = distinctCapped(page.match(RICH_FILTER_MENTION_PATTERN) ?? []);
-  return { gadgetSpecs, gadgetIds, restAreas, richFilterMentions };
+  // Page data is read from the raw HTML: unescaping quotes first would break the string it sits in.
+  const richFilterPageData = readRichFilterPageData(html);
+  return { gadgetSpecs, gadgetIds, restAreas, restAddresses, richFilterMentions, richFilterPageData };
 }
 
 /** Formats one dashboard page's scan for the report; a page that could not be read says why. */
@@ -310,6 +342,8 @@ export function formatDashboardPageScan(dashboardId: string, pageReply: JiraProb
     `${heading}: ${scan.gadgetSpecs.length} gadget(s)`,
     ...scan.gadgetSpecs.map((spec, index) => `     gadget ${scan.gadgetIds[index]} · ${spec}`),
     `     REST areas: ${scan.restAreas.join(', ') || 'none found'}`,
+    `     REST addresses: ${scan.restAddresses.join(', ') || 'none found'}`,
     `     Rich Filters mentions: ${scan.richFilterMentions.join(', ') || 'none found'}`,
+    ...scan.richFilterPageData.map((dataLine) => `     page data: ${dataLine}`),
   ];
 }

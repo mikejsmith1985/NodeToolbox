@@ -22,7 +22,7 @@ function reply(status: number, body: unknown, upstreamLocation: string | null = 
   return { status, route: 'relay', upstreamLocation, body, bodyText: typeof body === 'string' ? body : JSON.stringify(body) };
 }
 
-const DASHBOARD_PAGE = '<script>{"id":"501","title":"Team","gadgetSpecUrl":"rest/gadgets/1.0/g/com.qotilabs.jira.rich-filters-plugin:rf-gadget/g.xml"}</script>';
+const DASHBOARD_PAGE = '<script>{"id":"501","title":"Team","gadgetSpecUrl":"rest/gadgets/1.0/g/com.qotilabs.jira.rich-filters-plugin:rf-gadget/g.xml"}</script><script>WRM._unparsedData["com.qotilabs.jira.rich-filters-plugin:qrf-dashboard-export.dashboard-export-data"]="{\\u0022enabled\\u0022:true}";</script>';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,5 +71,6 @@ describe('DashboardApiProbePanel', () => {
     expect(report).toContain('Dashboard 42 page (200)');
     expect(report).toContain('gadget 501');
     expect(report).toContain('com.qotilabs.jira.rich-filters-plugin:rf-gadget');
+    expect(report).toContain('qrf-dashboard-export.dashboard-export-data = {"enabled":true}');
   });
 });

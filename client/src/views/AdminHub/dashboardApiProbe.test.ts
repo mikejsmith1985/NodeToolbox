@@ -183,7 +183,30 @@ describe('scanDashboardPage', () => {
   });
 
   it('returns empty lists for a page with nothing in it', () => {
-    expect(scanDashboardPage('<html></html>')).toEqual({ gadgetSpecs: [], restAreas: [], richFilterMentions: [], gadgetIds: [] });
+    expect(scanDashboardPage('<html></html>')).toEqual({
+      gadgetSpecs: [], restAreas: [], richFilterMentions: [], gadgetIds: [], restAddresses: [], richFilterPageData: [],
+    });
+  });
+
+  const pageWithAppData = 'WRM._unparsedData["com.qotilabs.jira.rich-filters-plugin:qrf-dashboard-export.dashboard-export-data"]="{\\u0022exportUrl\\u0022:\\u0022\\/rest\\/qrf\\/1.0\\/export\\u0022}";'
+    + 'WRM._unparsedData["com.atlassian.other:x"]="\\u0022ignored\\u0022";'
+    + '<a data-url="/rest/dashboards/1.0/175112/layout?x=1">';
+
+  it('decodes the Rich Filters app\'s own page data, which is where its dashboard export lives', () => {
+    expect(scanDashboardPage(pageWithAppData).richFilterPageData).toEqual([
+      'com.qotilabs.jira.rich-filters-plugin:qrf-dashboard-export.dashboard-export-data = {"exportUrl":"/rest/qrf/1.0/export"}',
+    ]);
+  });
+
+  it('lists every full REST address the page uses, not just its areas', () => {
+    expect(scanDashboardPage(pageWithAppData).restAddresses).toEqual(
+      expect.arrayContaining(['/rest/dashboards/1.0/175112/layout', '/rest/qrf/1.0/export']),
+    );
+  });
+
+  it('reads names after unescaping, so none comes out prefixed with u0022', () => {
+    const mentions = scanDashboardPage('{\\u0022userMayCreateRichFilters\\u0022:true}').richFilterMentions;
+    expect(mentions).toEqual(['userMayCreateRichFilters']);
   });
 
   it('builds the dashboard page address for an id', () => {

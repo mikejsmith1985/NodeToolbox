@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The probe's dashboard page scan shows the Rich Filters app's own data and the page's full REST addresses.** The
+  last report found the app (`com.qotilabs.jira.rich-filters-plugin`) and its `qrf-dashboard-export` page data, but
+  printed only their names. The scan now decodes that page data and prints it, lists every full `/rest/…` address
+  on the page, and no longer leaves `u0022` stuck to names.
 - **The Dashboard API Probe (#511) says how it reached Jira and as whom.** Its report now opens with "Signed in to
   Jira as … — through your Jira tab" or "— through the stored Jira token". The last report's Rich Filters 302s came
   from the stored token, and nothing in the report said so. Every `/jira-proxy` reply now carries `X-Jira-Route`
