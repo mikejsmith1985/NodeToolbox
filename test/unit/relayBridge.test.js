@@ -807,7 +807,20 @@ describe('forwardRelayRequest() — a raw pass-through for the Jira proxy', () =
       id: pollResponse.body.request.id, sys: 'jira', ok: false, status: 400, data: '{"errorMessages":["bad jql"]}',
     });
 
-    await expect(forwardPromise).resolves.toEqual({ ok: false, status: 400, data: '{"errorMessages":["bad jql"]}', error: null });
+    await expect(forwardPromise).resolves.toEqual({ ok: false, status: 400, data: '{"errorMessages":["bad jql"]}', error: null, finalUrl: null });
+  });
+
+  it('hands back the address the Jira tab ended on when its fetch was redirected', async () => {
+    const app = buildTestApp();
+    await bringJiraChannelOnline(app);
+
+    const forwardPromise = relayBridgeRouter.forwardRelayRequest('jira', { method: 'GET', url: '/rest/rich/1.0/x' }, 5000);
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=jira');
+    await request(app).post('/api/relay-bridge/result').send({
+      id: pollResponse.body.request.id, sys: 'jira', ok: true, status: 200, data: '<html/>', finalUrl: 'https://jira.example/login.jsp',
+    });
+
+    await expect(forwardPromise).resolves.toMatchObject({ status: 200, finalUrl: 'https://jira.example/login.jsp' });
   });
 
   it('rejects when no Jira tab is relaying', async () => {

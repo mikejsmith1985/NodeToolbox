@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Dashboard API Probe (#511) says how it reached Jira and as whom.** Its report now opens with "Signed in to
+  Jira as … — through your Jira tab" or "— through the stored Jira token". The last report's Rich Filters 302s came
+  from the stored token, and nothing in the report said so. Every `/jira-proxy` reply now carries `X-Jira-Route`
+  (`relay` or `token`). The Jira relay also reports where a redirected call ended, so a call bounced to the login
+  page shows as that and not as a plain 200. **Re-drag the Toolbox Relay bookmark.**
+- **The probe scans each dashboard's own page.** Jira 11 has no REST address that lists a dashboard's gadgets, so
+  the probe reads the dashboard page instead. It lists each gadget's id and spec, the REST areas the page calls,
+  and every Rich Filters (Qotilabs) name and address on it. Those are the app's real addresses, so they no longer
+  have to be guessed.
+
 ### Added
 - **SNow Hub's CHG Generator now runs the SNow Wizard's change flow.** Creating or modifying a change in Toolbox is
   the same guided flow as the Wizard, one step per screen: scope, AI Assist, details, planning, environments, tasks,

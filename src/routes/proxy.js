@@ -13,6 +13,14 @@ const { hasAnyGitHubAuth, resolveEffectiveGitHubToken } = require('../services/g
 const { recordJiraWrite } = require('../services/jiraWriteJournal');
 const relayBridge      = require('./relayBridge');
 
+/**
+ * Response header naming how a /jira-proxy call reached Jira: 'relay' (the person's own signed-in Jira tab) or
+ * 'token' (the stored token). Some Jira apps accept only a browser session, so a report must say which was used.
+ */
+const JIRA_ROUTE_HEADER = 'X-Jira-Route';
+/** Response header carrying where a relayed call was redirected; the same header the direct proxy uses. */
+const UPSTREAM_LOCATION_HEADER = 'X-Upstream-Location';
+
 /** How long one relayed Jira call may take before the browser is told the Jira tab did not answer. */
 const JIRA_RELAY_TIMEOUT_MS = 60000;
 /** Methods that never carry a body, so nothing is forwarded for them. */
@@ -61,6 +69,7 @@ function createProxyRouter(configuration) {
       return;
     }
 
+    res.setHeader(JIRA_ROUTE_HEADER, 'token');
     proxyRequest(req, res, configuration.jira, jiraPath, null, configuration.sslVerify);
   });
 
@@ -172,12 +181,15 @@ async function forwardJiraThroughRelay(req, res, jiraPath) {
     url:    jiraPath,
     body:   BODYLESS_METHODS.includes(req.method) ? null : (req.body === undefined ? null : req.body),
   };
+  res.setHeader(JIRA_ROUTE_HEADER, 'relay');
   try {
     const relayResult = await relayBridge.forwardRelayRequest('jira', relayRequest, JIRA_RELAY_TIMEOUT_MS);
     if (!relayResult.status) {
       res.status(502).json({ error: 'Proxy error', message: 'Jira relay: the Jira tab could not reach Jira — ' + (relayResult.error || 'no response') });
       return;
     }
+    // The tab's fetch follows redirects silently, so a call bounced to the login page arrives as a 200 of HTML.
+    if (relayResult.finalUrl) res.setHeader(UPSTREAM_LOCATION_HEADER, relayResult.finalUrl);
     sendRelayedBody(res, relayResult.status, relayResult.data);
   } catch (relayError) {
     res.status(504).json({ error: 'Proxy error', message: 'Jira relay: ' + relayError.message });
