@@ -169,6 +169,29 @@ function buildSliceClauses(inputs: KitInputs): SliceClause[] {
   ];
 }
 
+/** The slices that together mean "needs the SM today": blocked, not moving, or owned by nobody. */
+const STUCK_SLICE_NAMES = ['Flagged', 'Stuck 10 Days', 'Unassigned In Progress'];
+
+/**
+ * Each gadget's own slice, as a View. In Rich Filters a View narrows ONE gadget, while a static filter is a toggle on
+ * the controller that narrows EVERY gadget, so a gadget-specific slice has to be a View. Each is built inside Team
+ * Work so an Epic never counts as work in flight or queued.
+ */
+function buildGadgetViews(inputs: KitInputs): RichFilterClause[] {
+  const teamWork = buildTeamWorkScope();
+  const slices = buildSliceClauses(inputs);
+  const findSlice = (name: string) => slices.find((slice) => slice.name === name)?.clause;
+  const inProgress = findSlice('In Progress') ?? '';
+  const stuckEither = STUCK_SLICE_NAMES.map(findSlice).filter(Boolean).map((clause) => `(${clause})`).join(' OR ');
+  const views: RichFilterClause[] = [
+    { tab: 'View', name: 'WIP', clause: `(${teamWork}) AND (${inProgress})` },
+    { tab: 'View', name: 'Stuck & Blocked', clause: `(${teamWork}) AND (${stuckEither})` },
+  ];
+  const ready = findSlice('Ready to Work');
+  if (ready) views.push({ tab: 'View', name: 'Ready Queue', clause: `(${teamWork}) AND (${ready})` });
+  return views;
+}
+
 // ── The clauses ──
 
 /** Builds the clause-only JQL to type into the Rich Filters tabs (smart filter, views, static filters). */
@@ -182,6 +205,7 @@ export function buildRichFilterClauses(inputs: KitInputs): RichFilterClause[] {
       clause: `issuetype = Epic AND ${inputs.productOwnerFieldReference} in (${productOwners}) AND project not in (${listTeamProjects()})`,
     },
     { tab: 'View', name: 'Defects', clause: 'issuetype = Defect' },
+    ...buildGadgetViews(inputs),
     ...buildSliceClauses(inputs).map((slice) => ({ tab: 'Static filter', name: slice.name, clause: slice.clause })),
   ];
 }

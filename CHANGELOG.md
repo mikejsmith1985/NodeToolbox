@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Enrollment dashboard build sheet narrows each gadget with a View, not a static filter.** In Rich Filters
+  a View narrows one gadget, while a static filter is a controller toggle that narrows every gadget at once. The
+  sheet had set gadgets up with static filters, which would have filtered the whole dashboard. The Kit now adds
+  three gadget Views, each inside Team Work so Epics never count:
+  - **WIP**;
+  - **Stuck & Blocked** (flagged, not moved in 10 days, or unassigned);
+  - **Ready Queue**.
+
+  WIP, Load and Ready to Work now point at these Views.
+
 ### Added
 - **The Enrollment Dashboard Kit (#511) now designs a new dashboard as a story for Scrum Masters and RTEs.** After
   **Check clauses**, a build sheet lays the dashboard out top to bottom under a Rich Filter Controller (PI · Fix
