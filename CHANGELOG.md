@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Enrollment Dashboard Kit (#511) now designs a new dashboard as a story for Scrum Masters and RTEs.** After
+  **Check clauses**, a build sheet lays the dashboard out top to bottom under a Rich Filter Controller (PI · Fix
+  Version · Issue Type · Team). There are seven questions: Will we make the PI? How much are we finishing? What's in
+  flight? What's stuck or blocked? Is anyone overloaded? Is there enough Ready to Work? Is quality slipping? Each
+  question names the Rich Filters gadget, how to set it up, and its clauses with live counts.
+  - The teams run Kanban, so the sprint-based "Upcoming" slice is gone. In its place are **Ready to Work** and
+    **Ready but Unestimated**, built from the status name Jira itself reports.
+  - A **weeks-of-supply** verdict divides the Ready to Work queue by weekly throughput, using team work only so
+    Epics never pad the queue. Under 1 week warns that the team will run dry; over 3 weeks says finish rather
+    than refine.
+  - New clauses: Unassigned In Progress, a Defects view and Open Defects.
+
 ### Fixed
 - **The probe's dashboard page scan shows the Rich Filters app's own data and the page's full REST addresses.** The
   last report found the app (`com.qotilabs.jira.rich-filters-plugin`) and its `qrf-dashboard-export` page data, but

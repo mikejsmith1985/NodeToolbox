@@ -23,9 +23,11 @@ const BASE_JQL = 'project in (ENCUC, ENFCT) ORDER BY Rank';
 
 /** Routes jiraGet paths to canned instance data; the Stuck clause is made to fail validation. */
 function routeGet(path: string): Promise<unknown> {
-  if (path === '/rest/api/2/field') return Promise.resolve([{ id: PO_FIELD_ID, name: 'Product Owner' }]);
+  if (path === '/rest/api/2/field') return Promise.resolve([{ id: PO_FIELD_ID, name: 'Product Owner' }, { id: 'field_88', name: 'Story Points' }]);
   if (path.endsWith('/statuses')) {
-    return Promise.resolve([{ name: 'Story', statuses: [{ name: 'Done', statusCategory: { key: 'done' } }] }]);
+    return Promise.resolve([{ name: 'Story', statuses: [
+      { name: 'Done', statusCategory: { key: 'done' } }, { name: 'Ready to Work', statusCategory: { key: 'new' } },
+    ] }]);
   }
   if (path === '/rest/api/2/filter/favourite') {
     return Promise.resolve([
@@ -77,6 +79,20 @@ describe('EnrollmentDashboardKitPanel', () => {
     expect(screen.getAllByText(/Smart filter "Team"/).length).toBe(2);
     expect(screen.getByText(/bad JQL/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
+  });
+
+  it('lays out the dashboard as a story and judges the Ready to Work supply from team work only', async () => {
+    await discover();
+    await userEvent.click(screen.getByRole('button', { name: /check clauses/i }));
+    await waitFor(() => expect(screen.getByText(/Check complete/i)).toBeInTheDocument());
+
+    expect(screen.getByText('6 · Is there enough Ready to Work?')).toBeInTheDocument();
+    // Every count is 12: 12 done in 30 days is 2.8 a week, so 12 ready is 4.3 weeks.
+    expect(screen.getByText(/4\.3 weeks of Ready to Work/)).toBeInTheDocument();
+    const supplyJql = jiraGetMock.mock.calls
+      .map(([path]) => decodeURIComponent(String(path).split('jql=')[1] ?? ''))
+      .filter((jql) => jql.includes('status = "Ready to Work"') && jql.includes('issuetype != Epic'));
+    expect(supplyJql.length).toBeGreaterThan(0);
   });
 
   it('says how to fix a 401 — click the relay bookmark in a signed-in Jira tab — instead of a bare code', async () => {

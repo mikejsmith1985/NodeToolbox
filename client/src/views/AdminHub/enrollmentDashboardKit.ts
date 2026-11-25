@@ -51,6 +51,10 @@ export interface KitInputs {
   productOwnerUserByTeam: Record<KitTeam['label'], string>;
   /** Every status name in the "done" category across both team projects. */
   doneStatusNames: readonly string[];
+  /** The Kanban queue status ("Ready to Work") exactly as Jira names it, or null when the projects lack it. */
+  readyStatusName: string | null;
+  /** How JQL names the Story Points field, or null when it is not mapped on this instance. */
+  storyPointsFieldReference: string | null;
 }
 
 /** One clause to type into a Rich Filters tab; the rich filter's base filter already supplies the scope. */
@@ -105,17 +109,50 @@ function listProductOwners(inputs: KitInputs): string {
   return KIT_TEAMS.map((team) => quoteJqlValue(inputs.productOwnerUserByTeam[team.label])).join(', ');
 }
 
+/** One static-filter slice and what it shows. */
+interface SliceClause {
+  name: string;
+  clause: string;
+  description: string;
+}
+
 /**
- * The status slices every dashboard section filters on. "Done recently" is only built when the instance
- * reports done statuses, because JQL's CHANGED TO needs real status names and an empty list is invalid.
+ * The Kanban queue slices, built only from the status name Jira itself reported: a typed status that does not
+ * exist would make the clause silently match nothing.
  */
-function buildSliceClauses(inputs: KitInputs): Array<{ name: string; clause: string; description: string }> {
-  const slices = [
+function buildReadySlices(inputs: KitInputs): SliceClause[] {
+  if (!inputs.readyStatusName) return [];
+  const readyClause = `status = ${quoteJqlValue(inputs.readyStatusName)}`;
+  const slices: SliceClause[] = [{ name: 'Ready to Work', clause: readyClause, description: 'Refined work waiting to be pulled.' }];
+  if (inputs.storyPointsFieldReference) {
+    slices.push({
+      name: 'Ready but Unestimated', clause: `${readyClause} AND ${inputs.storyPointsFieldReference} is EMPTY`,
+      description: 'Queued work nobody has sized yet.',
+    });
+  }
+  return slices;
+}
+
+/** "Done recently", only when the instance reports done statuses: JQL's CHANGED TO needs real names. */
+function buildDoneSlices(inputs: KitInputs): SliceClause[] {
+  if (inputs.doneStatusNames.length === 0) return [];
+  const doneList = inputs.doneStatusNames.map(quoteJqlValue).join(', ');
+  return [{
+    name: 'Done 30 Days',
+    clause: `statusCategory = Done AND status CHANGED TO (${doneList}) AFTER ${DONE_RECENTLY_WINDOW}`,
+    description: 'Team work that reached a done status in the last 30 days.',
+  }];
+}
+
+/**
+ * The status slices the dashboard's steps filter on. The teams run Kanban, so there is no sprint slice: the
+ * question is whether enough work is queued in Ready to Work, not what is planned for the next sprint.
+ */
+function buildSliceClauses(inputs: KitInputs): SliceClause[] {
+  return [
     { name: 'In Progress', clause: 'statusCategory = "In Progress"', description: 'Team work being worked now.' },
-    {
-      name: 'Upcoming', clause: 'sprint in futureSprints() AND statusCategory != Done',
-      description: 'Team work planned into a future sprint.',
-    },
+    ...buildDoneSlices(inputs),
+    ...buildReadySlices(inputs),
     {
       name: 'Flagged', clause: 'Flagged is not EMPTY AND statusCategory != Done',
       description: 'Open team work someone has flagged as blocked.',
@@ -124,17 +161,11 @@ function buildSliceClauses(inputs: KitInputs): Array<{ name: string; clause: str
       name: 'Stuck 10 Days', clause: `statusCategory = "In Progress" AND NOT status CHANGED AFTER ${STUCK_WINDOW}`,
       description: 'In-progress team work whose status has not moved in 10 days.',
     },
-  ];
-  if (inputs.doneStatusNames.length === 0) return slices;
-  const doneList = inputs.doneStatusNames.map(quoteJqlValue).join(', ');
-  return [
-    ...slices.slice(0, 1),
     {
-      name: 'Done 30 Days',
-      clause: `statusCategory = Done AND status CHANGED TO (${doneList}) AFTER ${DONE_RECENTLY_WINDOW}`,
-      description: 'Team work that reached a done status in the last 30 days.',
+      name: 'Unassigned In Progress', clause: 'statusCategory = "In Progress" AND assignee is EMPTY',
+      description: 'Work in progress that nobody owns.',
     },
-    ...slices.slice(1),
+    { name: 'Open Defects', clause: 'issuetype = Defect AND statusCategory != Done', description: 'Defects not yet fixed.' },
   ];
 }
 
@@ -150,6 +181,7 @@ export function buildRichFilterClauses(inputs: KitInputs): RichFilterClause[] {
       tab: 'View', name: 'Epics',
       clause: `issuetype = Epic AND ${inputs.productOwnerFieldReference} in (${productOwners}) AND project not in (${listTeamProjects()})`,
     },
+    { tab: 'View', name: 'Defects', clause: 'issuetype = Defect' },
     ...buildSliceClauses(inputs).map((slice) => ({ tab: 'Static filter', name: slice.name, clause: slice.clause })),
   ];
 }
@@ -173,6 +205,25 @@ export function readDoneStatusNames(projectStatuses: readonly (readonly ProjectI
     }
   }
   return [...doneNames].sort();
+}
+
+/** Words that identify the Kanban queue status, whatever Jira's capitalisation. */
+const READY_STATUS_PATTERN = /^ready to work$/i;
+
+/** Finds the Ready to Work status as Jira names it across the given projects; null when none has it. */
+export function readReadyStatusName(projectStatuses: readonly (readonly ProjectIssueTypeStatuses[])[]): string | null {
+  for (const issueTypes of projectStatuses) {
+    for (const issueType of issueTypes) {
+      const match = (issueType.statuses ?? []).find((status) => READY_STATUS_PATTERN.test(status.name.trim()));
+      if (match) return match.name;
+    }
+  }
+  return null;
+}
+
+/** Narrows one clause to another, e.g. Ready to Work inside Team Work so Epics never count as queued work. */
+export function combineClauses(outerClause: string, innerClause: string): string {
+  return `(${outerClause}) AND (${innerClause})`;
 }
 
 // ── The base filter ──

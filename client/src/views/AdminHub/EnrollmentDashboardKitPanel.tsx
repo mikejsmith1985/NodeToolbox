@@ -15,10 +15,12 @@ import {
 import type { JiraField, JiraUser } from '../../types/jira.ts';
 import styles from './AdminHubView.module.css';
 import {
-  BASE_FILTER_NAME, KIT_TEAMS, buildFieldJqlReference, buildRichFilterClauses, pickBaseFilterId,
-  readDoneStatusNames, scopeClauseToBase, stripOrderBy,
+  BASE_FILTER_NAME, KIT_TEAMS, buildFieldJqlReference, buildRichFilterClauses, combineClauses, pickBaseFilterId,
+  readDoneStatusNames, readReadyStatusName, scopeClauseToBase, stripOrderBy,
   type KitInputs, type KitTeam, type ProjectIssueTypeStatuses, type RichFilterClause, type SavedFilter,
 } from './enrollmentDashboardKit.ts';
+import { computeReadySupply, type ReadySupply } from './dashboardStory.ts';
+import { DashboardStorySheet } from './DashboardStorySheet.tsx';
 import { describeJiraFailure } from './subtaskStoryPromotion.ts';
 
 // ── Types ──
@@ -30,6 +32,8 @@ interface Discovery {
   productOwnerFieldReference: string | null;
   candidatesByTeam: Record<TeamLabel, JiraUser[]>;
   doneStatusNames: string[];
+  readyStatusName: string | null;
+  storyPointsFieldReference: string | null;
   favouriteFilters: SavedFilter[];
 }
 
@@ -69,9 +73,9 @@ function pickExpectedUser(candidates: readonly JiraUser[], nameWords: readonly s
   return match ? readUserIdentifier(match) : '';
 }
 
-/** Resolves the Product Owner field the same way every other Toolbox surface does (Field Mapping). */
-function resolveProductOwnerFieldId(availableFields: readonly JiraField[]): string {
-  const entry = FIELD_MAPPING_ENTRIES.find((candidate) => candidate.settingsKey === 'productOwnerFieldId');
+/** Resolves a mapped field (Product Owner, Story Points) the same way every other Toolbox surface does (Field Mapping). */
+function resolveMappedFieldId(availableFields: readonly JiraField[], settingsKey: 'productOwnerFieldId' | 'spFieldId'): string {
+  const entry = FIELD_MAPPING_ENTRIES.find((candidate) => candidate.settingsKey === settingsKey);
   if (!entry) return '';
   return resolveFieldMapping(entry, availableFields, readFieldMappingOverrides(window.localStorage)).effectiveFieldId || '';
 }
@@ -81,7 +85,8 @@ function resolveProductOwnerFieldId(availableFields: readonly JiraField[]): stri
 /** Reads every live input the clauses need. */
 async function discoverInstance(): Promise<Discovery> {
   const fields = await jiraGet<JiraField[]>('/rest/api/2/field');
-  const productOwnerFieldReference = buildFieldJqlReference(resolveProductOwnerFieldId(fields), fields);
+  const productOwnerFieldReference = buildFieldJqlReference(resolveMappedFieldId(fields, 'productOwnerFieldId'), fields);
+  const storyPointsFieldReference = buildFieldJqlReference(resolveMappedFieldId(fields, 'spFieldId'), fields);
   const candidatesByTeam = {} as Record<TeamLabel, JiraUser[]>;
   const projectStatuses: ProjectIssueTypeStatuses[][] = [];
   for (const team of KIT_TEAMS) {
@@ -90,8 +95,9 @@ async function discoverInstance(): Promise<Discovery> {
   }
   const favouriteFilters = await jiraGet<SavedFilter[]>('/rest/api/2/filter/favourite').catch(() => []);
   return {
-    productOwnerFieldReference, candidatesByTeam,
-    doneStatusNames: readDoneStatusNames(projectStatuses), favouriteFilters: favouriteFilters ?? [],
+    productOwnerFieldReference, candidatesByTeam, storyPointsFieldReference,
+    doneStatusNames: readDoneStatusNames(projectStatuses), readyStatusName: readReadyStatusName(projectStatuses),
+    favouriteFilters: favouriteFilters ?? [],
   };
 }
 
@@ -105,6 +111,21 @@ async function countJql(jql: string): Promise<CountResult> {
   }
 }
 
+/**
+ * Counts Ready to Work and Done 30 Days inside Team Work (no Epics, no sub-tasks), then judges how many weeks the
+ * queue lasts. Unknown when the instance lacks either clause.
+ */
+async function countReadySupply(baseJql: string, clauses: readonly RichFilterClause[]): Promise<ReadySupply> {
+  const findClause = (name: string) => clauses.find((clause) => clause.name === name)?.clause;
+  const teamWork = findClause('Team Work');
+  const ready = findClause('Ready to Work');
+  const doneRecently = findClause('Done 30 Days');
+  if (!teamWork || !ready || !doneRecently) return computeReadySupply(null, null);
+  const readyCount = await countJql(scopeClauseToBase(baseJql, combineClauses(teamWork, ready)));
+  const doneCount = await countJql(scopeClauseToBase(baseJql, combineClauses(teamWork, doneRecently)));
+  return computeReadySupply(readyCount.issueCount, doneCount.issueCount);
+}
+
 // ── The panel ──
 
 /** Admin Hub panel: discover → check every Rich Filters clause inside the owner's base filter. Read-only. */
@@ -114,6 +135,7 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
   const [selectedUserByTeam, setSelectedUserByTeam] = useState<Record<TeamLabel, string>>({ CUC: '', TRANSFORMERS: '' });
   const [baseCount, setBaseCount] = useState<CountResult | null>(null);
   const [checkedClauses, setCheckedClauses] = useState<CheckedClause[]>([]);
+  const [readySupply, setReadySupply] = useState<ReadySupply | null>(null);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
 
@@ -145,6 +167,8 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
       productOwnerFieldReference: discovery.productOwnerFieldReference,
       productOwnerUserByTeam: selectedUserByTeam,
       doneStatusNames: discovery.doneStatusNames,
+      readyStatusName: discovery.readyStatusName,
+      storyPointsFieldReference: discovery.storyPointsFieldReference,
     };
   };
 
@@ -159,6 +183,7 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
         results.push({ ...clause, ...(await countJql(scopeClauseToBase(baseFilter.jql, clause.clause))) });
       }
       setCheckedClauses(results);
+      setReadySupply(await countReadySupply(baseFilter.jql, results));
       setStatus('Check complete — nothing was changed in Jira. Copy each clause into Rich Filters.');
     } finally { setIsBusy(false); }
   };
@@ -179,8 +204,9 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
       <p className={styles.adminDescription}>
         The Enrollment Master Dashboard runs on one saved filter — your <strong>{BASE_FILTER_NAME}</strong> — and every
         gadget narrows it with a Rich Filters clause. This lists those clauses (CUC and Transformers team work, each
-        team&apos;s Epics found by Product Owner, and the status slices) and counts each one inside the base filter.
-        It only reads; nothing is written to Jira.
+        team&apos;s Epics found by Product Owner, and the Kanban status slices) and counts each one inside the base
+        filter, then lays the dashboard out as a story an SM or RTE reads top to bottom. It only reads; nothing is
+        written to Jira.
       </p>
 
       <div className={styles.panelSection}>
@@ -203,6 +229,12 @@ export function EnrollmentDashboardKitPanel(): React.ReactElement {
       )}
       {discovery && <ProductOwnerPickers discovery={discovery} selected={selectedUserByTeam} onChange={changeTeamUser} isDisabled={isBusy} />}
       {checkedClauses.length > 0 && <RichFilterClauseTable clauses={checkedClauses} />}
+      {checkedClauses.length > 0 && (
+        <DashboardStorySheet
+          clauseCounts={new Map(checkedClauses.map((clause) => [clause.name, clause.issueCount]))}
+          readySupply={readySupply}
+        />
+      )}
     </section>
   );
 }
