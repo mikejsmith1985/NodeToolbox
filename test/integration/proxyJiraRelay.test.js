@@ -95,6 +95,37 @@ describe('/jira-proxy/* through the Jira relay', () => {
     expect(response.body.message).toMatch(/Jira relay.*Failed to fetch/);
   });
 
+  it('labels a relayed reply as having used the Jira tab session', async () => {
+    const app = buildTestApp();
+    await bringJiraRelayOnline(app);
+
+    const proxyPromise = request(app).get('/jira-proxy/rest/api/2/myself').then((proxyResponse) => proxyResponse); // .then() sends it now
+    await answerNextRelayRequest(app, { ok: true, status: 200, data: '{"name":"U1"}' });
+    const response = await proxyPromise;
+
+    expect(response.headers['x-jira-route']).toBe('relay');
+    expect(response.headers['x-upstream-location']).toBeUndefined();
+  });
+
+  it('passes back where the Jira tab was redirected, so a login page is visible instead of a bare 200', async () => {
+    const app = buildTestApp();
+    await bringJiraRelayOnline(app);
+
+    const proxyPromise = request(app).get('/jira-proxy/rest/rich/1.0/x').then((proxyResponse) => proxyResponse); // .then() sends it now
+    await answerNextRelayRequest(app, { ok: true, status: 200, data: '<html>login</html>', finalUrl: 'https://jira.example.com/login.jsp?os_destination=x' });
+    const response = await proxyPromise;
+
+    expect(response.headers['x-upstream-location']).toBe('https://jira.example.com/login.jsp?os_destination=x');
+  });
+
+  it('labels a stored-token reply as such', async () => {
+    nock('https://jira.example.com').get('/rest/api/2/myself').reply(200, { name: 'direct' });
+
+    const response = await request(buildTestApp()).get('/jira-proxy/rest/api/2/myself');
+
+    expect(response.headers['x-jira-route']).toBe('token');
+  });
+
   it('uses the stored token, exactly as before, when no Jira tab is relaying', async () => {
     nock('https://jira.example.com', { reqheaders: { authorization: 'Bearer stale-old-instance-pat' } })
       .get('/rest/api/2/myself')

@@ -175,20 +175,59 @@ export async function jiraGet<ResponseBody>(path: string): Promise<ResponseBody>
 
 /** The header the server's Jira proxy uses to pass back where a Jira redirect pointed. */
 const UPSTREAM_LOCATION_HEADER = 'X-Upstream-Location';
-/** HTTP statuses from 300 up to (not including) 400 are redirects. */
-const FIRST_REDIRECT_STATUS = 300;
-const FIRST_CLIENT_ERROR_STATUS = 400;
+/** The header the server's Jira proxy uses to say how it reached Jira. */
+const JIRA_ROUTE_HEADER = 'X-Jira-Route';
+
+/** How a /jira-proxy call reached Jira: the person's own Jira tab, the stored token, or unknown (older server). */
+export type JiraProxyRoute = 'relay' | 'token' | null;
+
+/** Everything a read-only probe needs from one Jira GET, with nothing interpreted or thrown. */
+export interface JiraProbeReply {
+  /** HTTP status, or null when the call never got an answer. */
+  status: number | null;
+  route: JiraProxyRoute;
+  /** Where Jira redirected the call (a bare 302, or a redirect the Jira tab followed), otherwise null. */
+  upstreamLocation: string | null;
+  /** The body parsed as JSON when it is JSON, otherwise the raw text. */
+  body: unknown;
+  bodyText: string;
+}
+
+/** Reads the route header, keeping only the two values the server sends. */
+function readJiraRoute(response: Response): JiraProxyRoute {
+  const route = response.headers.get(JIRA_ROUTE_HEADER);
+  return route === 'relay' || route === 'token' ? route : null;
+}
+
+/** Parses JSON text, or hands the text back unchanged when it is not JSON (an HTML page, an empty body). */
+function parseJsonOrText(bodyText: string): unknown {
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    return bodyText;
+  }
+}
 
 /**
- * GETs a Jira path and returns where Jira redirected it, or null when it did not redirect. The proxy passes the
- * target back under its own header (a real Location would send the browser off to Jira's origin and lose it),
- * so a read-only probe can tell "redirects to the login page" apart from "this endpoint moved".
+ * GETs any path on Jira for the read-only dashboard probe and reports exactly what came back: status, which
+ * route the proxy used, where Jira redirected it, and the body. Unlike jiraGet it never throws on a status and
+ * accepts non-JSON pages (a dashboard page is HTML), so the probe reports facts instead of error messages.
  */
-export async function readJiraRedirectTarget(path: string): Promise<string | null> {
-  const response = await fetch(`${JIRA_PROXY_BASE}${path}`);
-  const isRedirect = response.status >= FIRST_REDIRECT_STATUS && response.status < FIRST_CLIENT_ERROR_STATUS;
-  if (!isRedirect) return null;
-  return response.headers.get(UPSTREAM_LOCATION_HEADER) || null;
+export async function probeJiraPath(path: string): Promise<JiraProbeReply> {
+  try {
+    const response = await fetch(`${JIRA_PROXY_BASE}${path}`);
+    const bodyText = await response.text();
+    return {
+      status: response.status,
+      route: readJiraRoute(response),
+      upstreamLocation: response.headers.get(UPSTREAM_LOCATION_HEADER) || null,
+      body: parseJsonOrText(bodyText),
+      bodyText,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: null, route: null, upstreamLocation: null, body: null, bodyText: message };
+  }
 }
 
 /** Makes an authenticated POST request to the Jira REST API via proxy. */

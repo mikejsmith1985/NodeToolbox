@@ -409,7 +409,7 @@ router.get('/poll', (req, res) => {
  * Body: { id, sys, ok, status, data, error }
  */
 router.post('/result', (req, res) => {
-  const { id, sys = 'snow', ok, status, data, error } = req.body;
+  const { id, sys = 'snow', ok, status, data, error, finalUrl } = req.body;
 
   if (!id) return res.status(400).json({ error: 'Missing id' });
 
@@ -424,7 +424,8 @@ router.post('/result', (req, res) => {
     channel.lastAuthorizedAt = Date.now();
   }
 
-  const result = { id, ok, status, data, error };
+  // finalUrl is set only by the Jira relay, when its fetch was redirected (e.g. to the login page).
+  const result = { id, ok, status, data, error, finalUrl: typeof finalUrl === 'string' && finalUrl ? finalUrl : null };
   const waiter  = channel.resultWaiters[id];
 
   if (waiter) {
@@ -686,11 +687,12 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
  * @param {string} sys - System identifier, e.g. 'jira'
  * @param {{ method?: string, url: string, body?: any }} request
  * @param {number} [timeoutMs]
- * @returns {Promise<{ ok: boolean, status: number, data: any, error: string|null }>}
+ * @returns {Promise<{ ok: boolean, status: number, data: any, error: string|null, finalUrl: string|null }>}
+ *   finalUrl is where the tab's fetch ended when it was redirected, otherwise null.
  */
 module.exports.forwardRelayRequest = async function forwardRelayRequest(sys, request, timeoutMs = 30000) {
   const result = await enqueueAndAwaitRelayResult(sys, request, timeoutMs);
-  return { ok: !!result.ok, status: result.status || 0, data: result.data === undefined ? null : result.data, error: result.error || null };
+  return { ok: !!result.ok, status: result.status || 0, data: result.data === undefined ? null : result.data, error: result.error || null, finalUrl: result.finalUrl || null };
 };
 
 // Exposed for unit testing the JSON-string normalization that keeps server-side

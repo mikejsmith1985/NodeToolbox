@@ -15,6 +15,10 @@ import {
   readStatusFromFailure,
   summarizeProbeBody,
   formatProbeReport,
+  describeJiraIdentity,
+  summarizeProbeReply,
+  scanDashboardPage,
+  buildDashboardPagePath,
 } from './dashboardApiProbe.ts';
 
 describe('buildProbePaths', () => {
@@ -127,5 +131,71 @@ describe('formatProbeReport redirects', () => {
     expect(report).toContain('302  /rest/rich/1.0/x');
     expect(report).toContain('↳ 302 → /rest/rich/2.0/x');
     expect(report).toContain('↳ 200  /rest/rich/2.0/x');
+  });
+});
+
+describe('describeJiraIdentity', () => {
+  it('names the signed-in user and the route, so nobody has to guess how the probe reached Jira', () => {
+    expect(describeJiraIdentity({ status: 200, route: 'relay', upstreamLocation: null, body: { name: 'U564974', displayName: 'Smith, Mike' }, bodyText: '' }))
+      .toBe('Signed in to Jira as U564974 (Smith, Mike) — through your Jira tab (your own session)');
+    expect(describeJiraIdentity({ status: 200, route: 'token', upstreamLocation: null, body: { name: 'svc' }, bodyText: '' }))
+      .toBe('Signed in to Jira as svc — through the stored Jira token (not your session; connect the Jira tab for session-only apps)');
+  });
+
+  it('says plainly when Jira did not recognise us', () => {
+    expect(describeJiraIdentity({ status: 401, route: 'token', upstreamLocation: null, body: '', bodyText: '' }))
+      .toBe('Not signed in to Jira (401) — through the stored Jira token (not your session; connect the Jira tab for session-only apps)');
+  });
+});
+
+describe('summarizeProbeReply', () => {
+  it('reports a JSON reply by status and shape', () => {
+    const result = summarizeProbeReply('/rest/api/2/serverInfo', { status: 200, route: 'relay', upstreamLocation: null, body: { version: '11' }, bodyText: '' });
+    expect(result).toMatchObject({ path: '/rest/api/2/serverInfo', status: 200, shape: 'object {version}' });
+  });
+
+  it('flags a call the Jira tab followed to the login page instead of calling it a success', () => {
+    const result = summarizeProbeReply('/rest/rich/1.0/x', {
+      status: 200, route: 'relay', upstreamLocation: 'https://jira.example/login.jsp?os_destination=x', body: '<html><title>Log in</title></html>', bodyText: '',
+    });
+    expect(result.shape).toBe('HTML page "Log in"');
+    expect(result.redirects?.[0]).toMatch(/^redirected → https:\/\/jira\.example\/login\.jsp.*\(login page/);
+  });
+});
+
+describe('scanDashboardPage', () => {
+  const dashboardHtml = [
+    '<script>AG.DashboardManager.setup({"gadgets":[',
+    '{"id":"501","title":"Team","gadgetSpecUrl":"rest\\/gadgets\\/1.0\\/g\\/com.qotilabs.jira.rich-filters-plugin:rich-filter-results-gadget\\/gadget.xml"},',
+    '{"id":"502","title":"Pie","gadgetSpecUrl":"rest/gadgets/1.0/g/com.atlassian.jira.gadgets:pie-chart-gadget/gadgets/piechart-gadget.xml"}',
+    ']});</script><script src="/rest/qotilabs-richfilters/2.0/smart-filters?x=1"></script>',
+  ].join('');
+
+  it('lists each gadget, the REST areas the page calls, and every Rich Filters mention', () => {
+    const scan = scanDashboardPage(dashboardHtml);
+    expect(scan.gadgetSpecs).toEqual([
+      'rest/gadgets/1.0/g/com.qotilabs.jira.rich-filters-plugin:rich-filter-results-gadget/gadget.xml',
+      'rest/gadgets/1.0/g/com.atlassian.jira.gadgets:pie-chart-gadget/gadgets/piechart-gadget.xml',
+    ]);
+    expect(scan.restAreas).toContain('/rest/qotilabs-richfilters/2.0/');
+    expect(scan.richFilterMentions.some((mention) => mention.includes('com.qotilabs.jira.rich-filters-plugin'))).toBe(true);
+    expect(scan.gadgetIds).toEqual(['501', '502']);
+  });
+
+  it('returns empty lists for a page with nothing in it', () => {
+    expect(scanDashboardPage('<html></html>')).toEqual({ gadgetSpecs: [], restAreas: [], richFilterMentions: [], gadgetIds: [] });
+  });
+
+  it('builds the dashboard page address for an id', () => {
+    expect(buildDashboardPagePath('175112')).toBe('/secure/Dashboard.jspa?selectPageId=175112');
+  });
+});
+
+describe('formatProbeReport extras', () => {
+  it('opens with who the probe was signed in as and ends with each dashboard page scan', () => {
+    const report = formatProbeReport([], [], { identityLine: 'Signed in to Jira as U1 — through your Jira tab', pageScanLines: ['Dashboard 42 page: 2 gadgets'] });
+    const lines = report.split('\n');
+    expect(lines[1]).toBe('Signed in to Jira as U1 — through your Jira tab');
+    expect(report.trimEnd().endsWith('Dashboard 42 page: 2 gadgets')).toBe(true);
   });
 });

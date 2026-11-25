@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIssueLink, fetchJiraLabelSuggestions, readJiraRedirectTarget, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { createIssueLink, fetchJiraLabelSuggestions, probeJiraPath, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -32,20 +32,36 @@ afterEach(() => {
   window.removeEventListener('toolbox:api', recordEvent);
 });
 
-describe('readJiraRedirectTarget', () => {
-  it('returns where Jira redirected a GET, read from the header the proxy passes it back in', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      status: 302,
-      headers: { get: (name: string) => (name.toLowerCase() === 'x-upstream-location' ? 'https://jira.example/login.jsp' : null) },
-    } as unknown as Response);
+describe('probeJiraPath', () => {
+  /** A fake proxy reply carrying the given headers and body text. */
+  function fakeReply(status: number, bodyText: string, headers: Record<string, string>): Response {
+    return {
+      status,
+      headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
+      text: () => Promise.resolve(bodyText),
+    } as unknown as Response;
+  }
 
-    await expect(readJiraRedirectTarget('/rest/x/1.0/y')).resolves.toBe('https://jira.example/login.jsp');
+  it('returns the status, the route the proxy took, any redirect target and the parsed JSON body', async () => {
+    vi.mocked(fetch).mockResolvedValue(fakeReply(302, '', { 'x-jira-route': 'token', 'x-upstream-location': 'https://jira.example/login.jsp' }));
+
+    await expect(probeJiraPath('/rest/x/1.0/y')).resolves.toEqual({
+      status: 302, route: 'token', upstreamLocation: 'https://jira.example/login.jsp', body: '', bodyText: '',
+    });
     expect(fetch).toHaveBeenCalledWith('/jira-proxy/rest/x/1.0/y');
   });
 
-  it('returns null when the reply is not a redirect or names no target', async () => {
-    vi.mocked(fetch).mockResolvedValue({ status: 200, headers: { get: () => null } } as unknown as Response);
-    await expect(readJiraRedirectTarget('/rest/x')).resolves.toBeNull();
+  it('parses a JSON body and keeps a non-JSON body as text', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(fakeReply(200, '{"name":"U1"}', { 'x-jira-route': 'relay' }));
+    await expect(probeJiraPath('/rest/api/2/myself')).resolves.toMatchObject({ status: 200, route: 'relay', body: { name: 'U1' }, upstreamLocation: null });
+
+    vi.mocked(fetch).mockResolvedValueOnce(fakeReply(200, '<html>page</html>', {}));
+    await expect(probeJiraPath('/secure/Dashboard.jspa?selectPageId=1')).resolves.toMatchObject({ body: '<html>page</html>', route: null });
+  });
+
+  it('turns a network failure into a result with no status instead of throwing', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+    await expect(probeJiraPath('/rest/x')).resolves.toMatchObject({ status: null, bodyText: 'offline' });
   });
 });
 

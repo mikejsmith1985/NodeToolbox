@@ -214,6 +214,11 @@ describe('the bookmarklets parse as JavaScript', () => {
     expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('meta[name=ajs-context-path]');
   });
 
+  it('the Jira relay reports where a redirected call ended, so a login page is not mistaken for an answer', () => {
+    // fetch() follows redirects silently: a call bounced to the login page comes back 200 with HTML.
+    expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('finalUrl:jiraResponse.redirected?jiraResponse.url:null');
+  });
+
   it('the Jira relay serves same-site paths only, so the session is never sent elsewhere', () => {
     expect(UNIFIED_RELAY_BOOKMARKLET_CODE).toContain('relayRequest.path.charAt(1)==="/"');
   });
@@ -291,8 +296,8 @@ describe('shared pieces exported for the SNow Wizard (feature 040)', () => {
 
   it('leaves the ServiceNow bookmarklet byte-identical, and pins the unified one', () => {
     expect(fingerprint(SNOW_RELAY_BOOKMARKLET_CODE)).toBe('8787759255de13bd04547a7522805f7c8a540e472861767efa6e2ea8347a106c');
-    // The unified bookmark changed ON PURPOSE when it learned to relay Jira (v0.328.2) and to run Jira calls in parallel (v0.328.4) — re-drag it.
-    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('b60aba3c32313e2dd3d4ee906ce3e9e876c92332ff56cb82b4889cba8e132dcd');
+    // The unified bookmark changed ON PURPOSE when it learned to relay Jira (v0.328.2) and to run Jira calls in parallel (v0.328.4), and to report where a redirected Jira call ended (v0.329.1) — re-drag it.
+    expect(fingerprint(UNIFIED_RELAY_BOOKMARKLET_CODE)).toBe('7b1f947b200b059833e8ee84c1f7df2677edf245ec034c09031b76c76a56a50f');
   });
 
   it('exports the exact token resolver the ServiceNow bookmarklet runs', () => {
