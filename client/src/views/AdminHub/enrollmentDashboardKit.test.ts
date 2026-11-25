@@ -14,6 +14,7 @@ import {
   pickBaseFilterId,
   quoteJqlValue,
   readDoneStatusNames,
+  readReadyStatusName,
   scopeClauseToBase,
   type KitInputs,
 } from './enrollmentDashboardKit.ts';
@@ -22,6 +23,8 @@ const INPUTS: KitInputs = {
   productOwnerFieldReference: '"Product Owner"',
   productOwnerUserByTeam: { CUC: 'U581996', TRANSFORMERS: 'U586310' },
   doneStatusNames: ['Done', 'Cancelled'],
+  readyStatusName: 'Ready to Work',
+  storyPointsFieldReference: '"Story Points"',
 };
 
 /** Finds one clause by its name so each test reads like the dashboard gadget it feeds. */
@@ -100,6 +103,43 @@ describe('buildRichFilterClauses', () => {
   it('omits the done-recently clause when the instance reports no done statuses', () => {
     const clauses = buildRichFilterClauses({ ...INPUTS, doneStatusNames: [] });
     expect(clauses.some((clause) => clause.name === 'Done 30 Days')).toBe(false);
+  });
+});
+
+describe('buildRichFilterClauses — Kanban flow slices', () => {
+  it('has no sprint-based slice, because the teams run Kanban', () => {
+    expect(buildRichFilterClauses(INPUTS).some((clause) => /sprint/i.test(clause.clause))).toBe(false);
+  });
+
+  it('builds Ready to Work from the status name Jira itself reported', () => {
+    expect(findClause('Ready to Work')).toMatchObject({ tab: 'Static filter', clause: 'status = "Ready to Work"' });
+    expect(findClause('Ready but Unestimated').clause).toBe('status = "Ready to Work" AND "Story Points" is EMPTY');
+  });
+
+  it('omits the Ready to Work slices when the instance has no such status, and the estimate slice without a points field', () => {
+    const noReady = buildRichFilterClauses({ ...INPUTS, readyStatusName: null }).map((clause) => clause.name);
+    expect(noReady).not.toContain('Ready to Work');
+    expect(noReady).not.toContain('Ready but Unestimated');
+    const noPoints = buildRichFilterClauses({ ...INPUTS, storyPointsFieldReference: null }).map((clause) => clause.name);
+    expect(noPoints).toContain('Ready to Work');
+    expect(noPoints).not.toContain('Ready but Unestimated');
+  });
+
+  it('adds the blocked-work and quality slices', () => {
+    expect(findClause('Unassigned In Progress').clause).toBe('statusCategory = "In Progress" AND assignee is EMPTY');
+    expect(findClause('Defects')).toMatchObject({ tab: 'View', clause: 'issuetype = Defect' });
+    expect(findClause('Open Defects').clause).toBe('issuetype = Defect AND statusCategory != Done');
+  });
+});
+
+describe('readReadyStatusName', () => {
+  it("finds the Ready to Work status in Jira's own list, whatever its capitalisation", () => {
+    const projectStatuses = [[{ name: 'Story', statuses: [{ name: 'READY TO WORK' }, { name: 'Working' }] }]];
+    expect(readReadyStatusName(projectStatuses)).toBe('READY TO WORK');
+  });
+
+  it('returns null when no project has it', () => {
+    expect(readReadyStatusName([[{ name: 'Story', statuses: [{ name: 'To Do' }] }]])).toBeNull();
   });
 });
 
